@@ -1,0 +1,13 @@
+# Rust build
+/cache/target/
+
+# IDE
+.idea/
+.vscode/
+
+# OS
+.DS_Store
+
+# Environment
+.env
+.env.*
