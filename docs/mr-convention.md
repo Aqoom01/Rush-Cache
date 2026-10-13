@@ -45,7 +45,7 @@ Closes S15P31D111-12   ← 마지막 MR
 - 리뷰 의견을 반영하고 미해결 스레드가 없는지 확인한 뒤 Merge한다.
 - 리뷰 승인 후 작성자가 직접 Merge할 수 있다.
 - 작업 브랜치를 병합할 때는 **Squash**와 **Source Branch 삭제**를 권장한다.
-- `develop` → `main` MR은 Squash하지 않는다. Squash하면 두 브랜치의 이력이 갈라져 이후 병합마다 충돌이 생긴다.
+- `develop` → `master` MR은 Squash하지 않는다. Squash하면 두 브랜치의 이력이 갈라져 이후 병합마다 충돌이 생긴다.
 
 ## 4. 라벨과 Jira 연동
 
