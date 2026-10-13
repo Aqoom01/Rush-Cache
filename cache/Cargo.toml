@@ -3,6 +3,9 @@ members = [
     "crates/common",
     "crates/kv-store",
     "crates/simulation",
+    "crates/workload",
+    "crates/metrics",
+    "crates/experiment-runner",
 ]
 
 resolver = "3"

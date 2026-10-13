@@ -6,7 +6,7 @@
 
 | 브랜치 | 용도 |
 |---|---|
-| `main` | 안정적인 결과물 관리 |
+| `master` | 검증된 결과물 및 마일스톤 관리 |
 | `develop` | 개발 코드 통합 |
 | `feat/*` | 새로운 기능 구현 |
 | `fix/*` | 버그 수정 |
@@ -17,8 +17,8 @@
 | `experiment/*` | 연구 실험 및 벤치마크 |
 
 - 기본 흐름: `develop` → 작업 브랜치 → MR → `develop`
-- `main`은 마일스톤 또는 주요 버전을 확정할 때 `develop`에서 MR로 병합한다.
-- `main`과 `develop`에는 직접 push하지 않는다.
+- `master`는 마일스톤을 완료할 때 `develop`에서 MR로 병합한다.
+- `master`와 `develop`에는 직접 push하지 않는다.
 - 작업 브랜치는 Jira Task 단위로, 최신 `develop`에서 만든다.
 - `release/*`, `hotfix/*`는 현재 사용하지 않는다.
 
