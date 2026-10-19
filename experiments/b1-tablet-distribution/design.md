@@ -1,6 +1,6 @@
 # B1 설계
 
-상태: 초안. 아래 클래스와 실험은 아직 구현하지 않았다.
+상태: 공통 타입·인터페이스·`fixed-slot`까지 구현(§7). 소유권 판정, 전파, 나머지 variant, §6 실험은 미구현.
 
 ## 1. 목표와 범위
 
@@ -40,7 +40,8 @@ B1은 **표를 만들고 바꾸는 연산을 제공**한다. 무엇을 옮기고
 | `TabletRange` | 해시 구간 `[start, end)`. 부호 없는 64비트. `end == 0`은 2^64 | `fixed-slot`은 균등 구간, `hash-range-tablet`은 가변 구간, `ring-vnode`는 토큰 사이 구간 |
 | `Tablet` | `id`, `range`, `owner`(NodeId), `epoch`(OwnershipEpoch) | 필드 4개. 이동 상태와 부하 통계는 표에 넣지 않는다(각각 B3 노드 로컬, B2 별도 구조) |
 | `RoutingTable` | 공간을 빈틈·겹침 없이 덮는 `Tablet` 목록 + `RoutingVersion` | 불변 객체. 변경 연산은 새 표를 돌려주고 version+1 |
-| `Change` | `(TabletId unit, NodeId from, NodeId to)` | B3가 실행할 이동 계획 한 건 |
+| `Change` | `(TabletId unit, NodeId from, NodeId to)` | B3가 실행할 이동 계획 한 건. `RoutingTable.apply(Change)`는 현재 주인이 `from`인지 확인한 뒤 반영한다 |
+| `Plan` | `(RoutingTable prepared, List<Change> moves)` | 노드 증감 계획. `prepared`는 split·merge처럼 주인이 안 바뀌는 변경만 반영한 표(데이터 이동 없음), `moves`는 그 위에서 실행할 이동. 링(vnode) 방식은 새 토큰 위치에서 구간을 나눠야 하므로 `prepared`가 입력과 다르다 |
 
 **key hash 범위를 쓰는 이유.** 캐시 KV는 범위 조회가 선택 사항이고, hash 범위는 key 분포와 무관하게 균등하다(사전 실험: Tablet 128개로 key 100만 개를 나눴을 때 max/mean 1.006). key 순서 범위는 접두사가 같은 key와 순차 key가 한 Tablet에 몰린다.
 
@@ -52,17 +53,19 @@ variant가 구현하는 계약이다. B2·B3는 이 인터페이스만 호출하
 
 ```
 name()                                    실험 결과의 variant 값
-locate(table, keyHash)        → Tablet    이 key가 속한 Tablet(owner 포함)
-initial(nodes)                → RoutingTable
-onNodeAdded(table, node)      → List<Change>   새 노드가 받을 Tablet. 실행은 B3
-onNodeRemoved(table, node)    → List<Change>   떠나는 노드의 Tablet을 받을 노드
+initial(nodes)                → RoutingTable   첫 표. 버전 1, epoch 1
+onNodeAdded(table, node)      → Plan      새 노드가 받을 Tablet. 이동 실행은 B3
+onNodeRemoved(table, node)    → Plan      떠나는 노드의 Tablet을 받을 노드
 supportsSplit()               → boolean   false면 B2는 이 variant를 split 실험에서 제외
-split(table, id, at)          → Optional<RoutingTable>
-merge(table, a, b)            → Optional<RoutingTable>
-metadataBytes(table)          → int       표를 직렬화했을 때 크기
+supportsMove()                → boolean   false면 노드 증감 외의 임의 재배치를 하지 않는다 (ring-vnode)
+metadataBytes(table)          → int       표를 이 variant의 형식으로 직렬화했을 때 크기
 ```
 
-- `locate`의 입력은 key가 아니라 **64비트 해시값**이다. 세 variant 모두 해시 공간 위에서 동작하므로 key 바이트열을 받을 이유가 없다.
+- **조회와 split/merge는 인터페이스에 없다.** 세 variant 모두 "해시 공간을 구간으로 덮는 표"로 표현되므로 `RoutingTable.lookup(hash)`,
+  `withSplit(id, at)`, `withMerge(a, b)`, `withOwner`, `apply(Change)`를 variant와 무관하게 공통으로 쓴다. variant는 표를 처음 만드는 규칙과
+  노드 증감 시 계획만 정한다. 그 결과 B2·B3가 만지는 타입은 `RoutingTable`, `Tablet`, `Change`, `Plan`뿐이고 `DistributionScheme`은
+  Controller와 실험 코드만 쓴다.
+- `lookup`의 입력은 key가 아니라 **64비트 해시값**이다. 세 variant 모두 해시 공간 위에서 동작하므로 key 바이트열을 받을 이유가 없다.
 - Tablet 식별자는 variant마다 다른 타입을 두지 않고 **`TabletId` 하나로 통일**한다(슬롯 번호, 토큰 번호도 `TabletId`). B2·B3 코드가 variant마다 갈라지지 않게 하기 위해서다.
 - `TabletId`는 Controller만 발급한다. split 자식의 id가 노드마다 다르게 매겨지는 일을 막는다.
 - 인터페이스를 지금 두는 이유: 구현이 처음부터 셋이라 근거 없는 추상화가 아니다. 사전 실험의 `Partitioner`(5종 구현)를 정리한 것이다.
@@ -74,7 +77,7 @@ metadataBytes(table)          → int       표를 직렬화했을 때 크기
 | 파라미터 | 기본값 | 근거 |
 |---|---|---|
 | 슬롯 수 S | 4096 | Redis 16384는 노드 1000대 가정(하트비트 비트맵 2KB). 노드 ≤ 10대면 4096으로 노드당 400개 이상이라 정수 나눗셈 편차가 0.3% 이하. 1024·16384와 비교 실험(§6) |
-| 해시 | 공통 `KeyHash` mod S | Redis는 CRC16. variant 간 공정 비교를 위해 해시는 공통으로 고정 |
+| 슬롯 번호 | 공통 `KeyHash`의 균등 구간 번호 (`hash / (2^64 / S)`) | Redis는 `CRC16(key) mod 16384`. 상위 비트를 쓰면 분포는 같고 `RoutingTable.lookup`을 그대로 쓸 수 있다. 해시 자체는 variant 간 공정 비교를 위해 공통으로 고정 |
 | 초기 배치 | 슬롯 i → 노드 (i mod n) | 최대·최소 차이 1 |
 | 노드 추가 | 가장 많이 가진 노드에서 하나씩, 새 노드가 S/(n+1)에 닿을 때까지 | 이동 수가 이론 최소 S/(n+1). 기존 노드끼리는 이동 없음 |
 | 노드 제거 | 떠나는 노드의 슬롯을 가장 적게 가진 노드에 하나씩 | 이동 수 = 그 노드의 슬롯 수 |
@@ -137,17 +140,20 @@ cache-core/src/main/java/io/openkache/core/tablet/
 ├── KeyHash.java                   Bytes → 64비트 해시 (MurmurHash3, seed 고정)
 ├── TabletRange.java               [start, end) 해시 구간
 ├── Tablet.java                    id, range, owner, epoch
-├── RoutingTable.java              불변 표. withOwner / withSplit / withMerge / lookup
+├── RoutingTable.java              불변 표. lookup / withOwner / apply / withSplit / withMerge
 ├── Change.java                    (unit, from, to)
+├── Plan.java                      (prepared, moves)
 ├── DistributionScheme.java        §4 인터페이스
 └── slot/
     └── FixedSlotScheme.java       fixed-slot
 (이후) range/HashRangeScheme.java, ring/RingScheme.java, OwnershipCheck.java, Controller
 
 cache-core/src/test/java/io/openkache/core/tablet/
-├── RoutingTableInvariantTest.java      §5 불변식을 모든 variant에 적용
-├── FixedSlotSchemeTest.java
-└── DistributionScenarioTest.java       §6 시나리오 S1~S5 (key 생성, Zipf 포함)
+├── KeyHashTest.java, TabletRangeTest.java
+├── RoutingTableTest.java               §5 불변식 1~4·7 (표 자체)
+├── DistributionSchemeContract.java     §5 불변식 5·6 + 인터페이스 계약. 모든 variant 테스트가 상속
+├── slot/FixedSlotSchemeTest.java       계약 상속 + fixed-slot 고유 규칙
+└── (이후) DistributionScenarioTest.java   §6 시나리오 S1~S5 (key 생성, Zipf 포함)
 
 experiments/b1-tablet-distribution/
 ├── README.md                      variant 목록
@@ -186,3 +192,4 @@ experiments/b1-tablet-distribution/
 | 표 전파 | Controller push + 응답 피기백 + `MOVED`. variant마다 다르게 하지 않음 | §1, §4.1 |
 | 이동 중 라우팅 | `ASK` 없음 | §4.1 |
 | `fixed-slot` S 기본값 | 4096. 1024·16384와 비교 | §4.1, §6 |
+| 인터페이스 모양 | 조회·split/merge·이동 반영은 `RoutingTable` 공통. variant는 `initial`, `onNodeAdded/Removed → Plan`, `supportsSplit/Move`, `metadataBytes`만 | §4 |
