@@ -1,6 +1,6 @@
 # B2 설계
 
-상태: 초안. 아래 클래스와 실험은 아직 구현하지 않았다.
+상태: Baseline(`midpoint-split`)과 공통 입력·출력 타입, 불변식 테스트를 구현했다. `split-for-heat`, 분할 시작 단계(`SplitTrigger`), 시나리오 실험은 아직 구현하지 않았다. 구현 현황은 §7을 따른다.
 
 ## 1. 목표와 범위
 
@@ -180,20 +180,27 @@ Tablet 하나에 key 1,000개를 두고, window당 요청 2,000건(분할 시작
 ```
 cache-core/src/main/java/io/openkache/core/balance/
 ├── package-info.java              (있음)
-├── KeyRange.java                  B2 내부 최소 타입. B1 Tablet 구조 확정 후 교체
-├── TabletLoad.java                관찰 window의 key별 요청 수, 이전 최대 key
+├── KeyRange.java                  [구현] B2 내부 최소 타입, key 순서(부호 없는 바이트 사전순). B1 Tablet 구조 확정 후 교체
+├── KeyLoad.java                   [구현] key 하나의 window 내 읽기·쓰기 수
+├── TabletLoad.java                [구현] 관찰 window의 key별 요청 수. 이전 최대 key는 split-for-heat 구현 때 추가
 └── split/
+    ├── SplitPolicy.java           [구현] variant(), decide(TabletLoad) → SplitDecision
+    ├── SplitDecision.java         [구현] Split(splitKey) | NoSplit(reason)
+    ├── NoSplitReason.java         [구현] 지금은 NO_VALID_POINT만. 나머지 사유는 해당 판단을 구현할 때 추가
+    ├── MidpointSplitPolicy.java   [구현] Baseline
     ├── SplitTrigger.java          두 정책 공통: 분할 시작 조건(T, K)과 분할 후 유예 (§4.1)
-    ├── SplitPolicy.java           decide(TabletLoad) → SplitDecision
-    ├── SplitDecision.java         Split(splitKey) | NoSplit(reason)
-    ├── MidpointSplitPolicy.java   Baseline
     └── HeatSplitPolicy.java       Split-for-Heat
 (이후) merge/, placement/
 
-cache-core/src/test/java/io/openkache/core/balance/split/
-├── SplitInvariantTest.java        §5 불변식을 모든 정책에 적용
-├── HeatSplitPolicyTest.java
-└── SplitScenarioTest.java         §6 시나리오 S1-S5 (요청 패턴 생성 포함)
+cache-core/src/test/java/io/openkache/core/balance/
+├── KeyRangeTest.java              [구현] key 순서, 범위 포함, 분할 가능 위치
+├── TabletLoadTest.java            [구현] 입력 검증(정렬, 중복, 범위 밖, 음수)
+└── split/
+    ├── Loads.java                 [구현] 테스트 입력 생성 도우미
+    ├── SplitInvariantTest.java    [구현] §5 불변식을 모든 정책에 적용. 새 정책은 POLICIES에 추가
+    ├── MidpointSplitPolicyTest.java [구현]
+    ├── HeatSplitPolicyTest.java
+    └── SplitScenarioTest.java     §6 시나리오 S1-S5 (요청 패턴 생성 포함)
 
 experiments/b2-load-balancing/
 ├── README.md                      variant 목록
@@ -215,6 +222,7 @@ experiments/b2-load-balancing/
 | 항목 | 결정할 사람 | 기한 |
 |---|---|---|
 | Tablet이 key 범위인지 hash 범위인지 | B1 (B2 의견 전달) | 2주 차 초 |
+| key 비교 규칙과 Key Range 타입의 공통화 여부·위치 (`core.model`, `core.tablet`) | B1·B3와 협의 | B1 Tablet 구조 확정 시 |
 | 실험 결과 JSON 형식 | Metrics(본인), 팀 합의 | 결과 Schema 합의 후 |
 | Hot Range, 순차 패턴의 Workload 공통화 | A2 | 필요성 확인 후 |
 | Cold Merge, 재배치의 참고 기법 | B2 | Split 1단계 후 |
@@ -227,3 +235,4 @@ experiments/b2-load-balancing/
 | 분할 후 유예 | 3 window. 두 정책 공통 | §4.1 |
 | 효과 판단 기준 θ | 0.8. 민감도는 0.6/0.7/0.8/0.9로 확인 | §4.3, §6 |
 | 순차 쓰기 처리 | 별도 규칙 없이, tail 요청을 오른쪽 몫으로 예상해 θ로 판단 | §4.3 |
+| key 비교 규칙 | 부호 없는 바이트 사전순. B2 전용 `KeyRange.ORDER`에 두고 공통 타입(`Bytes`)은 바꾸지 않는다. B1과 합의되면 그 결과로 옮긴다 | §7 |

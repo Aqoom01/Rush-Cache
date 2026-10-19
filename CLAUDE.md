@@ -24,7 +24,8 @@ OpenStd(OpenKache)는 고성능 NVMe SSD 기반 분산 캐시의 가용성과 �
 - **`cache-core`** (`io.openkache.core`): 순수 Java 라이브러리. production 의존성은 JDK 표준 API만 허용하며 `verifyNoProductionDependencies` task가 `check`에서 검사한다.
   - `api`, `model`, `spi`, `runtime`: 공통 계약 구현 완료 (`CacheEngine`, `Command`, `Result`, `Bytes`, ID 타입, `Transport`, `MetricsSink`, `TimeSource`, `EpochStore`, `OwnerWorker` 등)
   - `kv`: `KvEngine`이 단일 노드 인메모리 GET/SET/DELETE를 구현한다(`CacheEngine` 구현체). Key마다 고정 worker로 샤딩하고 그 worker thread에서만 저장소를 바꾼다. TTL·eviction·영속화·EXISTS/COUNT·복제·라우팅은 미구현.
-  - `replication`, `failure`, `tablet`, `balance`, `migration`: 연구 패키지. `package-info.java`로 책임만 적혀 있고 **미구현**이다.
+  - `balance`: B2. Split 정책의 공통 입출력 타입(`KeyRange`, `TabletLoad`, `SplitPolicy`, `SplitDecision`)과 Baseline `MidpointSplitPolicy`만 구현했다. `split-for-heat`, 분할 시작 조건, Merge, 재배치는 미구현. 설계는 `experiments/b2-load-balancing/design.md`를 따른다.
+  - `replication`, `failure`, `tablet`, `migration`: 연구 패키지. `package-info.java`로 책임만 적혀 있고 **미구현**이다.
 - **`cache-server`** (`io.openkache.server`): Netty 실행 애플리케이션. 설정 검증, client·peer listener, TCP frame codec, PING, `/metrics`(Prometheus), GET/SET/DELETE의 `KvEngine` 연결까지 구현했다. peer 프로토콜(복제·장애 감지·마이그레이션 메시지)은 PING 외에는 `NOT_IMPLEMENTED`로 응답한다.
 - **`experiment-runner`** (`io.openkache.runner`): Workload Generator + Experiment Runner 최소 구현. `cache-core`에만 의존하고(production), Netty 없이 `protocol-v1`을 직접 구현한 TCP client로 단일 노드 `cache-server`에 GET/SET/DELETE를 보낸다. warm-up/측정 구간 분리, HIT/MISS/실패 분리 집계, reservoir 기반 p50/p99, JSON(원본)+CSV(요약) 결과 기록까지 구현했다. 3-node, 장애 주입, Zipfian 분포는 미구현. 통합 테스트에서만(test 전용 의존성) `cache-server`를 띄워 end-to-end로 검증한다.
 - 의존 방향은 `cache-server → cache-core`, `experiment-runner → cache-core`(+ 테스트 전용 `cache-server`)만 허용한다. Netty·Prometheus·logging 구현은 server에만 둔다. 연구별 Gradle 모듈은 만들지 않는다(`experiment-runner`는 연구가 아닌 공통 모듈이다).
