@@ -48,7 +48,7 @@ Conventional Commits 형식을 쓴다.
 | `refactor` | 동작 변화 없는 구조 개선 | `refactor: 메시지 처리 로직 분리` |
 | `test` | 테스트 추가·수정 | `test: KV Store 단위 테스트 추가` |
 | `docs` | 문서 | `docs: Git 협업 컨벤션 작성` |
-| `chore` | 환경 설정, 의존성, CI | `chore: Cargo Workspace 설정` |
+| `chore` | 환경 설정, 의존성, CI | `chore: Gradle 빌드 설정` |
 | `experiment` | 연구 실험, 벤치마크 | `experiment: 복제 지연 시간 측정 추가` |
 
 - 하나의 커밋에는 하나의 논리적인 변경을 담는다.
@@ -60,7 +60,7 @@ Conventional Commits 형식을 쓴다.
 1. **Jira Task 생성:** Jira에서 Task를 만들고 이슈 키를 확인한다(예: `S15P31D111-12`).
 2. **develop 최신화**
 3. **작업 브랜치 생성**
-4. **개발 및 Commit:** MR 전에 `cache/`에서 fmt, clippy, test를 확인한다.
+4. **개발 및 Commit:** MR 전에 `./gradlew build`로 컴파일과 테스트를 확인한다.
 5. **Push**
 6. **MR 생성 및 리뷰:** [MR 컨벤션](mr-convention.md)에 따라 MR을 만들고 리뷰를 받는다.
 7. **develop Merge:** 승인 후 GitLab에서 Merge하고 로컬 브랜치를 정리한다.
@@ -77,11 +77,7 @@ git pull origin develop
 git switch -c feat/kv-store
 
 # 4. 개발 및 Commit
-cd cache
-cargo fmt --all
-cargo clippy --workspace --all-targets -- -D warnings
-cargo test --workspace
-cd ..
+./gradlew build
 git add .
 git commit -m "feat: KV Store GET/SET 구현"
 
