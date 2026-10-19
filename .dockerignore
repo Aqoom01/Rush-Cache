@@ -1,0 +1,13 @@
+# Docker build context에서 제외 (Gradle 산출물, Git 메타데이터, 빌드에 필요 없는 디렉터리)
+.git
+.gradle
+.claude
+**/build
+monitoring
+experiments
+docs
+# jdtls(Eclipse)가 생성하는 IDE 메타데이터
+**/.project
+**/.classpath
+**/.settings
+**/bin

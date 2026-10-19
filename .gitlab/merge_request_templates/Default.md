@@ -21,9 +21,7 @@
 
 ## 체크리스트
 
-- [ ] `cargo fmt --all -- --check` 통과
-- [ ] `cargo clippy --workspace --all-targets -- -D warnings` 통과
-- [ ] `cargo test --workspace` 통과
+- [ ] `./gradlew build` 통과 (컴파일, 테스트, cache-core 의존성 검사)
 - [ ] 공통 인터페이스 변경 시 영향받는 담당자 리뷰 요청
 
 ## 관련 이슈
