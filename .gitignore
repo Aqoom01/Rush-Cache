@@ -18,6 +18,9 @@ bin/
 .env
 .env.*
 
+# Codex
+codex/
+
 # Gradle
 .gradle/
 build/
