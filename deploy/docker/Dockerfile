@@ -8,6 +8,7 @@ COPY gradlew settings.gradle.kts build.gradle.kts gradle.properties ./
 COPY gradle ./gradle
 COPY cache-core ./cache-core
 COPY cache-server ./cache-server
+
 # settings.gradle.kts가 include하므로 이미지에는 넣지 않더라도 빌드 단계에 디렉터리가 있어야 한다.
 COPY experiment-runner ./experiment-runner
 RUN ./gradlew --no-daemon :cache-server:installDist
@@ -18,6 +19,7 @@ WORKDIR /app
 COPY --from=build /src/cache-server/build/install/openkache-server ./
 COPY deploy/docker/server.properties ./config/server.properties
 USER openkache
+
 # 7000 client, 7001 peer, 9091 /metrics
 EXPOSE 7000 7001 9091
 ENTRYPOINT ["/app/bin/openkache-server"]
