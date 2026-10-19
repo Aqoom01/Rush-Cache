@@ -10,6 +10,7 @@ bin/
 
 # Claude Code 개인 설정
 .claude/
+CLAUDE.local.md
 
 # OS
 .DS_Store
