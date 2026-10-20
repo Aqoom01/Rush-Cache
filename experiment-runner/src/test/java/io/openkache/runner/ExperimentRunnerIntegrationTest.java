@@ -56,7 +56,12 @@ class ExperimentRunnerIntegrationTest {
     void runsBaselineExperimentAgainstRealServerAndWritesResults() throws Exception {
         RunnerConfig config = runnerConfig(20, 100, 4);
 
-        ExperimentResult result = new ExperimentRunner(config).run();
+        RunnerInvocation invocation =
+                new RunnerInvocation(
+                        "openkache-experiment-runner",
+                        "experiments/runner-it.properties",
+                        List.of("experiments/runner-it.properties"));
+        ExperimentResult result = new ExperimentRunner(config, 1, invocation).run();
 
         assertEquals(100, result.measuredRequests());
         long totalOutcomes = result.outcomeCounts().values().stream().mapToLong(Long::longValue).sum();
@@ -76,6 +81,10 @@ class ExperimentRunnerIntegrationTest {
         assertTrue(json.contains("\"measuredRequests\": 100"));
         assertTrue(json.contains("\"resultSchemaVersion\": \"experiment-result-v1\""));
         assertTrue(json.contains("\"faultScenario\": \"none\""));
+        assertTrue(json.contains("\"runNumber\": 1"));
+        assertTrue(json.contains("\"configSnapshot\""));
+        assertTrue(json.contains("\"command\": \"openkache-experiment-runner\""));
+        assertTrue(json.contains("\"configPath\": \"experiments/runner-it.properties\""));
 
         List<String> csvLines = Files.readAllLines(csvFile);
         assertEquals(2, csvLines.size()); // header + 1행

@@ -8,12 +8,15 @@ import java.util.ArrayList;
 import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Random;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 
 /**
  * 단일 노드 baseline 실험을 처음부터 끝까지 실행한다: 연결 확인 → warm-up → 측정 → {@link ExperimentResult} 구성.
@@ -34,9 +37,28 @@ final class ExperimentRunner {
     private static final long SOCKET_TIMEOUT_MARGIN_MS = 500;
 
     private final RunnerConfig config;
+    private final int runNumber;
+    private final Optional<RunnerInvocation> invocation;
 
     ExperimentRunner(RunnerConfig config) {
+        this(config, 1, Optional.empty());
+    }
+
+    ExperimentRunner(RunnerConfig config, int runNumber) {
+        this(config, runNumber, Optional.empty());
+    }
+
+    ExperimentRunner(RunnerConfig config, int runNumber, RunnerInvocation invocation) {
+        this(config, runNumber, Optional.of(invocation));
+    }
+
+    private ExperimentRunner(RunnerConfig config, int runNumber, Optional<RunnerInvocation> invocation) {
         this.config = config;
+        if (runNumber < 1 || runNumber > config.repeatCount()) {
+            throw new IllegalArgumentException("runNumber must be between 1 and repeatCount: " + runNumber);
+        }
+        this.runNumber = runNumber;
+        this.invocation = invocation;
     }
 
     ExperimentResult run() throws IOException, InterruptedException {
@@ -68,66 +90,145 @@ final class ExperimentRunner {
         }
         int concurrency = config.concurrency();
         ExecutorService pool = Executors.newFixedThreadPool(concurrency);
+        PhaseControl control = new PhaseControl();
+        List<Future<?>> futures = new ArrayList<>();
         try {
-            List<Future<?>> futures = new ArrayList<>();
             long share = totalRequests / concurrency;
             long remainder = totalRequests % concurrency;
             for (int i = 0; i < concurrency; i++) {
                 long threadRequests = share + (i < remainder ? 1 : 0);
                 long threadSeed = config.seed() + i;
                 int threadIndex = i;
-                futures.add(pool.submit(() -> runOnThread(threadIndex, threadRequests, threadSeed, accumulator)));
+                futures.add(
+                        pool.submit(
+                                () ->
+                                        runOnThread(
+                                                threadIndex,
+                                                threadRequests,
+                                                threadSeed,
+                                                accumulator,
+                                                control)));
             }
             for (Future<?> future : futures) {
                 future.get();
             }
         } catch (ExecutionException e) {
+            stopWorkers(pool, futures, control);
             throw new RuntimeException("worker thread failed", e.getCause());
+        } catch (InterruptedException e) {
+            stopWorkers(pool, futures, control);
+            throw e;
         } finally {
-            pool.shutdown();
+            if (!pool.isShutdown()) {
+                pool.shutdown();
+            }
+            awaitWorkers(pool);
         }
     }
 
-    private void runOnThread(int threadIndex, long requestCount, long threadSeed, ResultAccumulator accumulator) {
+    private void runOnThread(
+            int threadIndex,
+            long requestCount,
+            long threadSeed,
+            ResultAccumulator accumulator,
+            PhaseControl control) {
         WorkloadGenerator generator = new WorkloadGenerator(config, new Random(threadSeed));
         long clientId = 1000 + threadIndex;
         long operationId = 0;
         WireClient client = null;
-        for (long i = 0; i < requestCount; i++) {
-            Command command = generator.next();
-            operationId++;
-            if (client == null) {
+        try {
+            for (long i = 0; i < requestCount && !control.stopRequested(); i++) {
+                if (Thread.currentThread().isInterrupted()) {
+                    return;
+                }
+                Command command = generator.next();
+                operationId++;
+                if (client == null) {
+                    try {
+                        client =
+                                new WireClient(
+                                        config.targetHost(),
+                                        config.targetPort(),
+                                        config.requestTimeoutMs() + SOCKET_TIMEOUT_MARGIN_MS);
+                        control.register(client);
+                    } catch (IOException e) {
+                        if (accumulator != null && !control.stopRequested()) {
+                            accumulator.recordFailure(Outcome.CLIENT_FAILURE);
+                        }
+                        continue;
+                    }
+                }
+                long startNanos = System.nanoTime();
                 try {
-                    client =
-                            new WireClient(
-                                    config.targetHost(),
-                                    config.targetPort(),
-                                    config.requestTimeoutMs() + SOCKET_TIMEOUT_MARGIN_MS);
-                } catch (IOException e) {
+                    WireClient.Response response =
+                            client.send(command, clientId, operationId, 0, config.requestTimeoutMs());
+                    long elapsedNanos = System.nanoTime() - startNanos;
                     if (accumulator != null) {
+                        accumulator.recordCompleted(outcomeOf(command, response.status()), elapsedNanos);
+                    }
+                } catch (IOException e) {
+                    if (accumulator != null && !control.stopRequested()) {
                         accumulator.recordFailure(Outcome.CLIENT_FAILURE);
                     }
-                    continue;
+                    client.close();
+                    control.unregister(client);
+                    client = null;
                 }
             }
-            long startNanos = System.nanoTime();
-            try {
-                WireClient.Response response =
-                        client.send(command, clientId, operationId, 0, config.requestTimeoutMs());
-                long elapsedNanos = System.nanoTime() - startNanos;
-                if (accumulator != null) {
-                    accumulator.recordCompleted(outcomeOf(command, response.status()), elapsedNanos);
-                }
-            } catch (IOException e) {
-                if (accumulator != null) {
-                    accumulator.recordFailure(Outcome.CLIENT_FAILURE);
-                }
+        } finally {
+            if (client != null) {
+                control.unregister(client);
                 client.close();
-                client = null;
             }
         }
-        if (client != null) {
-            client.close();
+    }
+
+    private static void stopWorkers(ExecutorService pool, List<Future<?>> futures, PhaseControl control) {
+        control.stop();
+        for (Future<?> future : futures) {
+            future.cancel(true);
+        }
+        pool.shutdownNow();
+    }
+
+    private static void awaitWorkers(ExecutorService pool) throws InterruptedException {
+        boolean interrupted = false;
+        while (!pool.isTerminated()) {
+            try {
+                pool.awaitTermination(1, TimeUnit.DAYS);
+            } catch (InterruptedException e) {
+                interrupted = true;
+            }
+        }
+        if (interrupted) {
+            Thread.currentThread().interrupt();
+        }
+    }
+
+    private static final class PhaseControl {
+        private final java.util.Set<WireClient> clients = ConcurrentHashMap.newKeySet();
+        private volatile boolean stopRequested;
+
+        boolean stopRequested() {
+            return stopRequested;
+        }
+
+        void register(WireClient client) {
+            clients.add(client);
+            if (stopRequested) {
+                client.close();
+            }
+        }
+
+        void unregister(WireClient client) {
+            clients.remove(client);
+        }
+
+        void stop() {
+            stopRequested = true;
+            for (WireClient client : clients) {
+                client.close();
+            }
         }
     }
 
@@ -162,6 +263,10 @@ final class ExperimentRunner {
                 config.variant(),
                 config.scenario(),
                 config.seed(),
+                runNumber,
+                config.repeatCount(),
+                config.configSnapshot(),
+                invocation,
                 1, // nodeCount: 단일 노드 baseline
                 config.concurrency(),
                 config.serverWorkerCountHint(),
