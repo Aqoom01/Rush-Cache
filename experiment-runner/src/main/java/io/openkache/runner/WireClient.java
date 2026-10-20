@@ -8,13 +8,15 @@ import java.io.DataOutputStream;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.net.Socket;
+import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 
 /**
  * {@code docs/protocol-v1.md} 형식의 TCP client. 한 번에 요청 하나만 보내고 응답을 기다리는 동기(closed-loop)
  * 클라이언트다. pipelining이나 재시도는 하지 않는다.
  *
- * <p>thread 하나가 소유하며 공유하지 않는다. {@link Socket}은 thread-safe하지 않다.
+ * <p>요청 I/O는 thread 하나가 소유한다. 실험 취소 시에는 다른 thread가 {@link #close()}로 socket을 닫아
+ * block된 read를 해제할 수 있다.
  */
 final class WireClient implements AutoCloseable {
 
@@ -27,7 +29,9 @@ final class WireClient implements AutoCloseable {
     private long nextRequestId = 1;
 
     WireClient(String host, int port, long soTimeoutMs) throws IOException {
-        this.socket = new Socket(host, port);
+        this.socket = new Socket();
+        this.socket.connect(
+                new InetSocketAddress(host, port), (int) Math.min(soTimeoutMs, Integer.MAX_VALUE));
         this.socket.setSoTimeout((int) Math.min(soTimeoutMs, Integer.MAX_VALUE));
         this.socket.setTcpNoDelay(true);
         this.in = new DataInputStream(socket.getInputStream());

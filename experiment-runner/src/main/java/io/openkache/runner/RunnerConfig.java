@@ -8,8 +8,10 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
+import java.util.TreeMap;
 
 /**
  * 검증을 마친 Runner 설정. 불변이다.
@@ -35,6 +37,10 @@ import java.util.Set;
  * @param warmupRequests thread당이 아닌 전체 warm-up 요청 수. 결과 집계에 포함하지 않는다
  * @param measuredRequests thread당이 아닌 전체 측정 요청 수. 결과 집계에 포함한다
  * @param requestTimeoutMs 요청마다 wire로 보내는 상대 timeout(ms)이자 소켓 read timeout
+ * @param repeatCount 같은 설정으로 실행할 횟수. 모든 반복은 같은 seed로 같은 요청열을 사용한다
+ * @param runTimeoutMs 반복 한 건의 실행 제한 시간(ms)
+ * @param executionTimeoutMs 반복을 모두 포함한 전체 실험 실행 제한 시간(ms)
+ * @param configSnapshot 결과 파일에 남길 전체 설정값. 재현을 위해 key 순서가 고정돼 있다
  * @param resultsDir 결과 JSON/CSV를 쓸 디렉터리
  * @param serverWorkerCountHint 서버를 띄울 때 쓴 worker 수. Runner가 직접 측정하지 않으므로 운영자가 적어 넣는 참고값이다.
  *     기록하지 않으면 -1(미측정)
@@ -60,6 +66,10 @@ public record RunnerConfig(
         long warmupRequests,
         long measuredRequests,
         long requestTimeoutMs,
+        int repeatCount,
+        long runTimeoutMs,
+        long executionTimeoutMs,
+        Map<String, String> configSnapshot,
         Path resultsDir,
         int serverWorkerCountHint,
         String serverJvmOptsNote) {
@@ -84,6 +94,9 @@ public record RunnerConfig(
                     "warmup.requests",
                     "measured.requests",
                     "request.timeout.ms",
+                    "repeat.count",
+                    "run.timeout.ms",
+                    "execution.timeout.ms",
                     "results.dir",
                     "server.workers.hint",
                     "server.jvm.opts.note");
@@ -141,12 +154,20 @@ public record RunnerConfig(
         long warmupRequests = p.longValue("warmup.requests", 0, Long.MAX_VALUE);
         long measuredRequests = p.longValue("measured.requests", 1, Long.MAX_VALUE);
         long requestTimeoutMs = p.longValue("request.timeout.ms", 1, ONE_HOUR_MS);
+        int repeatCount = (int) p.optionalLongValue("repeat.count", "1", 1, 10_000);
+        long runTimeoutMs = p.optionalLongValue("run.timeout.ms", "600000", 1, ONE_HOUR_MS);
+        long executionTimeoutMs = p.optionalLongValue("execution.timeout.ms", "3600000", 1, ONE_HOUR_MS);
         String resultsDirText = p.text("results.dir");
         int serverWorkerCountHint = (int) p.optionalLongValue("server.workers.hint", "-1", -1, 10_000);
         String serverJvmOptsNote = p.optionalText("server.jvm.opts.note", "");
 
         if (!p.errors.isEmpty()) {
             throw new ConfigException("invalid config: " + String.join("; ", p.errors));
+        }
+
+        Map<String, String> configSnapshot = new TreeMap<>();
+        for (String key : properties.stringPropertyNames()) {
+            configSnapshot.put(key, properties.getProperty(key));
         }
 
         return new RunnerConfig(
@@ -168,6 +189,10 @@ public record RunnerConfig(
                 warmupRequests,
                 measuredRequests,
                 requestTimeoutMs,
+                repeatCount,
+                runTimeoutMs,
+                executionTimeoutMs,
+                Map.copyOf(configSnapshot),
                 Path.of(resultsDirText),
                 serverWorkerCountHint,
                 serverJvmOptsNote);

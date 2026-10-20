@@ -44,6 +44,10 @@ class RunnerConfigTest {
         assertEquals(42, config.seed());
         assertEquals(Distribution.UNIFORM, config.distribution());
         assertEquals(4, config.concurrency());
+        assertEquals(1, config.repeatCount());
+        assertEquals(600_000, config.runTimeoutMs());
+        assertEquals(3_600_000, config.executionTimeoutMs());
+        assertEquals("baseline", config.configSnapshot().get("study"));
         assertEquals(-1, config.serverWorkerCountHint()); // 적지 않으면 미측정
     }
 
@@ -91,5 +95,29 @@ class RunnerConfigTest {
         p.setProperty("server.workers.hint", "2");
 
         assertEquals(2, RunnerConfig.from(p).serverWorkerCountHint());
+    }
+
+    @Test
+    void acceptsRepeatCountWhenProvided() {
+        Properties p = valid();
+        p.setProperty("repeat.count", "3");
+
+        assertEquals(3, RunnerConfig.from(p).repeatCount());
+    }
+
+    @Test
+    void acceptsExecutionTimeoutWhenProvided() {
+        Properties p = valid();
+        p.setProperty("execution.timeout.ms", "5000");
+
+        assertEquals(5000, RunnerConfig.from(p).executionTimeoutMs());
+    }
+
+    @Test
+    void acceptsRunTimeoutWhenProvided() {
+        Properties p = valid();
+        p.setProperty("run.timeout.ms", "5000");
+
+        assertEquals(5000, RunnerConfig.from(p).runTimeoutMs());
     }
 }

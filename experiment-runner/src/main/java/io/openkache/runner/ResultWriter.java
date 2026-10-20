@@ -10,6 +10,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.TreeMap;
 
 /**
  * {@link ExperimentResult}를 JSON(실행 설정·결과의 원본)과 CSV(비교용 요약, 1행 append)로 기록한다.
@@ -63,7 +64,7 @@ final class ResultWriter {
         return String.join(
                 ",",
                 List.of(
-                        "executionId", "startedAtEpochMillis", "study", "variant", "scenario", "seed",
+                        "executionId", "startedAtEpochMillis", "study", "variant", "scenario", "seed", "runNumber", "repeatCount",
                         "nodeCount", "concurrency", "serverWorkerCountHint", "storageLayer",
                         "warmupRequests", "warmupElapsedNanos", "measuredRequests", "measuredElapsedNanos",
                         "throughputPerSecond", "p50Nanos", "p99Nanos", "latencySampleCount",
@@ -83,6 +84,8 @@ final class ResultWriter {
                         csvField(r.variant()),
                         csvField(r.scenario()),
                         Long.toString(r.seed()),
+                        Integer.toString(r.runNumber()),
+                        Integer.toString(r.repeatCount()),
                         Integer.toString(r.nodeCount()),
                         Integer.toString(r.concurrency()),
                         Integer.toString(r.serverWorkerCountHint()),
@@ -125,6 +128,10 @@ final class ResultWriter {
         entries.add(entry("variant", r.variant()));
         entries.add(entry("scenario", r.scenario()));
         entries.add(entry("seed", r.seed()));
+        entries.add(entry("runNumber", r.runNumber()));
+        entries.add(entry("repeatCount", r.repeatCount()));
+        entries.add(entryStringMap("configSnapshot", r.configSnapshot()));
+        entries.add(entryInvocation("invocation", r.invocation().orElse(null)));
         entries.add(entry("nodeCount", r.nodeCount()));
         entries.add(entry("concurrency", r.concurrency()));
         entries.add(
@@ -170,6 +177,32 @@ final class ResultWriter {
             quoted.add(quote(value));
         }
         return quote(key) + ": [" + String.join(", ", quoted) + "]";
+    }
+
+    private static String entryStringMap(String key, Map<String, String> values) {
+        List<String> entries = new ArrayList<>();
+        for (Map.Entry<String, String> entry : new TreeMap<>(values).entrySet()) {
+            entries.add(quote(entry.getKey()) + ": " + quote(entry.getValue()));
+        }
+        return quote(key) + ": {" + String.join(", ", entries) + "}";
+    }
+
+    private static String entryInvocation(String key, RunnerInvocation invocation) {
+        if (invocation == null) {
+            return quote(key) + ": null";
+        }
+        return quote(key)
+                + ": {"
+                + quote("command")
+                + ": "
+                + quote(invocation.command())
+                + ", "
+                + quote("configPath")
+                + ": "
+                + quote(invocation.configPath())
+                + ", "
+                + entryStringArray("arguments", invocation.arguments())
+                + "}";
     }
 
     private static String entry(String key, String value) {
