@@ -96,41 +96,52 @@ variant 구현은 모두 아래를 지켜야 하며, 단위 테스트로 검증�
 6. `onNodeAdded`의 `Change`는 `to`가 모두 새 노드다(기존 노드끼리 이동 없음). `onNodeRemoved`의 `Change`는 `from`이 모두 떠나는 노드다.
 7. `split`의 두 자식 범위는 부모 범위를 빈틈·겹침 없이 덮고, `merge`는 인접하고 owner가 같은 두 Tablet만 합친다.
 
-## 6. 첫 실험: variant 간 분배 특성 비교
+## 6. 분배 방식 비교 실험 (in-process)
+
+실행 방법·지표 정의·결과는 `distribution-comparison/`의 [README.md](distribution-comparison/README.md)와 [results.md](distribution-comparison/results.md). 1차(fixed-slot)는 2026-10-20에 실행했다.
 
 ### 질문
 
-고정 슬롯 분배는 노드 증감 시 얼마나 적게 옮기고, 균형은 얼마나 유지하며, 그 대가로 표가 얼마나 커지는가? 표가 없는 `ring-vnode`와 비교해 표를 두는 비용과 이득은 얼마인가?
+1. 단위 수 G(fixed-slot의 S)는 균형에 얼마나 영향을 주고, 어디서부터 효과가 사라지는가?
+2. 노드 증감 시 이동량은 이론 최소 1/(n+1)에 붙는가? 반복 증감에도 누적 손실이 없는가?
+3. 요청이 쏠릴 때, 단위를 통째로 옮기는 것만으로 도달할 수 있는 균형의 한계는 G에 따라 어떻게 달라지는가? (split이 필요한 영역과 분배로는 못 푸는 영역을 가른다)
+4. (variant가 늘면) 표를 두는 방식(fixed-slot, hash-range)과 두지 않는 방식(ring-vnode)의 균형·이동량·표 크기 차이는?
+
+### 동일 조건
+
+variant마다 잘게 자르는 손잡이가 다르므로(fixed-slot은 전체 S, hash-range는 노드당 T, ring은 노드당 V) **전체 단위 수 G**를 공통 변수로 두고 환산한다: S = G, T = V = G / 8 (기준 노드 8대). key·노드 ID·증감 순서·Zipf 요청열은 seed로 고정해 variant와 무관하게 같고, 지표는 `RoutingTable`의 공개 연산으로만 계산한다.
 
 ### 시나리오
 
-key 100만 개(길이 16바이트, seed 고정)를 노드 8대에 분배한다.
+| | 내용 | 변수 | 측정 | 가설 (사전 시뮬 근거) |
+|---|---|---|---|---|
+| S1 초기 균형 | 노드 8대, key K개 배치 | K ∈ {1만, 10만, 100만} × G ∈ {256, 1024, 4096, 16384} | 단위 수 max/mean(결정적), key 수 max/mean | 단위 수는 G/n 정수 나눗셈만큼. key 수는 K가 작을수록 나쁨 |
+| S2 노드 추가 | 8 → 9대 | G 4종 | 이동 key·단위 비율, 추가 후 균형, 기존 노드 간 이동 수 | ≈ 1/9, 기존 노드 간 0 |
+| S3 노드 제거 | 8 → 7대 | G 4종 | 이동 비율, 제거 후 균형 | ≈ 1/8 |
+| S4 연속 증감 | 1 → 16대 한 대씩, 다시 16 → 8 | G = 4096 | 누적 이동 비율 vs Σ 1/n, 매 단계 균형 | 누적 = 이론(여분 churn 0), 매 단계 max−min ≤ 1 |
+| S5 쏠림 한계 | 노드 8대, Zipf θ ∈ {0.9, 0.99, 1.2} 요청 100만 | G 4종 | 그대로 max/mean, 단위 이동 그리디 한계, 가장 뜨거운 단위·key 비중 | 그대로 ~1.7(θ=0.99, 실험 2: 1.73). 한계는 G 클수록 1.0에 접근, θ=1.2는 hot key 하나 때문에 ~1.5 바닥(실험 2: 1.516) |
+| 보조 | 표 크기(초기 / 추가 후), `lookup` ns | G 4종 | | 표 크기는 구간 수 × 20B, ns는 log G |
 
-| 시나리오 | 내용 | 예상 |
-|---|---|---|
-| S1 초기 균형 | 분배 직후 노드별 key 수 | `fixed-slot` max/mean ≈ 1.00. `ring-vnode`는 vnode 수에 따라 1.1~1.3 |
-| S2 노드 추가 | 8 → 9대. 이동한 key 비율, 추가 후 균형 | 이동 ≈ 1/9. `fixed-slot`은 기존 노드끼리 이동 0 |
-| S3 노드 제거 | 8 → 7대 | 이동 ≈ 1/8 |
-| S4 쏠림 | Zipf θ=0.99 요청 100만 건. 노드별 요청 수 max/mean | 초기 균형이 좋아도 요청은 쏠린다. 이것이 B2의 재배치가 필요한 근거 |
-| S5 S 민감도 | S ∈ {1024, 4096, 16384}로 S1~S3 반복 | S/노드 수가 클수록 균형이 좋고 표가 커진다. 4096이 충분한지 확인 |
+"가설"은 실행 전에 적은 것이고 결과가 다르면 그대로 기록한다.
 
-"예상"은 가설이다. 사전 시뮬레이션(연구 노트)의 수치와 다르면 그대로 기록한다.
+### 측정 정의
 
-### 측정
-
-| 지표 | 정의 | 이상적인 값 |
-|---|---|---|
-| 균형 | 노드별 key 수(또는 요청 수)의 max / mean | 1.0 |
-| 이동 비율 | 노드 증감 전후 owner가 바뀐 key 수 / 전체 key 수 | 추가 1/(n+1), 제거 1/n |
-| 메타데이터 | `metadataBytes(table)` | 작을수록 좋음. `ring-vnode`는 토큰 목록 크기 |
-| 조회 비용 | `locate` 1회의 나노초(JDK `System.nanoTime`, 100만 회 평균) | 작을수록 좋음 |
+- 단위 수 max/mean: `ownedBy(n).size()` 노드별 최대 / (G/n)
+- key 수 max/mean: key마다 `lookup(KeyHash.of(key)).owner()` 집계, 최대 / (K/n)
+- 이동 비율: 전·후 표에서 owner가 바뀐 key 수 / K (단위 기준은 `Plan.moves().size()` / 단위 수)
+- 그리디 한계: 단위별 요청 수를 LPT(큰 것부터 가장 한가한 노드에)로 재배치했을 때의 max/mean. 표는 안 바꾼다. "어떤 재배치도 이 아래로는 못 간다". `supportsMove()`가 false인 variant는 참고값
+- Zipf: 순위 r의 확률 ∝ 1/r^θ, 누적분포 이진 탐색, seed 고정
 
 ### 실행 환경
 
-- in-process로 실행한다. 서버, 네트워크, 실제 시계를 쓰지 않는다.
-- key 생성과 Zipf 요청은 seed를 고정한다. 시나리오마다 seed 여러 개로 반복한다.
-- 결과는 `variant`, `scenario`, `seed`, 지표를 열로 하는 `summary.csv`에 기록한다. 결과 Schema가 확정되면 JSON으로 옮긴다.
-- 표 전파 시간, `MOVED` 재시도율, Controller 장애 시 실패 수는 2단계(실제 노드·클라이언트)에서 측정한다.
+- in-process. 서버·네트워크·실제 시계 없음. seed 5개 × 시나리오. 전체 1분 안쪽
+- 코드: `cache-core/src/test/java/io/openkache/core/tablet/experiment/` (`main`이 있는 러너 + 틀 검증 `MetricsTest`). `./gradlew test`에서는 돌지 않는다
+- 결과: `distribution-comparison/summary.csv` (long 형식: `variant, scenario, G, nodes, keys, theta, seed, metric, value`)
+- 표 전파 시간, `MOVED` 재시도율, Controller 장애 시 실패 수는 2단계(실제 노드·클라이언트)에서 측정한다
+
+### 1차 결과 요약 (fixed-slot, 2026-10-20)
+
+G는 균형에 거의 영향이 없고(key 균형은 노드당 key 수가 정함, 이동 비율은 G ≥ 1024면 이론 최소), 증감 직후 정수 나눗셈 불균형·표 크기·조회 비용만 바꾼다. θ ≤ 0.99의 쏠림은 단위 이동만으로 1.01 이하까지 내려가고, θ = 1.2는 hot key 하나(19%) 때문에 G와 무관하게 1.52가 바닥이다. S 기본값 4096 유지, 초기 배치는 라운드로빈 → 연속 블록으로 바꿀 것(표 크기 82 KB → 수백 B). 상세는 results.md.
 
 ## 7. 코드 구조
 
@@ -153,13 +164,13 @@ cache-core/src/test/java/io/openkache/core/tablet/
 ├── RoutingTableTest.java               §5 불변식 1~4·7 (표 자체)
 ├── DistributionSchemeContract.java     §5 불변식 5·6 + 인터페이스 계약. 모든 variant 테스트가 상속
 ├── slot/FixedSlotSchemeTest.java       계약 상속 + fixed-slot 고유 규칙
-└── (이후) DistributionScenarioTest.java   §6 시나리오 S1~S5 (key 생성, Zipf 포함)
+└── experiment/                         §6 실험 러너(DistributionComparison, main), Workload, Metrics, Variants, MetricsTest
 
 experiments/b1-tablet-distribution/
 ├── README.md                      variant 목록
 ├── design.md                      이 문서
 ├── references/                    논문·시스템별 정리
-└── distribution-comparison/       variant 비교 실험의 설정과 결과 요약 (실험 실행 방식 확정 후)
+└── distribution-comparison/       variant 비교 실험: README(실행·지표), summary.csv, results.md
 ```
 
 규칙:
@@ -191,5 +202,5 @@ experiments/b1-tablet-distribution/
 | epoch 단위 | Tablet마다 `OwnershipEpoch` 하나. 충돌은 큰 epoch가 이김 | §3 |
 | 표 전파 | Controller push + 응답 피기백 + `MOVED`. variant마다 다르게 하지 않음 | §1, §4.1 |
 | 이동 중 라우팅 | `ASK` 없음 | §4.1 |
-| `fixed-slot` S 기본값 | 4096. 1024·16384와 비교 | §4.1, §6 |
+| `fixed-slot` S 기본값 | 4096 유지. 1차 실험으로 확인(1024도 충분, 16384는 이득 없음) | §4.1, §6 |
 | 인터페이스 모양 | 조회·split/merge·이동 반영은 `RoutingTable` 공통. variant는 `initial`, `onNodeAdded/Removed → Plan`, `supportsSplit/Move`, `metadataBytes`만 | §4 |
