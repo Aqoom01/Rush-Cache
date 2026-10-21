@@ -1,0 +1,82 @@
+# B3 Live Migration + Elastic Scaling
+
+B3는 cluster metric을 보고 **노드를 언제 몇 개 늘리거나 줄일지 결정**하고, B1·B2가 만든 이동 계획(`Change`)을 받아 Tablet 데이터를 실제로 옮기고 소유권을 넘긴다. 비교 대상은 **노드 증감 판단 정책**, **데이터를 옮기는 프로토콜**, **이동 job이 많아질 때의 확장 특성**이다.
+
+- 노드 증감 판단: target metric으로 desired node count 계산, tolerance·stabilization·warm-up으로 진동 억제
+- 단일 이동: downtime, 총 이동 시간, 전송량 증폭, 정합성
+- 이동 scaling: job 수·동시 실행 수·공유 대역폭에 따른 전체 완료 시간, aggregate throughput, 요청 영향
+
+B3는 desired node count와 scale-in 후보를 정한다. 실제 노드 생성·종료는 외부 provisioner·membership, Tablet별 source·destination 계획은 B1, load-aware placement·rebalance는 B2가 담당한다. Tablet split·merge와 일반 운영 자동화는 다루지 않는다.
+
+## 문서
+
+| 파일 | 내용 |
+|---|---|
+| [design.md](design.md) | B3 전체 설계: 범위, 경계, 공통 모델·인터페이스, 불변식, 지표, 실험 계획 |
+| [references/](references/) | 참고 논문·시스템별 정리. 읽은 내용과 프로젝트 적용 방식을 분리해 적는다 |
+
+## 참고자료와 설계 결정
+
+| 참고자료 | 이 문서에서 가져오는 것 | 가져오지 않는 것 |
+|---|---|---|
+| [Elastic Scaling Policy](references/elastic-scaling-policy.md) | desired node count 비율식, target tolerance, scale-in stabilization, 새 노드 warm-up, scale-out/in 비대칭 | Kubernetes·AWS 제어면과 서비스별 고정 threshold |
+| [VM Live Migration](references/vm-live-migration.md) | `stop-and-copy`·`pre-copy`, dirty 반복 전송, 수렴 조건, downtime과 총 이동 시간의 분리 | VM의 CPU·장치 상태와 네트워크 주소 이전 |
+| [MongoDB Chunk Migration](references/mongodb-chunk-migration.md) | source가 이동 중 요청 처리, 복사 → 변경분 동기화 → metadata commit → 정리, 참여 노드별 동시 이동 제한 | chunk 분할 조건과 balancer의 재배치 판단 |
+| [Redis Cluster Resharding](references/redis-cluster-resharding.md) | 이동 완료 전후의 요청 처리와 `MOVED`, 데이터 이동과 소유권 확정의 분리 | hash slot 설계, B1 결정과 맞지 않는 `ASK` 경로 |
+| [Rocksteady](references/rocksteady.md) | 소유권을 먼저 넘기는 `post-copy`, background/priority pull, aggregate throughput과 요청 지연의 동시 측정 | RAMCloud lineage·side log 복구와 client 주도 split |
+
+논문의 실측값은 해당 시스템과 환경의 결과다. OpenKache의 성능 목표가 아니라 실험 지표와 비교 질문을 고르는 근거로만 사용한다.
+
+## 복사 방식
+
+각 variant는 표에 명시한 선행 연구나 제품 사례에 근거한다. 실험 결과의 `variant` 값으로 이 이름을 쓴다.
+
+| variant | 요청 처리 | 데이터 복사 | 소유권 전환 | 근거 | 상태 |
+|---|---|---|---|---|---|
+| `stop-and-copy` | source가 끝까지 처리 | write를 멈추고 전체를 한 번 복사 | 복사·검증 뒤 | Baseline: [VM Live Migration](references/vm-live-migration.md) (NSDI 2005) §3.1의 pure stop-and-copy | **1단계 구현 범위** |
+| `pre-copy` | source가 끝까지 처리 | 서비스 중 snapshot → 바뀐 key만 반복 전송 → 짧게 멈추고 남은 변경분 전송 | 따라잡기·검증 뒤 | [VM Live Migration](references/vm-live-migration.md) (NSDI 2005) §3.3·§5.3. 같은 계열의 KV 사례 [MongoDB Chunk Migration](references/mongodb-chunk-migration.md) | 후속 비교 구현 |
+| `post-copy` | destination이 처음부터 처리. write는 바로, 아직 안 온 key의 read는 pull·재시도 필요 | 요청이 기다리는 key를 먼저 pull, 나머지는 background pull | 시작할 때 | [Rocksteady](references/rocksteady.md) (SOSP 2017) §3·§3.3 | 후속 확장 후보 |
+
+- `stop-and-copy`는 전체 복사 전에 write를 멈추는 baseline이다. 전송량은 작지만 downtime이 Tablet 크기에 비례한다.
+- `pre-copy`는 서비스 중 snapshot과 dirty key를 반복 전송하고 마지막 변경분만 멈춘 상태에서 보낸다. 자주 바뀌는 key를 재전송하므로 전송량이 늘고, dirty 발생 속도가 전송 속도보다 빠르면 수렴하지 않는다.
+- `post-copy`는 bulk-copy를 위한 freeze 없이 소유권부터 destination으로 넘긴다. 대신 아직 도착하지 않은 key의 첫 read가 pull·재시도를 겪고, 이동 완료 전 source 장애 처리 규칙이 필요하다. Rocksteady의 무중단·성능 수치는 해당 논문의 결과이며 OpenKache에서 별도로 측정한다.
+
+## Elastic Scaling
+
+### 노드 증감 판단
+
+노드 증감 판단을 구현하는 후속 단계의 첫 비교 기준은 [Elastic Scaling Policy](references/elastic-scaling-policy.md)에 정리한 target tracking이다. **1단계에서는 이 정책을 구현하지 않고 `stop-and-copy` baseline만 구현한다.**
+
+`desiredNodes = ceil(currentNodes × currentMetric / targetMetric)`
+
+- 출력은 `KEEP`, `SCALE_OUT(desiredNodes)`, `SCALE_IN(desiredNodes, candidateNode)` 중 하나다.
+- 작은 metric 차이는 tolerance 안에서 무시한다.
+- scale-out은 연속 상한 초과에 빠르게 반응하고, scale-in은 stabilization window 뒤 한 노드씩 수행한다.
+- 새 노드가 READY가 되고 migration이 끝날 때까지 scale-in하지 않는다.
+- scale-out은 새 노드가 READY가 된 뒤, scale-in은 후보가 DRAINING이 된 뒤 B1이 `Change`를 만든다. B3 migration scheduler가 이를 끝내면 scale-in 노드를 종료한다.
+
+### 여러 job의 이동 Scaling
+
+노드 증감 결정 뒤 B1·B2가 여러 `Change`를 만들면 B3는 이를 고정된 입력으로 받아 실행한다. 이 단계에서는 계획의 품질이 아니라 job 묶음을 실제로 옮기는 능력을 측정한다.
+
+변수:
+
+- migration job 수
+- 동시에 실행할 job 수
+- node별·cluster 전체 전송 예산
+- source 또는 destination을 공유하는 job 비율
+- 이동 중 write 비율과 hot-key 쏠림
+
+측정값:
+
+- 모든 job이 끝날 때까지 걸린 시간(makespan)
+- aggregate migration throughput과 전송량 증폭
+- job별 대기 시간·downtime과 완료율
+- 이동 중 요청 지연·거절·재시도
+- 특정 source·destination에 job이 몰렸을 때의 공정성과 starvation
+
+MongoDB의 참여 shard당 동시 이동 1개는 첫 baseline 후보로 쓴다. Rocksteady의 aggregate throughput과 tail latency 측정 방식은 지표 선택에 사용한다. Redis의 `ASK` 방식은 비교 자료로만 남긴다. 1단계 `stop-and-copy`는 B1 계약에 따라 source가 cutover 전까지 처리하고 완료 후 `MOVED`만 반환한다. `pre-copy`는 이 계약을 재사용하는 후속 비교 구현이다.
+
+## 코드 위치
+
+알고리즘 코드는 `cache-core`의 `io.openkache.core.migration`에 둔다. 이 디렉터리에는 설계, 참고 문헌 정리, 실험 설정과 결과 요약만 둔다. 상세는 [design.md](design.md) §7을 따른다.
