@@ -84,6 +84,20 @@ metadataBytes(table)          → int       표를 이 variant의 형식으로 �
 | hash tag | 없음 | 단일 key 연산만 |
 | 이동 중 라우팅 | `ASK` 없음. 표상 주인이 끝까지 처리하고 핸드오프 순간에만 `MOVED` | Valkey 9.0 atomic slot migration과 같은 모양. 세 variant의 전파 방식을 하나로 고정하기 위해 |
 
+### 4.2 `hash-range-tablet`의 결정 (2단계)
+
+참고 자료: [Google Slicer와 ScyllaDB Tablets](references/slicer-scylla-tablets.md). fixed-slot과 표·조회·이동 연산은 같고, **구간 수와 길이가 split·merge로 바뀐다**는 점만 다르다. split·merge를 **언제·어디서** 할지는 B2가 정하고, 이 variant는 그 결정을 받아 적용할 수 있게 `supportsSplit() = true`를 돌려준다.
+
+| 파라미터 | 기본값 | 근거 |
+|---|---|---|
+| 초기 Tablet 수 | 노드당 T개, 기본 T = 64 (비교 실험은 T = G / 8) | Slicer는 서버당 50~150개 유지(§4.4.1). 사전 실험 3에서 노드당 32~64개면 노드 추가 직후 균형 1.03 이내, 표 5~10 KB |
+| 초기 배치 | 해시 공간을 n·T개로 균등 분할, 연속 블록 배치 | Slicer 처음 할당이 균등 분할(§4.4). 배치는 fixed-slot과 같은 연속 블록(표 압축) |
+| 노드 추가 | 가장 많이 가진 노드에서 하나씩, 새 노드가 평균에 닿을 때까지 | fixed-slot과 같은 기본 규칙. B2의 재배치 계획이 있으면 그것을 쓴다 |
+| 노드 제거 | 떠나는 노드의 Tablet을 가장 적게 가진 노드에 하나씩 | 위와 같음 |
+| split | `RoutingTable.withSplit(id, at)`. `at`은 해시값. 자식 둘 다 부모의 주인·epoch 승계, 뒤쪽 자식은 새 id | 쪼개기만 하고 주인은 안 바꾼다(Slicer phase 5 "Split hot slices without changing their task assignments"). 옮기는 건 별도 `Change` |
+| merge | `RoutingTable.withMerge(left, right)`. 인접하고 주인이 같을 때만. epoch는 둘 중 큰 값 | Slicer phase 3도 먼저 같은 서버로 옮긴 뒤 합친다 |
+| 노드 균형 기준 | Tablet **개수**가 아니라 해시 공간 **길이** 기준으로 donor를 고른다 | split 후에는 Tablet마다 길이가 달라 개수로 세면 key 균형이 틀어진다. fixed-slot과 다른 유일한 규칙 |
+
 ## 5. 불변식
 
 variant 구현은 모두 아래를 지켜야 하며, 단위 테스트로 검증한다.
