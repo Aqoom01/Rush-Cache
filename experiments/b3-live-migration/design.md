@@ -34,7 +34,7 @@ B3는 cluster metric으로 노드 증감을 결정하고, 그 결과 생긴 "이
 
 `pre-copy`는 Baseline의 commit·fencing 계약이 고정된 뒤 비교 구현한다. snapshot 중 변경 추적, dirty generation, delta 순서와 수렴 종료 조건이 추가되기 때문이다. destination-owned `post-copy`([Rocksteady](references/rocksteady.md))는 그보다 뒤의 확장 후보다. 시작할 때 소유권을 넘기므로 destination → source pull, 진행 상태, 아직 안 온 key의 read 처리, 늦게 도착한 pull이 새 write를 덮지 않게 하는 규칙이 별도로 필요하다.
 
-B3는 **노드 수를 판단하고 이동을 실행한다**. `ScalingPolicy`가 desired node count와 증감 방향을 결정하지만 실제 노드 생성·종료는 외부 provisioner·membership이 수행한다. scale-out의 `READY`, scale-in의 `DRAINING` 상태에서 어떤 Tablet을 어디로 옮길지는 B1의 노드 증감 계획(`DistributionScheme.onNodeAdded/Removed`)이 만들고, load-aware placement·rebalance는 B2(`core.balance`)가 보완한다. 라우팅 표를 바꾸는 연산은 B1(`core.tablet`)이 제공한다. scale-in 노드는 모든 migration이 끝난 뒤에만 종료한다.
+B3는 **노드 수를 판단하고 이동을 실행한다**. `ElasticScalingPolicy`가 desired node count와 증감 방향을 결정하지만 실제 노드 생성·종료는 외부 provisioner·membership이 수행한다. scale-out의 `READY`, scale-in의 `DRAINING` 상태에서 어떤 Tablet을 어디로 옮길지는 B1의 노드 증감 계획(`DistributionScheme.onNodeAdded/Removed`)이 만들고, load-aware placement·rebalance는 B2(`core.balance`)가 보완한다. 라우팅 표를 바꾸는 연산은 B1(`core.tablet`)이 제공한다. scale-in 노드는 모든 migration이 끝난 뒤에만 종료한다.
 
 Scale-out/in은 두 단계로 나눈다. 먼저 B3가 metric에서 `KEEP`, `SCALE_OUT(desiredNodes)`, `SCALE_IN(desiredNodes, candidateNode)`를 결정한다. 그다음 B1·B2가 만든 `Change` 목록은 바꾸지 않고 B3가 job 수·동시성·전송 예산을 조절해 실행한다. Tablet split/merge, 일반 balancing·placement 정책, 실제 인프라 provision은 범위 밖이다.
 

@@ -115,7 +115,7 @@ ElastiCache도 scale-out은 항상 켜져 있고 scale-in만 끌 수 있다("Sca
 
 ## 프로젝트 적용
 
-B3는 노드 증감 요청을 외부에서 고정 입력으로 받지 않는다. `ScalingPolicy`가 cluster metric을 받아 결정하고, 이 정책은 1단계 `stop-and-copy` 이후에 구현한다.
+B3는 노드 증감 요청을 외부에서 고정 입력으로 받지 않는다. `ElasticScalingPolicy`가 cluster metric을 받아 결정하고, 이 정책은 1단계 `stop-and-copy` 이후에 구현한다.
 
 ### 적용할 내용
 
@@ -131,7 +131,7 @@ B3는 노드 증감 요청을 외부에서 고정 입력으로 받지 않는다.
 
 | 단계 | 책임 |
 |---|---|
-| B3 `ScalingPolicy` | metric에서 desired node count와 증감 방향을 결정 |
+| B3 `ElasticScalingPolicy` | metric에서 desired node count와 증감 방향을 결정 |
 | 외부 provisioner·membership | 노드를 실제 생성·종료하고 `JOINING`·`READY`·`DRAINING`·`REMOVED` 상태를 제공 |
 | B1 | membership 변화에 맞는 Tablet `Change` 목록 생성 |
 | B3 `MigrationScheduler` | `Change`를 실행하고 완료·실패를 scaling controller에 보고 |
