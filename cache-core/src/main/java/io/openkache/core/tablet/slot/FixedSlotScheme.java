@@ -26,6 +26,9 @@ import java.util.Map;
  * <p>Redis는 {@code CRC16(key) mod 16384}로 슬롯을 정하지만, 여기서는 공통 해시의 상위 비트, 즉 균등 구간의 번호를 슬롯으로 쓴다.
  * 분포는 같고 {@link RoutingTable#lookup}을 그대로 쓸 수 있다. 슬롯 {@code i}의 {@link TabletId}는 {@code i}다.
  *
+ * <p>처음 표는 연속 블록으로 배치한다(노드1: 0~S/n−1, 노드2: 그다음 …). Redis의 {@code CLUSTER SLOTS}처럼 연속 슬롯의 주인이 같으면
+ * 표를 구간으로 압축해 보낼 수 있어서, 표 직렬화 크기가 슬롯 수가 아니라 노드 수에 비례한다(비교 실험 AUX 결과로 결정).
+ *
  * <p>노드 추가는 "가장 많이 가진 노드의 마지막 슬롯"을 새 노드가 {@code S / (n+1)}개를 가질 때까지 가져온다. 입력 표가 균형(노드 간 차이
  * ≤ 1)이면 결과도 균형이다. {@code balance}가 임의로 옮겨 균형이 깨진 표에서는 새 노드 몫만 보장하고 나머지 불균형은 그대로 둔다
  * (그 조정은 {@code balance}의 몫). 이동 수가 이론
@@ -71,8 +74,17 @@ public final class FixedSlotScheme implements DistributionScheme {
         List<TabletRange> ranges = TabletRange.uniform(slots);
         List<Tablet> tablets = new ArrayList<>(slots);
         OwnershipEpoch first = OwnershipEpoch.ZERO.next();
-        for (int i = 0; i < slots; i++) {
-            tablets.add(new Tablet(new TabletId(i), ranges.get(i), nodes.get(i % nodes.size()), first));
+        // 연속 블록 배치: 노드 j는 슬롯 [j·S/n, (j+1)·S/n). 나머지는 앞 노드부터 1개씩 더 받는다.
+        // 연속 슬롯의 주인이 같아야 표를 구간으로 압축해 보낼 수 있다 (라운드로빈이면 구간이 S개가 된다).
+        int n = nodes.size();
+        int base = slots / n;
+        int extra = slots % n;
+        int slot = 0;
+        for (int j = 0; j < n; j++) {
+            int count = base + (j < extra ? 1 : 0);
+            for (int k = 0; k < count; k++, slot++) {
+                tablets.add(new Tablet(new TabletId(slot), ranges.get(slot), nodes.get(j), first));
+            }
         }
         return RoutingTable.of(RoutingVersion.ZERO.next(), tablets, slots);
     }
