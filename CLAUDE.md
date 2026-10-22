@@ -23,7 +23,7 @@ OpenStd(OpenKache)는 고성능 NVMe SSD 기반 분산 캐시의 가용성과 �
 
 - **`cache-core`** (`io.openkache.core`): 순수 Java 라이브러리. production 의존성은 JDK 표준 API만 허용하며 `verifyNoProductionDependencies` task가 `check`에서 검사한다.
   - `api`, `model`, `spi`, `runtime`: 공통 계약 구현 완료 (`CacheEngine`, `Command`, `Result`, `Bytes`, ID 타입, `Transport`, `MetricsSink`, `TimeSource`, `EpochStore`, `OwnerWorker` 등)
-  - `kv`: `KvEngine`이 단일 노드 인메모리 GET/SET/DELETE를 구현한다(`CacheEngine` 구현체). Key마다 고정 worker로 샤딩하고 그 worker thread에서만 저장소를 바꾼다. TTL·eviction·영속화·EXISTS/COUNT·복제·라우팅은 미구현.
+  - `kv`: `KvEngine`이 단일 노드 인메모리 GET/SET/DELETE/EXISTS/COUNT를 구현한다(`CacheEngine` 구현체). Key마다 고정 worker로 샤딩하고 그 worker thread에서만 저장소에 접근한다. COUNT는 모든 worker에 보내 합산한다. 오류 처리 규칙은 `kv/package-info.java`에 있다. TTL·eviction·영속화·복제·라우팅은 미구현이고, EXISTS/COUNT의 wire opcode도 아직 없다(core에서만 호출 가능).
   - `balance`: B2. Split 정책의 공통 입출력 타입(`KeyRange`, `TabletLoad`, `SplitPolicy`, `SplitDecision`)과 Baseline `MidpointSplitPolicy`만 구현했다. `split-for-heat`, 분할 시작 조건, Merge, 재배치는 미구현. 설계는 `experiments/b2-load-balancing/design.md`를 따른다.
   - `replication`, `failure`, `tablet`, `migration`: 연구 패키지. `package-info.java`로 책임만 적혀 있고 **미구현**이다.
 - **`cache-server`** (`io.openkache.server`): Netty 실행 애플리케이션. 설정 검증, client·peer listener, TCP frame codec, PING, `/metrics`(Prometheus), GET/SET/DELETE의 `KvEngine` 연결까지 구현했다. peer 프로토콜(복제·장애 감지·마이그레이션 메시지)은 PING 외에는 `NOT_IMPLEMENTED`로 응답한다.
@@ -55,7 +55,7 @@ OpenStd(OpenKache)는 고성능 NVMe SSD 기반 분산 캐시의 가용성과 �
   - GET: 값의 복사본을 반환하고, 없는 Key는 오류가 아닌 정상 MISS로 처리한다.
   - SET: 같은 Key면 덮어쓴다.
   - DELETE: 삭제 여부를 반환한다.
-  - EXISTS, COUNT를 제공한다. **미구현** — `core.api.Command`(sealed interface)에 연산을 추가해야 해서 팀 확인 후 진행한다.
+  - EXISTS, COUNT를 제공한다. `core.api.Command`에 `Exists`, `Count`를 추가하고 `KvEngine`이 구현했다(B3 확인 후 `WireClient` switch에 case 추가). COUNT 개수는 `Result.value()`에 8-byte big-endian으로 담는다. TCP wire opcode는 **미구현**(B1 영역, `protocol-v1`에 정의 필요).
   - SCAN/RANGE는 선택이다. B1·B3 요구 확정 후 구현한다.
   - 오류 처리 규칙을 문서화한다.
 - **Workload** (`experiment-runner`의 `WorkloadGenerator`/`RunnerConfig`로 구현 완료)

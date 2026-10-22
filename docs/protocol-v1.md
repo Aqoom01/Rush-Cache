@@ -94,7 +94,7 @@ opcode 1(GET)·2(SET)·3(DELETE)의 body입니다. GET·DELETE는 key까지만, 
 
 - **MOVED/NOT_PRIMARY:** redirect 노드 정보를 응답 body에 추가하는 방식. Tablet 라우팅이 없는 지금은 이 상태가 나오지 않습니다.
 - **연구별 peer 메시지:** 복제(A1, A2), 장애 감지(A3), 마이그레이션(B3)의 opcode와 body
-- **EXISTS/COUNT:** KV 명세에는 있지만 `core.api.Command`에 아직 연산으로 추가되지 않았습니다. 추가하려면 `Command`(sealed
-  interface) 확장이 필요하므로 팀 확인 후 진행합니다.
+- **EXISTS/COUNT:** `core.api.Command`에 `Exists`, `Count`가 있고 `KvEngine`이 처리하지만, wire opcode는 아직 없습니다.
+  추가할 때는 opcode 번호, COUNT 요청 body(Key 없음), COUNT 응답 body(개수 8-byte big-endian)를 이 문서에 먼저 정의합니다.
 - **flags:** 압축이나 단방향 메시지 등. v1에서는 0이 아니면 거절합니다.
 - **version 2 이상:** 현재는 거절합니다.

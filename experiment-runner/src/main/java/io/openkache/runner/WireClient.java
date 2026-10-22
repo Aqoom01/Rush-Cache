@@ -64,6 +64,19 @@ final class WireClient implements AutoCloseable {
             case Command.Get get -> WireProtocol.OP_GET;
             case Command.Set set -> WireProtocol.OP_SET;
             case Command.Delete delete -> WireProtocol.OP_DELETE;
+            // protocol-v1에 EXISTS/COUNT opcode가 아직 없다. WorkloadGenerator도 이 연산을 만들지 않는다.
+            case Command.Exists exists -> throw new IllegalArgumentException("EXISTS has no wire opcode yet");
+            case Command.Count count -> throw new IllegalArgumentException("COUNT has no wire opcode yet");
+        };
+    }
+
+    private static Bytes keyOf(Command command) {
+        return switch (command) {
+            case Command.Get get -> get.key();
+            case Command.Set set -> set.key();
+            case Command.Delete delete -> delete.key();
+            case Command.Exists exists -> exists.key();
+            case Command.Count count -> throw new IllegalArgumentException("COUNT has no key");
         };
     }
 
@@ -76,7 +89,7 @@ final class WireClient implements AutoCloseable {
             body.writeLong(operationId);
             body.writeLong(ownershipEpoch);
             body.writeInt((int) timeoutMs);
-            Bytes key = command.key();
+            Bytes key = keyOf(command);
             byte[] keyBytes = key.toByteArray();
             body.writeInt(keyBytes.length);
             body.write(keyBytes);
