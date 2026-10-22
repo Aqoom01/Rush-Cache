@@ -76,6 +76,7 @@ public record RunnerConfig(
 
     private static final Set<String> KEYS =
             Set.of(
+                    "execution.mode",
                     "target.host",
                     "target.port",
                     "study",
@@ -123,6 +124,7 @@ public record RunnerConfig(
         }
 
         String targetHost = p.text("target.host");
+        if (!p.optionalText("execution.mode", "tcp").equals("tcp")) p.errors.add("TCP Runner의 execution.mode는 tcp여야 합니다");
         int targetPort = (int) p.longValue("target.port", 1, 65535);
         String study = p.text("study");
         String variant = p.text("variant");

@@ -25,8 +25,9 @@ OpenStd(OpenKache)는 고성능 NVMe SSD 기반 분산 캐시의 가용성과 �
   - `api`, `model`, `spi`, `runtime`: 공통 계약 구현 완료 (`CacheEngine`, `Command`, `Result`, `Bytes`, ID 타입, `Transport`, `MetricsSink`, `TimeSource`, `EpochStore`, `OwnerWorker` 등)
   - `kv`: `KvEngine`이 단일 노드 인메모리 GET/SET/DELETE/EXISTS/COUNT를 구현한다(`CacheEngine` 구현체). Key마다 고정 worker로 샤딩하고 그 worker thread에서만 저장소에 접근한다. COUNT는 모든 worker에 보내 합산한다. SCAN/RANGE는 `Command`가 아닌 `KvEngine.scan`/`range` 메서드(`ScanResult` 반환)다. 오류 처리 규칙은 `kv/package-info.java`에 있다. TTL·eviction·영속화·복제·라우팅은 미구현이고, EXISTS/COUNT/SCAN/RANGE의 wire opcode도 아직 없다(core에서만 호출 가능).
   - `balance`: B2. Split 정책의 공통 입출력 타입(`KeyRange`, `TabletLoad`, `SplitPolicy`, `SplitDecision`)과 Baseline `MidpointSplitPolicy`만 구현했다. `split-for-heat`, 분할 시작 조건, Merge, 재배치는 미구현. 설계는 `experiments/b2-load-balancing/design.md`를 따른다.
+  - `migration`: B3 1단계 stop-and-copy baseline을 설계 §7 구조로 구현했다. production은 job·batch·progress·protocol·committer 계약과 stopcopy variant이며, test의 experiment 패키지에서 최소 저장소·전송·CAS coordinator·tick runner로 SC1~SC6를 검증한다. 실제 KvEngine/peer 연계, pre-copy, post-copy, scaling은 미구현이다. 실행 방법은 `experiments/b3-live-migration/migration-comparison/README.md`, 결과는 실험 폴더의 `runs/<execution_id>/`(실행별)·`results.md`(실험별 공식 run 입구)와 `experiments/b3-live-migration/results.md`(B3 통합)를 따른다. 후속 S/E/M 비교의 공통 입력·adapter·관측·schema v2·실행별 저장 계약은 `experiments/b3-live-migration/design.md` §6.6에 있다. 해당 runner와 schema 생성기는 미구현이며 기존 SC 원본과 분리한다.
   - `replication`: A1·A2 연구 패키지. `primarybackup`(A1)은 고정 3노드 SET 동기 복제 정상 경로(`PrimaryBackupEngine`, `Replicate`/`ReplicateAck`, deadline TIMEOUT, Backup의 NOT_PRIMARY)만 구현했고 heartbeat·승격·fencing·recovery는 **미구현**이다(`experiments/a1-active-passive-failover/design.md` §7.1). `ionia`(A2)는 골격만 있다. 테스트용 `InMemoryTransport`·`VirtualTimeSource`·`DirectMailbox`는 `core.replication` 테스트 패키지에 있다.
-  - `failure`, `tablet`, `migration`: 연구 패키지. 구현 현황은 각 `package-info.java`를 따른다.
+  - `failure`, `tablet`: 연구 패키지. 구현 현황은 각 `package-info.java`를 따른다.
 - **`cache-server`** (`io.openkache.server`): Netty 실행 애플리케이션. 설정 검증, client·peer listener, TCP frame codec, PING, `/metrics`(Prometheus), GET/SET/DELETE의 `KvEngine` 연결까지 구현했다. peer 프로토콜(복제·장애 감지·마이그레이션 메시지)은 PING 외에는 `NOT_IMPLEMENTED`로 응답한다.
 - **`experiment-runner`** (`io.openkache.runner`): Workload Generator + Experiment Runner 최소 구현. `cache-core`에만 의존하고(production), Netty 없이 `protocol-v1`을 직접 구현한 TCP client로 단일 노드 `cache-server`에 GET/SET/DELETE를 보낸다. warm-up/측정 구간 분리, HIT/MISS/실패 분리 집계, reservoir 기반 p50/p99, JSON(원본)+CSV(요약) 결과 기록까지 구현했다. 3-node, 장애 주입, Zipfian 분포는 미구현. 통합 테스트에서만(test 전용 의존성) `cache-server`를 띄워 end-to-end로 검증한다.
 - 의존 방향은 `cache-server → cache-core`, `experiment-runner → cache-core`(+ 테스트 전용 `cache-server`)만 허용한다. Netty·Prometheus·logging 구현은 server에만 둔다. 연구별 Gradle 모듈은 만들지 않는다(`experiment-runner`는 연구가 아닌 공통 모듈이다).
@@ -86,7 +87,7 @@ OpenStd(OpenKache)는 고성능 NVMe SSD 기반 분산 캐시의 가용성과 �
   - 반복(N회): **미구현**. Execution ID(UUID)는 실행마다 하나 발급한다.
   - 종료 판정: 요청 단위로 TIMEOUT/BUSY/UNAVAILABLE/CLIENT_FAILURE를 구분해 집계한다. Runner 프로세스 자체의 비정상 종료 판정(예: 반복 실행 중 일부 실행만 실패)은 반복 기능이 없어 **미구현**.
   - 결과 수집: JSON/CSV를 직접 쓴다. 여러 실행을 모아 형식 검증·누락 감지하는 것은 **미구현**(현재는 한 번에 한 실행).
-  - Manifest: Git Commit과 dirty 여부는 JSON에 있다. Config 스냅샷(Workload 설정 전체)과 결과 경로는 JSON에 없다(결과 경로는 실행 시 stdout으로만 출력). "실행 명령"·"호스트 환경"은 Runner 쪽 JVM/OS만 기록하고 서버 쪽은 운영자가 `server.workers.hint`/`server.jvm.opts.note`로 적어 넣는 참고값이다(Runner가 서버를 직접 관측하지 않는다).
+  - Manifest: Git Commit은 JSON에 있다. Config 스냅샷(Workload 설정 전체)과 결과 경로는 JSON에 없다(결과 경로는 실행 시 stdout으로만 출력). "실행 명령"·"호스트 환경"은 Runner 쪽 JVM/OS만 기록하고 서버 쪽은 운영자가 `server.workers.hint`/`server.jvm.opts.note`로 적어 넣는 참고값이다(Runner가 서버를 직접 관측하지 않는다).
 
 **연구별 공통 모듈 사용**:
 

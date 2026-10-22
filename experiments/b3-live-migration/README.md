@@ -14,6 +14,9 @@ B3는 desired node count와 scale-in 후보를 정한다. 실제 노드 생성·
 |---|---|
 | [design.md](design.md) | B3 전체 설계: 범위, 경계, 공통 모델·인터페이스, 불변식, 지표, 실험 계획 |
 | [references/](references/) | 참고 논문·시스템별 정리. 읽은 내용과 프로젝트 적용 방식을 분리해 적는다 |
+| [migration-comparison/README.md](migration-comparison/README.md) | 단일 이동: SC1~SC6 Baseline 실행 방법, S1~S6 variant 비교 계획(비교 backend 미구현) |
+| [scaling-decision/README.md](scaling-decision/README.md) | E1~E7 노드 증감 판단 계획. runner 미구현 |
+| [movement-scaling-comparison/README.md](movement-scaling-comparison/README.md) | M1~M5 여러 job 이동 계획. runner 미구현 |
 
 ## 참고자료와 설계 결정
 
@@ -33,7 +36,7 @@ B3는 desired node count와 scale-in 후보를 정한다. 실제 노드 생성·
 
 | variant | 요청 처리 | 데이터 복사 | 소유권 전환 | 근거 | 상태 |
 |---|---|---|---|---|---|
-| `stop-and-copy` | source가 끝까지 처리 | write를 멈추고 전체를 한 번 복사 | 복사·검증 뒤 | Baseline: [VM Live Migration](references/vm-live-migration.md) (NSDI 2005) §3.1의 pure stop-and-copy | **1단계 구현 범위** |
+| `stop-and-copy` | source가 끝까지 처리 | write를 멈추고 전체를 한 번 복사 | 복사·검증 뒤 | Baseline: [VM Live Migration](references/vm-live-migration.md) (NSDI 2005) §3.1의 pure stop-and-copy | **1단계 in-process 구현** |
 | `pre-copy` | source가 끝까지 처리 | 서비스 중 snapshot → 바뀐 key만 반복 전송 → 짧게 멈추고 남은 변경분 전송 | 따라잡기·검증 뒤 | [VM Live Migration](references/vm-live-migration.md) (NSDI 2005) §3.3·§5.3. 같은 계열의 KV 사례 [MongoDB Chunk Migration](references/mongodb-chunk-migration.md) | 후속 비교 구현 |
 | `post-copy` | destination이 처음부터 처리. write는 바로, 아직 안 온 key의 read는 pull·재시도 필요 | 요청이 기다리는 key를 먼저 pull, 나머지는 background pull | 시작할 때 | [Rocksteady](references/rocksteady.md) (SOSP 2017) §3·§3.3 | 후속 확장 후보 |
 
@@ -80,3 +83,16 @@ MongoDB의 참여 shard당 동시 이동 1개는 첫 baseline 후보로 쓴다. 
 ## 코드 위치
 
 알고리즘 코드는 `cache-core`의 `io.openkache.core.migration`에 둔다. 이 디렉터리에는 설계, 참고 문헌 정리, 실험 설정과 결과 요약만 둔다. 상세는 [design.md](design.md) §7을 따른다.
+
+## 실험 진입점과 결과 형식
+
+현재 Baseline 실험의 정식 진입점은 config를 읽는 공통 `experiment-runner`다. 공통 Runner는 실험 선택·반복·실제 시간 제한·결과 수집을, B3 backend는 tick 진행·연구별 관측·정합성 검사를 담당한다. **현재 `execution.mode=research`의 config 지정 JVM backend 실행이 구현됐다.** `backend.main`·classpath·인자가 실행 대상을 선택하고 `study`·`experiment`는 연구·실험 식별자다. [실행 안내](migration-comparison/README.md)와 [전체 설정](migration-comparison/baseline.properties)을 따른다.
+
+새 Baseline 실행은 JSON 원본·CSV 요약·Markdown 해석을 실제 생성한다(`b3-baseline-json-1`). 2026-10-22 전체 설정 실행의 [보고서](migration-comparison/runs/run-2026-10-22T04-48-53.944252700Z-a4354ce4/repeat-001/results.md)와 [조건별 요약](migration-comparison/runs/run-2026-10-22T04-48-53.944252700Z-a4354ce4/repeat-001/summary.csv)을 Git에 보관한다. JSON 원본과 manifest·로그는 실행한 PC에 남긴다. 비교용 후속 형식과 pre-copy·E/M backend는 아직 미구현이다. 상세 호출·결과 계약은 [design.md §6.6](design.md)에 있다.
+
+## Baseline 실행과 결과
+
+단위·계약 테스트는 `./gradlew build`에 포함된다. SC1~SC6 전체 실행은 공통 Runner에 Baseline config를 전달한다.
+[migration-comparison/README.md](migration-comparison/README.md)에 재현 명령·모델·지표 정의를 기록한다.
+실행하면 `migration-comparison/runs/<execution_id>/`에 실행별 결과가 생성된다. 현재 보관된 Baseline 실행은 26개 조건 × seed 5개, 총 130회이며 정합성 규칙 위반은 0건이다. 공식 run은 아직 선정하지 않았으며, 선정한 뒤 실험별 입구 `migration-comparison/results.md`와 B3 통합 `results.md`를 작성한다. 현재 두 입구·통합 문서는 없다.
+SC 결과는 Baseline 단독 검증이다. Baseline 호출·수집은 구현됐고 S/E/M 연구 backend는 아직 없다. 공통 입력·adapter·관측·출력과 구현 순서는 [design.md §6.6](design.md)에 정의한다. 실제 서버의 downtime·latency는 아직 측정하지 않는다.
