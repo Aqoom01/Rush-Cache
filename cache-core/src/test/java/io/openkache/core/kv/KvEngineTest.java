@@ -17,6 +17,7 @@ import io.openkache.core.model.RoutingVersion;
 import io.openkache.core.model.WorkerId;
 import io.openkache.core.runtime.OwnerWorker;
 import io.openkache.core.spi.TimeSource;
+import java.nio.ByteBuffer;
 import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.CompletionStage;
@@ -78,6 +79,76 @@ class KvEngineTest {
     }
 
     @Test
+    void existsOnMissingKeyIsMiss() {
+        Result result = execute(new Command.Exists(Bytes.utf8("absent")));
+
+        assertEquals(ResultStatus.MISS, result.status());
+        assertTrue(result.value().isEmpty());
+    }
+
+    @Test
+    void existsReturnsOkWithVersionButNoValue() {
+        Bytes key = Bytes.utf8("k");
+        execute(new Command.Set(key, Bytes.utf8("v1")));
+        execute(new Command.Set(key, Bytes.utf8("v2")));
+
+        Result exists = execute(new Command.Exists(key));
+        assertEquals(ResultStatus.OK, exists.status());
+        assertEquals(2, exists.valueVersion());
+        assertTrue(exists.value().isEmpty(), "EXISTS는 값을 복사하지 않는다");
+
+        execute(new Command.Delete(key));
+        assertEquals(ResultStatus.MISS, execute(new Command.Exists(key)).status());
+    }
+
+    @Test
+    void countOnEmptyEngineIsOkWithZero() {
+        Result result = execute(new Command.Count());
+
+        assertEquals(ResultStatus.OK, result.status());
+        assertEquals(0, decodeCount(result));
+        assertEquals(0, result.valueVersion());
+    }
+
+    @Test
+    void countSumsKeysAcrossAllWorkers() {
+        // 두 worker에 Key가 나뉘어 들어가도 합계여야 한다. 같은 Key를 다시 SET해도 개수는 늘지 않는다.
+        for (int i = 0; i < 20; i++) {
+            execute(new Command.Set(Bytes.utf8("key-" + i), Bytes.utf8("v")));
+        }
+        execute(new Command.Set(Bytes.utf8("key-0"), Bytes.utf8("overwritten")));
+        assertEquals(20, decodeCount(execute(new Command.Count())));
+
+        execute(new Command.Delete(Bytes.utf8("key-3")));
+        execute(new Command.Delete(Bytes.utf8("absent")));
+        assertEquals(19, decodeCount(execute(new Command.Count())));
+    }
+
+    @Test
+    void countIsBusyWhenAnyWorkerMailboxIsFull() throws InterruptedException {
+        try (OwnerWorker solo = new OwnerWorker(new WorkerId(9), 1)) {
+            KvEngine soloEngine = new KvEngine(new NodeId(0), List.of(solo), TimeSource.system());
+            CountDownLatch started = new CountDownLatch(1);
+            CountDownLatch release = new CountDownLatch(1);
+
+            assertTrue(
+                    solo.offer(
+                            () -> {
+                                started.countDown();
+                                awaitUninterruptibly(release);
+                            }));
+            assertTrue(started.await(5, TimeUnit.SECONDS));
+            assertTrue(solo.offer(() -> {})); // 대기열(capacity 1)을 채운다.
+
+            CompletionStage<Result> rejected = soloEngine.execute(new Command.Count(), context());
+            assertEquals(ResultStatus.BUSY, waitFor(rejected).status());
+
+            release.countDown();
+            soloEngine.close();
+        }
+    }
+
+    @Test
     void mailboxFullReturnsBusyWithoutBlockingTheCaller() throws InterruptedException {
         try (OwnerWorker solo = new OwnerWorker(new WorkerId(9), 1)) {
             KvEngine soloEngine = new KvEngine(new NodeId(0), List.of(solo), TimeSource.system());
@@ -133,6 +204,12 @@ class KvEngineTest {
 
     private Result execute(Command command) {
         return waitFor(engine.execute(command, context()));
+    }
+
+    /** COUNT 결과의 value(8-byte big-endian)를 개수로 바꾼다. */
+    private static long decodeCount(Result result) {
+        assertEquals(ResultStatus.OK, result.status());
+        return ByteBuffer.wrap(result.value().orElseThrow().toByteArray()).getLong();
     }
 
     private static Result waitFor(CompletionStage<Result> stage) {

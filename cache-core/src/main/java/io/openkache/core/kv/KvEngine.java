@@ -14,6 +14,7 @@ import io.openkache.core.runtime.Mailbox;
 import io.openkache.core.runtime.TimerEvent;
 import io.openkache.core.spi.PeerMessage;
 import io.openkache.core.spi.TimeSource;
+import java.nio.ByteBuffer;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -22,17 +23,24 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.Function;
 
 /**
  * 단일 노드 인메모리 KV {@link CacheEngine} 구현체.
  *
  * <p>Key마다 {@code Math.floorMod(key.hashCode(), workers.size())}로 소유 worker를 정하고, 그 worker의 mailbox로
- * 연산을 넘긴다. 각 worker는 자신만의 {@link KvStore}를 가지므로 store 변경은 항상 owner worker thread에서만 일어난다.
+ * 연산을 넘긴다. 각 worker는 자신만의 {@link KvStore}를 가지므로 store 접근(읽기 포함)은 항상 owner worker thread에서만
+ * 일어난다.
+ *
+ * <p>{@link Command.Count}만 Key가 없어 모든 worker에 한 번씩 보낸다. 각 worker가 자기 store 크기를 더하고 마지막 worker가
+ * 결과를 완료한다. worker마다 세는 시점이 다르므로, 세는 동안 들어온 SET·DELETE는 반영될 수도 안 될 수도 있다(한 순간의
+ * snapshot이 아니다). 어느 한 worker의 mailbox라도 가득 차면 {@link ResultStatus#BUSY}다.
  *
  * <p>복제·라우팅·Tablet이 없으므로 {@link #snapshot()}의 routingVersion과 ownershipEpoch는 항상
  * {@link RoutingVersion#ZERO}, {@link OwnershipEpoch#ZERO}다. {@link #onPeerMessage}와 {@link #onTimer}는 아직
- * 정의된 동작이 없어 아무 일도 하지 않는다. {@code EXISTS}, {@code COUNT}, TTL, eviction은 {@link Command}에 아직
- * 정의되지 않아 지원하지 않는다.
+ * 정의된 동작이 없어 아무 일도 하지 않는다. TTL, eviction, SCAN/RANGE, 영속화는 지원하지 않는다.
  */
 public final class KvEngine implements CacheEngine {
 
@@ -64,36 +72,78 @@ public final class KvEngine implements CacheEngine {
         if (context.deadline().isExpired(timeSource)) {
             return CompletableFuture.completedFuture(timeout());
         }
+        return switch (command) {
+            case Command.Get get -> onOwner(get.key(), context, store -> doGet(store, get));
+            case Command.Set set -> onOwner(set.key(), context, store -> doSet(store, set));
+            case Command.Delete delete -> onOwner(delete.key(), context, store -> doDelete(store, delete));
+            case Command.Exists exists -> onOwner(exists.key(), context, store -> doExists(store, exists));
+            case Command.Count count -> onAllOwners(context);
+        };
+    }
 
-        int index = workerIndex(command.key());
-        CompletableFuture<Result> future = new CompletableFuture<>();
-        future.whenComplete((result, error) -> pending.remove(future));
-        pending.add(future);
-
-        boolean accepted = workers.get(index).offer(() -> runOnOwner(index, command, context, future));
+    /** {@code key}의 owner worker에서 {@code operation}을 실행한다. mailbox가 가득 차면 BUSY. */
+    private CompletionStage<Result> onOwner(Bytes key, RequestContext context, Function<KvStore, Result> operation) {
+        int index = workerIndex(key);
+        CompletableFuture<Result> future = track(new CompletableFuture<>());
+        boolean accepted =
+                workers.get(index)
+                        .offer(
+                                () -> {
+                                    if (!stillRunnable(context, future)) {
+                                        return;
+                                    }
+                                    future.complete(operation.apply(stores[index]));
+                                });
         if (!accepted) {
             future.complete(busy());
         }
         return future;
     }
 
-    private void runOnOwner(int index, Command command, RequestContext context, CompletableFuture<Result> future) {
+    /** 모든 worker에서 자기 store 크기를 더해 COUNT 결과를 만든다. 한 worker라도 mailbox가 가득 차면 BUSY. */
+    private CompletionStage<Result> onAllOwners(RequestContext context) {
+        CompletableFuture<Result> future = track(new CompletableFuture<>());
+        AtomicLong total = new AtomicLong();
+        AtomicInteger remaining = new AtomicInteger(stores.length);
+        for (int i = 0; i < stores.length; i++) {
+            int index = i;
+            boolean accepted =
+                    workers.get(index)
+                            .offer(
+                                    () -> {
+                                        if (!stillRunnable(context, future)) {
+                                            return;
+                                        }
+                                        total.addAndGet(stores[index].size());
+                                        if (remaining.decrementAndGet() == 0) {
+                                            future.complete(countResult(total.get()));
+                                        }
+                                    });
+            if (!accepted) {
+                future.complete(busy());
+                return future;
+            }
+        }
+        return future;
+    }
+
+    /** owner worker에서 실행 직전에 다시 확인한다. 닫혔거나 deadline이 지났으면 future를 끝내고 {@code false}. */
+    private boolean stillRunnable(RequestContext context, CompletableFuture<Result> future) {
         if (closed.get()) {
             future.complete(unavailable());
-            return;
+            return false;
         }
         if (context.deadline().isExpired(timeSource)) {
             future.complete(timeout());
-            return;
+            return false;
         }
-        KvStore store = stores[index];
-        Result result =
-                switch (command) {
-                    case Command.Get get -> doGet(store, get);
-                    case Command.Set set -> doSet(store, set);
-                    case Command.Delete delete -> doDelete(store, delete);
-                };
-        future.complete(result);
+        return true;
+    }
+
+    private CompletableFuture<Result> track(CompletableFuture<Result> future) {
+        future.whenComplete((result, error) -> pending.remove(future));
+        pending.add(future);
+        return future;
     }
 
     private Result doGet(KvStore store, Command.Get get) {
@@ -111,6 +161,26 @@ public final class KvEngine implements CacheEngine {
     private Result doDelete(KvStore store, Command.Delete delete) {
         boolean existed = store.delete(delete.key());
         return Result.of(existed ? ResultStatus.OK : ResultStatus.MISS, RoutingVersion.ZERO, OwnershipEpoch.ZERO);
+    }
+
+    private Result doExists(KvStore store, Command.Exists exists) {
+        return store.get(exists.key())
+                .map(
+                        entry ->
+                                new Result(
+                                        ResultStatus.OK,
+                                        Optional.empty(),
+                                        entry.version(),
+                                        RoutingVersion.ZERO,
+                                        OwnershipEpoch.ZERO,
+                                        Optional.empty()))
+                .orElseGet(() -> Result.of(ResultStatus.MISS, RoutingVersion.ZERO, OwnershipEpoch.ZERO));
+    }
+
+    /** COUNT 결과. 개수를 8-byte big-endian으로 {@code value}에 담는다({@link Command.Count} 참고). */
+    private static Result countResult(long total) {
+        byte[] encoded = ByteBuffer.allocate(Long.BYTES).putLong(total).array();
+        return Result.ok(Bytes.copyOf(encoded), 0, RoutingVersion.ZERO, OwnershipEpoch.ZERO);
     }
 
     @Override
