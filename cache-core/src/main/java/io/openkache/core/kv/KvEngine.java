@@ -15,6 +15,7 @@ import io.openkache.core.runtime.TimerEvent;
 import io.openkache.core.spi.PeerMessage;
 import io.openkache.core.spi.TimeSource;
 import java.nio.ByteBuffer;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -22,10 +23,12 @@ import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Function;
+import java.util.function.Predicate;
 
 /**
  * 단일 노드 인메모리 KV {@link CacheEngine} 구현체.
@@ -40,7 +43,8 @@ import java.util.function.Function;
  *
  * <p>복제·라우팅·Tablet이 없으므로 {@link #snapshot()}의 routingVersion과 ownershipEpoch는 항상
  * {@link RoutingVersion#ZERO}, {@link OwnershipEpoch#ZERO}다. {@link #onPeerMessage}와 {@link #onTimer}는 아직
- * 정의된 동작이 없어 아무 일도 하지 않는다. TTL, eviction, SCAN/RANGE, 영속화는 지원하지 않는다.
+ * 정의된 동작이 없어 아무 일도 하지 않는다. SCAN/RANGE는 {@link Command}가 아니라 {@link #scan}·{@link #range}로 제공한다.
+ * TTL, eviction, 영속화는 지원하지 않는다.
  */
 public final class KvEngine implements CacheEngine {
 
@@ -49,6 +53,7 @@ public final class KvEngine implements CacheEngine {
     private final KvStore[] stores;
     private final TimeSource timeSource;
     private final Set<CompletableFuture<Result>> pending = ConcurrentHashMap.newKeySet();
+    private final Set<CompletableFuture<ScanResult>> pendingScans = ConcurrentHashMap.newKeySet();
     private final AtomicBoolean closed = new AtomicBoolean();
 
     public KvEngine(NodeId nodeId, List<? extends Mailbox> workers, TimeSource timeSource) {
@@ -146,6 +151,107 @@ public final class KvEngine implements CacheEngine {
         return future;
     }
 
+    /**
+     * SCAN: {@code keyFilter}를 통과한 항목을 {@link KvEntry#KEY_ORDER}로 정렬해 앞에서 {@code limit}개까지 돌려준다.
+     *
+     * <p>{@code Command}/{@code Result}는 값 하나만 다루므로 SCAN/RANGE는 {@link #execute}가 아니라 이 메서드로 제공한다. TCP
+     * opcode는 없다. 노드 안에서 Tablet 이동(B3) 같은 용도로 호출한다. 예: Tablet 해시 범위에 속한 항목만 고르려면
+     * {@code key -> tabletRange.contains(KeyHash.of(key))}를 넘긴다. KV는 Tablet·해시를 모른다.
+     *
+     * <p>COUNT처럼 모든 worker에 보내 각자 걸러낸 뒤 합친다. worker마다 보는 시점이 달라 노드 전체의 한 순간 snapshot은 아니다.
+     * 한 worker 안에서는 그 worker의 다른 연산과 끼어들지 않는다. 어느 한 worker의 mailbox라도 가득 차면
+     * {@link ResultStatus#BUSY}. 결과 합치기와 정렬은 마지막으로 끝난 worker thread에서 한다.
+     *
+     * @param keyFilter owner worker thread에서 Key마다 호출된다. 저장소 전체를 훑으므로 가볍고 순수해야 하며 blocking·예외를
+     *     던지면 안 된다. 예외를 던지면 결과 stage가 예외로 완료된다
+     * @param limit 돌려줄 최대 항목 수(1 이상). 걸리면 {@link ScanResult#truncated()}가 {@code true}
+     * @param context deadline 확인에만 쓴다
+     */
+    public CompletionStage<ScanResult> scan(Predicate<Bytes> keyFilter, int limit, RequestContext context) {
+        Objects.requireNonNull(keyFilter, "keyFilter");
+        Objects.requireNonNull(context, "context");
+        if (limit < 1) {
+            throw new IllegalArgumentException("limit must be >= 1: " + limit);
+        }
+        if (closed.get()) {
+            return CompletableFuture.completedFuture(ScanResult.of(ResultStatus.UNAVAILABLE));
+        }
+        if (context.deadline().isExpired(timeSource)) {
+            return CompletableFuture.completedFuture(ScanResult.of(ResultStatus.TIMEOUT));
+        }
+
+        CompletableFuture<ScanResult> future = new CompletableFuture<>();
+        future.whenComplete((result, error) -> pendingScans.remove(future));
+        pendingScans.add(future);
+
+        List<KvStore.Partial> partials = new CopyOnWriteArrayList<>();
+        AtomicInteger remaining = new AtomicInteger(stores.length);
+        for (int i = 0; i < stores.length; i++) {
+            int index = i;
+            boolean accepted =
+                    workers.get(index)
+                            .offer(
+                                    () -> {
+                                        if (closed.get()) {
+                                            future.complete(ScanResult.of(ResultStatus.UNAVAILABLE));
+                                            return;
+                                        }
+                                        if (context.deadline().isExpired(timeSource)) {
+                                            future.complete(ScanResult.of(ResultStatus.TIMEOUT));
+                                            return;
+                                        }
+                                        try {
+                                            partials.add(stores[index].scan(keyFilter, limit));
+                                        } catch (RuntimeException e) {
+                                            future.completeExceptionally(e);
+                                            return;
+                                        }
+                                        if (remaining.decrementAndGet() == 0) {
+                                            future.complete(merge(partials, limit));
+                                        }
+                                    });
+            if (!accepted) {
+                future.complete(ScanResult.of(ResultStatus.BUSY));
+                return future;
+            }
+        }
+        return future;
+    }
+
+    /**
+     * RANGE: Key 순서({@link KvEntry#KEY_ORDER})로 {@code startInclusive} 이상 {@code endExclusive} 미만인 항목을 돌려준다.
+     * 비어 있는 경계는 그 방향으로 제한이 없다는 뜻이다. 나머지 동작은 {@link #scan}과 같다.
+     */
+    public CompletionStage<ScanResult> range(
+            Optional<Bytes> startInclusive, Optional<Bytes> endExclusive, int limit, RequestContext context) {
+        Objects.requireNonNull(startInclusive, "startInclusive");
+        Objects.requireNonNull(endExclusive, "endExclusive");
+        if (startInclusive.isPresent()
+                && endExclusive.isPresent()
+                && KvEntry.KEY_ORDER.compare(startInclusive.get(), endExclusive.get()) >= 0) {
+            throw new IllegalArgumentException("start must be < end: " + startInclusive.get() + " .. " + endExclusive.get());
+        }
+        Predicate<Bytes> inRange =
+                key ->
+                        (startInclusive.isEmpty() || KvEntry.KEY_ORDER.compare(startInclusive.get(), key) <= 0)
+                                && (endExclusive.isEmpty() || KvEntry.KEY_ORDER.compare(key, endExclusive.get()) < 0);
+        return scan(inRange, limit, context);
+    }
+
+    /** worker별 결과를 합쳐 Key 순서로 정렬하고 앞 {@code limit}개만 남긴다. */
+    private static ScanResult merge(List<KvStore.Partial> partials, int limit) {
+        List<KvEntry> all = new ArrayList<>();
+        boolean anyTruncated = false;
+        for (KvStore.Partial partial : partials) {
+            all.addAll(partial.entries());
+            anyTruncated |= partial.truncated();
+        }
+        all.sort((a, b) -> KvEntry.KEY_ORDER.compare(a.key(), b.key()));
+        boolean truncated = anyTruncated || all.size() > limit;
+        List<KvEntry> kept = all.size() > limit ? all.subList(0, limit) : all;
+        return new ScanResult(ResultStatus.OK, kept, truncated);
+    }
+
     private Result doGet(KvStore store, Command.Get get) {
         return store.get(get.key())
                 .map(entry -> Result.ok(entry.value(), entry.version(), RoutingVersion.ZERO, OwnershipEpoch.ZERO))
@@ -207,6 +313,11 @@ public final class KvEngine implements CacheEngine {
         for (CompletableFuture<Result> future : pending) {
             if (pending.remove(future)) {
                 future.complete(unavailable());
+            }
+        }
+        for (CompletableFuture<ScanResult> future : pendingScans) {
+            if (pendingScans.remove(future)) {
+                future.complete(ScanResult.of(ResultStatus.UNAVAILABLE));
             }
         }
     }
