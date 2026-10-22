@@ -1,6 +1,8 @@
 package io.openkache.runner;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.nio.file.Files;
@@ -17,6 +19,23 @@ import org.junit.jupiter.api.io.TempDir;
 class RepeatedExecutionTest {
 
     @TempDir Path resultsDir;
+
+    @Test
+    void omitsWorkingTreeStatusAndRejectsAppendingToTheOldCsvFormat() throws Exception {
+        var result = result(1, 10.0);
+        Path json = ResultWriter.writeJson(result, resultsDir);
+        Path csv = ResultWriter.appendCsv(result, resultsDir);
+        assertFalse(Files.readString(json).contains("workingTreeDirty"));
+        assertFalse(Files.readString(csv).contains("workingTreeDirty"));
+        ResultWriter.appendCsv(result(2, 20.0), resultsDir);
+        var rows = Files.readAllLines(csv);
+        assertEquals(3, rows.size());
+        assertEquals(rows.getFirst().split(",", -1).length, rows.get(1).split(",", -1).length);
+        String legacy = Files.readString(csv).replace("gitCommit,", "gitCommit,workingTreeDirty,");
+        Files.writeString(csv, legacy);
+        assertThrows(java.io.UncheckedIOException.class, () -> ResultWriter.appendCsv(result, resultsDir));
+        assertEquals(legacy, Files.readString(csv));
+    }
 
     @Test
     void continuesAfterFailureAndSummarizesSuccessfulRuns() throws Exception {
@@ -203,7 +222,6 @@ class RepeatedExecutionTest {
                 1,
                 new EnumMap<>(Outcome.class),
                 "none",
-                Optional.empty(),
                 Optional.empty());
     }
 }

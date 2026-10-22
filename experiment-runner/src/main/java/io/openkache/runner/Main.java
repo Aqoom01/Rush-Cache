@@ -17,8 +17,7 @@ import java.util.concurrent.TimeoutException;
  * Experiment Runner 진입점.
  *
  * <p>사용법: {@code openkache-experiment-runner <config.properties>}. 설정 형식은 {@link RunnerConfig}를
- * 참고한다. 단일 노드 baseline만 지원한다 — 대상은 {@code cache-server} 하나이고, 복제·장애 주입·multi-node 조율은
- * 하지 않는다.
+ * 참고한다. 기본 TCP 실험 또는 {@code execution.mode=research}의 config 지정 JVM backend를 실행한다.
  */
 public final class Main {
 
@@ -36,10 +35,21 @@ public final class Main {
 
         RunnerConfig config;
         try {
+            String mode = ResearchConfig.mode(Path.of(args[0]));
+            if (mode.equals("research")) {
+                int status = ResearchLauncher.run(ResearchConfig.load(Path.of(args[0])));
+                if (status != 0) System.exit(status);
+                return;
+            }
+            if (!mode.equals("tcp")) throw new ConfigException("execution.mode는 tcp 또는 research입니다");
             config = RunnerConfig.load(Path.of(args[0]));
         } catch (ConfigException e) {
             System.err.println(e.getMessage());
             System.exit(EXIT_CONFIG_ERROR);
+            return;
+        } catch (java.io.IOException e) {
+            System.err.println("연구 실행·결과 저장 실패: " + e.getMessage());
+            System.exit(EXIT_RUN_ERROR);
             return;
         }
 

@@ -1,6 +1,6 @@
 # B3 설계
 
-상태: 설계 초안(2026-10-21). 코드는 `core.migration`의 `package-info.java`만 있다. 공통 모델, 프로토콜, §6 실험은 모두 미구현. 구현 현황은 §7을 따른다.
+상태: 1단계 in-process baseline 구현(2026-10-21), 공통 Runner 연계와 Baseline 실행 결과 보관(2026-10-22). §7의 구조를 유지하며 stop-and-copy 동작, 외부 조건부 commit adapter, 계약 테스트, §6.1 SC1~SC6 실험을 구현했다. 실제 KV/peer 연계와 후속 variant·scaling은 미구현이다. 실행 방법은 [migration-comparison/README.md](migration-comparison/README.md), 보관된 실행은 [Baseline 보고서](migration-comparison/runs/run-2026-10-22T04-48-53.944252700Z-a4354ce4/repeat-001/results.md)와 [조건별 요약](migration-comparison/runs/run-2026-10-22T04-48-53.944252700Z-a4354ce4/repeat-001/summary.csv)을 따른다. 공식 run은 아직 선정하지 않았으며, 선정 후 B3 통합 `results.md`와 이동 실험 입구 `migration-comparison/results.md`를 작성한다.
 
 ## 1. 목표와 범위
 
@@ -62,7 +62,7 @@ Scale-out/in은 두 단계로 나눈다. 먼저 B3가 metric에서 `KEEP`, `SCAL
 | A2 Workload | 이동 중 쓰기 부하 | Uniform, 고정 Hot-Key. Zipfian 미구현 | 쓰기율·쏠림(Zipf) 요청열은 B3 실험 안에서 seed 고정으로 만든다. 필요성이 확인되면 A2에 공통화를 요청한다 |
 | Experiment Runner (본인) | 후속 실제 노드 연계의 실측: 3-node, `MOVED` 재시도 client, 장애 주입 | 단일 노드 전용 | 1단계는 in-process. 후속 실제 노드 연계에서 multi-node 실행과 B1 소유 client 라우팅 패키지 위치를 B1과 합의한다 |
 | A1·A3 장애 처리 | 이동 중 source·destination 장애 감지 | 미구현 | 1단계는 각 단계에서 job을 일부러 중단시켜 되돌리기만 확인한다 |
-| Experiment Metrics | 실험 결과 기록 | 결과 Schema 합의 전 | 1단계 결과는 테스트 출력과 CSV. Schema 확정 후 JSON으로 옮긴다 |
+| Experiment Metrics | 실험 결과 원본·요약과 재현 metadata | 현재 SC Baseline은 공통 Runner의 JSON 원본·CSV 요약·Markdown 보고서 생성과 실행 결과 보관까지 구현 | JSON 원본은 실행한 PC에 남기고 반복별 요약·보고서를 Git에 보관한다. 후속 비교 형식과 공통 Runner의 필드·schema 연결은 §6.6에 정의한다 |
 
 **캐시라서 달라지는 점.** 원본 데이터(DB)가 있어도 이동 중 성공 응답한 `SET`을 누락하면 destination에 이전 값이 남아 **stale HIT**가 될 수 있다. `DELETE`를 누락해도 지워야 할 값이 되살아나므로 마찬가지다. 따라서 1단계 정합성 기준은 "성공 응답한 모든 SET·DELETE가 cutover 결과에 반영"이다. `post-copy`에서 아직 한 번도 도착하지 않은 key를 MISS로 허용하는 정책은 이 기준과 분리해 후속 Post-Copy 확장에서 정한다.
 
@@ -124,7 +124,7 @@ Scale-out/in은 두 단계로 나눈다. 먼저 B3가 metric에서 `KEEP`, `SCAL
 
 ## 4. 공통 인터페이스: `MigrationProtocol`
 
-variant가 구현하는 계약이다. job 실행기와 실험 코드는 이 인터페이스만 호출하고, 어떤 variant가 꽂혀 있는지 모른다.
+variant가 구현하는 source-owned 기본 계약이다. 현재 Baseline 실행기는 `StopAndCopyProtocol`의 추가 lifecycle 연산도 직접 호출한다. 후속 비교 실행기는 §6.6의 test 전용 adapter를 통해 variant를 선택하고, 공통 측정 코드가 구체 protocol에 의존하지 않도록 한다. 현재 다섯 연산만으로 commit·진행도 관측까지 공통화됐다는 뜻은 아니다.
 
 ```
 name()                           실험 결과의 variant 값
@@ -230,14 +230,16 @@ Tablet 하나, key N개(key 16바이트, value 128바이트 고정), 전송률 B
 
 #### 시나리오
 
+연구 담당 영역 B1~B3와 구분하기 위해 이 절의 실험 ID는 SC1~SC6를 쓴다.
+
 | | 내용 | 변수 | 측정 | 가설 |
 |---|---|---|---|---|
-| B1 Tablet 크기 | 쓰기 없음 | N ∈ {1만, 10만, 100만} | downtime, 총 이동 시간, 전송량 비율 | downtime ≈ 크기 ÷ B + ACK·commit. 전송량 비율 1.0 + batch 헤더 |
-| B2 이동 중 쓰기 | N = 10만 | ρ ∈ {0, 0.1, 0.5} | 거절된 write 수, 불변식 3 위반 수 | 거절 수 ≈ downtime × 쓰기율. 위반 0 |
-| B3 DELETE 포함 | N = 10만, ρ = 0.1 | freeze 전 DELETE 비율 ∈ {0, 30%} | 불변식 3·9 위반 수 | 0. freeze 전에 지운 key가 destination에 없다 |
-| B4 중단 | N = 1만 | 중단 시점 ∈ {COPYING 중, SWITCHING ACK 전, commit 직후, CLEANING_UP 중} | 불변식 1·3·4 위반 수 | commit 전 중단은 원상태, commit 후 중단은 destination이 정답 |
-| B5 전송 이상 | N = 1만 | 주입 ∈ {checksum 손상, batch 중복, batch 누락, ACK 지연} | 전송 검증 실패 감지 수, 잘못된 commit 수 | 손상·누락은 commit 전에 감지, 중복은 결과 동일(불변식 6). 잘못된 commit 0 |
-| B6 격리 | 이동 Tablet 1개 + 다른 Tablet 요청 | 다른 Tablet 요청 비율 | 다른 Tablet의 거절 수, commit 뒤 source 응답 | 다른 Tablet 거절 0. commit 뒤 이동 Tablet 요청은 모두 `MOVED` |
+| SC1 Tablet 크기·전송 예산 | 쓰기 없음 | N ∈ {1만, 10만, 100만}; N=10만에서 B ∈ {16, 64, 256 KiB/tick} | downtime, 총 이동 시간, 전송량 비율 | downtime ≈ 크기 ÷ B + ACK·commit. 전송량 비율 1.0 + batch 헤더 |
+| SC2 이동 중 쓰기 | N = 10만 | ρ ∈ {0, 0.1, 0.5} | 거절된 write 수, 불변식 3 위반 수 | 거절 수 ≈ downtime × 쓰기율. 위반 0 |
+| SC3 DELETE 포함 | N = 10만, ρ = 0.1 | freeze 전 DELETE 비율 ∈ {0, 30%} | 불변식 3·9 위반 수 | 0. freeze 전에 지운 key가 destination에 없다 |
+| SC4 중단 | N = 1만 | 중단 시점 ∈ {COPYING 중, SWITCHING ACK 전, commit 직후, CLEANING_UP 중} | 불변식 1·3·4 위반 수 | commit 전 중단은 원상태, commit 후 중단은 destination이 정답 |
+| SC5 전송 이상 | N = 1만 | 주입 ∈ {checksum 손상, 항목 수 불일치, 데이터 크기 불일치, batch 중복/누락, 마지막 ACK 지연, 잘못된 ACK, ACK 누락} | 전송 검증 실패 감지 수, 잘못된 commit 수 | 손상·누락은 commit 전에 감지, 중복은 결과 동일(불변식 6). 잘못된 commit 0 |
+| SC6 격리 | 이동 Tablet 1개 + 다른 Tablet 요청 | 다른 Tablet 쓰기 ∈ {0, 1, 16회/tick} | 다른 Tablet의 거절 수, commit 뒤 source 응답 | 다른 Tablet 거절 0. commit 뒤 이동 Tablet 요청은 모두 `MOVED` |
 
 "가설"은 실행 전에 적은 것이고 결과가 다르면 그대로 기록한다.
 
@@ -245,18 +247,18 @@ Tablet 하나, key N개(key 16바이트, value 128바이트 고정), 전송률 B
 
 | 지표 | 정의 | 이상적인 값 |
 |---|---|---|
-| downtime | 그 Tablet의 write가 처음 거절된 tick부터, commit 뒤 destination에서 write가 처음 처리될 수 있는 tick까지 | 1단계에서는 Baseline 수치로 기록 |
-| 총 이동 시간 | `begin`부터 `DONE`까지 | |
+| 쓰기 차단 지속 시간 | 최초 write 거절부터 현재 owner의 write 재개를 관측한 tick까지. 정상 이동은 destination, 취소는 source의 재개를 측정. downtime은 이 지표의 정상 경로 값이다 | 취소·실패 복구 비용도 포함 |
+| 총 이동 시간 | `begin`부터 `DONE` 또는 `ABORTED`까지. cleanup 재시도 포함 | |
 | 전송량 비율 | 보낸 바이트 ÷ Tablet 크기 | 1.0 + batch 헤더 |
 | 거절된 write 수 | freeze 중 `BUSY`로 거절한 write 수 | downtime × 쓰기율에 비례 |
 | 불변식 위반 수 | §5의 1~9를 실험 끝에 검사 | 0 |
-| 전송 검증 실패 수 | batch checksum·record 수·ACK 불일치를 감지한 수 | B5에서 주입 수와 같음 |
+| 전송 검증 실패 수 | batch checksum·record 수·ACK 불일치를 감지한 수 | 손상·잘못된 ACK는 1; 누락은 검증 검출 0이며 timeout으로 복구 |
 
 - downtime 정의는 [VM Live Migration](references/vm-live-migration.md) §3.1의 "실행 중인 인스턴스가 없어 서비스를 못 하는 시간"을 write 기준으로 옮긴 것이다. read는 freeze 중에도 source가 처리하므로 넣지 않는다.
 
 ### 6.2 후속: Pre-Copy 비교
 
-`pre-copy`를 추가한 뒤 6.1과 같은 입력으로 두 variant를 비교한다.
+`pre-copy`를 추가한 뒤 아래 S1~S6의 각 조건을 `stop-and-copy`와 함께 새로 실행한다. SC1~SC6는 Baseline 검증, S1~S6는 동일 입력의 variant 비교로 유지한다. 현재 SC 결과를 S 비교의 측정값으로 대신 사용하지 않는다. 실행 계약과 산출물은 §6.6을 따른다.
 
 #### 질문
 
@@ -267,7 +269,7 @@ Tablet 하나, key N개(key 16바이트, value 128바이트 고정), 전송률 B
 
 #### 동일 조건
 
-6.1과 같다. 여기에 key 선택 분포(균등, Zipf)를 더해 두 variant에 똑같이 준다.
+key/value 크기·batch framing·전송 예산 모델은 6.1과 같다. 기본값은 N=10만, B=64 KiB/tick, 균등 분포, SET/DELETE=70/30, seed=1~5다. 각 행에서 명시한 N·rho·DELETE 비율·분포만 바꾼다. S1의 rho=0, S2의 rho=0.1, S3~S6의 기본 rho=0.5를 사용한다. 두 variant에는 동일 초기 데이터와 tick별 요청 **시도** 열을 준다(§6.6). Zipf는 미구현이며, 구현 전 S4를 완료로 표시하지 않는다. θ=0은 균등 분포로 정의하고 두 variant가 같은 생성기를 사용한다.
 
 #### 시나리오
 
@@ -278,12 +280,14 @@ Tablet 하나, key N개(key 16바이트, value 128바이트 고정), 전송률 B
 | S3 쓰기율 | N = 10만, 균등 쓰기 | ρ ∈ {0.01, 0.1, 0.5, 0.9, 1.2} | 라운드별 dirty, 종료 사유, downtime, 전송량 ÷ 크기 | dirty는 라운드마다 약 ρ배. ρ ≥ 1이면 종료 조건 3으로 멈추고 downtime이 크게 는다 |
 | S4 쓰기 쏠림 | N = 10만, ρ = 0.5 | Zipf θ ∈ {0, 0.99, 1.2} | S3와 같음 | 쏠릴수록 중복이 합쳐져 빨리 수렴하고 전송량이 준다 |
 | S5 DELETE 포함 | N = 10만, ρ = 0.5 | 쓰기 중 DELETE 비율 ∈ {0, 30%} | 불변식 3 위반 수 | 0. tombstone이 빠지면 여기서 드러난다 |
-| S6 중단 | N = 1만 | 중단 시점 ∈ {COPYING, CATCHING_UP, SWITCHING 검증 전, commit 직후} | 불변식 1·3·4 위반 수 | commit 전 중단은 원상태, commit 후 중단은 destination이 정답 |
-| 민감도 | S3를 다시 | 라운드 상한 ∈ {3, 10, 30}, 종료 임계 ∈ {64 KiB, 256 KiB, 1 MiB} | downtime, 전송량 | 상한·임계를 직접 정했으므로 그 선택이 결과를 얼마나 좌우하는지 함께 보고한다 |
+| S6 중단 | N = 1만, ρ = 0.5 | 공통 경계 ∈ {COPYING, SWITCHING 검증 전, commit 직후}; CATCHING_UP은 pre-copy 전용 추가 검증 | 불변식 1·3·4 위반 수 | commit 전 중단은 원상태, commit 후 중단은 destination이 정답 |
+| S3 민감도 | S3를 다시 | 라운드 상한 ∈ {3, 10, 30}, 종료 임계 ∈ {64 KiB, 256 KiB, 1 MiB} | downtime, 전송량 | 상한·임계를 직접 정했으므로 그 선택이 결과를 얼마나 좌우하는지 함께 보고한다 |
+
+S6에서 `CATCHING_UP`은 stop-and-copy에 없는 상태이므로 미지원으로 기록하고 해당 행의 차이값을 계산하지 않는다. 비교 전용 한쪽 결과를 다른 상태의 Baseline 결과와 짝짓지 않는다. S3 민감도는 별도 `case_id`로 구분하며 pre-copy 설정은 라운드 상한 10, 종료 임계 256 KiB가 기본이다. 각 설정 조합마다 동일 입력의 stop-and-copy를 함께 실행하되, 이 두 알고리즘 설정은 stop-and-copy에서 적용 대상 아님으로 기록한다.
 
 #### 측정 정의
 
-6.1의 지표에 아래를 더한다.
+6.1의 정합성 검사를 재사용하고 쓰기 차단은 실제 BUSY 시작부터 재개까지 측정한다. 비교용 전송량 비율의 분모는 두 방식에 공통인 **이동 시작 전 데이터 bytes**로 고정하고, 각 방식의 최종 데이터 bytes도 별도로 기록한다. 이동 중 성공한 DELETE 수가 달라도 분모 변경을 전송 효율 개선으로 혼동하지 않기 위해서다. 아래 지표를 더한다.
 
 | 지표 | 정의 |
 |---|---|
@@ -376,12 +380,152 @@ Rocksteady의 758 MB/s와 tail latency 수치는 측정 항목을 고르는 근�
 
 ### 6.5 실행 환경
 
-- in-process로 실행한다. 서버, 네트워크, 실제 시계를 쓰지 않는다. 시간은 논리 tick이고 결과의 time_domain은 virtual이다.
-- 전송은 tick당 바이트 예산으로 모델링한다. 단일 job은 B, scaling 실험은 node별·cluster 전체 예산을 scheduler가 활성 job에 나눈다. 네트워크 지연과 실제 직렬화 CPU 비용은 없다.
-- seed 5개 × 시나리오.
-- 코드: `cache-core/src/test/java/io/openkache/core/migration/experiment/` (`main`이 있는 러너). 1단계에는 6.1 러너만 둔다. `./gradlew test`에서는 돌지 않는다(B1과 같은 방식).
-- 결과: `migration-comparison/summary.csv`(6.1·6.2), `scaling-decision/summary.csv`(6.3), `movement-scaling-comparison/summary.csv`(6.4) (long 형식). node decision 결과에는 `metric`, `target`, `tolerance`, `stabilization_windows`, `current_nodes`, `desired_nodes`, `decision`을 포함한다. movement scaling 결과에는 `jobs`, `max_concurrent_jobs`, `endpoint_pattern`, `cluster_budget_bytes_per_tick`을 포함한다.
-- 서버 실측(이동 중 다른 Tablet 요청의 p99, `MOVED` 재시도 수, 실제 downtime)은 B1 소유권 판정·전파와 multi-node Runner가 구현된 뒤 후속 실제 노드 연계에서 한다.
+- in-process로 실행한다. 서버·네트워크·실제 시계를 쓰지 않는다. `time_domain=virtual`, 단위는 tick이다.
+- 단일 이동은 tick당 byte 예산으로 모델링한다. 여러 job은 node별·cluster 전체 예산을 scheduler가 활성 job에 나눈다. ACK와 framing의 비용 포함 범위를 manifest에 명시한다.
+- seed 1~5를 사용한다. 설정·입력·생성기 버전이 같아야 같은 요청열로 판단하며, seed만 같은 것을 동일 입력으로 간주하지 않는다.
+- 실험의 정식 진입점은 config를 읽는 공통 `experiment-runner`다. B3 main과 최소 adapter는 `cache-core/src/test/java/io/openkache/core/migration/experiment/`에 있으며 연구 backend로 실행한다. 현재 §6.1 Baseline의 config 분기·별도 JVM 호출이 구현됐고 S/E/M backend는 아직 없다. 연결 계약은 §6.6을 따른다. main 전체 실험은 JUnit에서 자동 실행하지 않고 대표 경로와 계약을 검증한다.
+- 모든 실험 결과는 실험 폴더의 `runs/<execution_id>/`에 실행별로 둔다. §6.1·§6.2는 `migration-comparison/`, §6.3은 `scaling-decision/`, §6.4는 `movement-scaling-comparison/`이다. 현재 §6.1 Baseline의 [실행 보고서](migration-comparison/runs/run-2026-10-22T04-48-53.944252700Z-a4354ce4/repeat-001/results.md)와 조건별 요약을 보관한다. 공식 run은 아직 선정하지 않았으며, 선정 후 실행 ID와 config를 실험별 입구 문서에서 지정한다. 저장 계약과 결과 문서 계층은 §6.6을 따른다.
+- 서버 실측(p99, MOVED 재시도 수, 실제 downtime)은 B1 소유권 전파와 multi-node Runner가 구현된 뒤 별도로 수행한다. virtual 결과와 같은 비교군으로 합산하지 않는다.
+
+### 6.6 비교·확장 실험의 실행 및 저장 계약
+
+**상태: 공통 Runner의 config 기반 B3 Baseline 호출·반복·제한 시간·JSON 원본·CSV/보고서 생성은 구현됐다(`b3-baseline-json-1`). 2026-10-22 전체 설정 실행의 반복별 요약·보고서를 Git에 보관한다. 아래 variant 공통 실행기·S/E/M backend·비교용 b3-research-v2는 후속 설계이며 해당 비교 결과는 아직 없다.**
+
+#### 실험 단위와 동일 입력
+
+| 구분 | 시나리오 | 실행 단위 | 결과 위치 |
+|---|---|---|---|
+| Baseline 검증 | SC1~SC6 | stop-and-copy 단독 검증 | migration-comparison/runs/<execution_id>/ (재실행 시 생성) |
+| 단일 이동 비교 | S1~S6, S3 민감도 | 조건·seed마다 stop-and-copy와 pre-copy | migration-comparison/runs/<execution_id>/ |
+| 노드 증감 판단 | E1~E7 | 같은 metric stream에 정책·설정 적용 | scaling-decision/runs/<execution_id>/ |
+| 여러 job 이동 | M1~M5 | 고정 Change 목록·workload에 scheduler·variant 적용 | movement-scaling-comparison/runs/<execution_id>/ |
+
+`execution_id`는 한 suite 실행 전체의 고유 ID, `case_id`는 seed·variant를 제외한 조건 정의의 ID, `run_id`는 조건·seed·candidate 실행의 고유 ID다. `candidate_id`는 같은 case 안에서 알고리즘과 설정 묶음을 구별한다. 예를 들어 같은 target-tracking 정책의 tolerance 5%와 10%는 서로 다른 candidate다. `case_id`는 공통 조건과 variant별 설정 묶음을 참조한다. S3 민감도의 라운드 상한·종료 임계 조합도 서로 다른 case가 된다.
+
+- S 비교 쌍의 키는 `(execution_id, case_id, seed)`이며 stop-and-copy/pre-copy candidate를 각각 하나씩 지정한다. E 실험은 같은 metric stream·초기 노드 상태의 candidate들을, M 실험은 같은 Change 목록·요청열의 candidate들을 비교한다. candidate마다 fresh fixture를 만든다. 같은 source/destination map을 이어서 재사용하지 않는다.
+- `cases.csv`는 N, key/value 크기, B, rho, 분포·theta, SET/DELETE 비율, 사전 삭제, 장애·취소 경계, max ticks와 variant별 설정을 정의한다. S/E/M은 필요한 열을 suite별로 명시한다.
+- workload는 protocol 실행 전에 정의한다. `(seed, tick, 요청 순번)`에서 key·연산·value를 정하고, BUSY·성공·복사 진행에 따라 다음 난수나 요청 수가 달라지지 않게 한다. 대용량은 결정론적 생성기로 재생해도 되지만 입력 hash·생성기 버전·최대 tick을 manifest에 남긴다.
+- 두 방식에 같은 tick당 요청 시도를 공급한다. 먼저 완료한 방식에는 완료 시점까지의 요청만 집계한다. 집계 구간·시도 수·성공 수·BUSY 수를 함께 기록해 서로 다른 전체 시간에서 나온 요청 수 차이를 해석할 수 있게 한다.
+- 정합성 oracle은 **각 variant에서 실제 성공한 SET·DELETE**를 반영한다. 같은 요청열이라도 Baseline의 BUSY와 pre-copy의 성공 때문에 두 방식의 최종 map은 달라질 수 있다. 각 결과를 자기 oracle과 비교한다.
+- timeout은 `cases.csv`의 공통 `max_ticks`를 사용한다. pre-copy의 라운드 상한·수렴 종료는 timeout과 다르며, 최종 freeze 단계로 넘어가는 사유로 기록한다.
+
+#### 공통 Runner 진입점과 연구 backend
+
+**구현된 경로: `experiment-runner`의 `ResearchConfig`·`ResearchLauncher`가 설정·반복·실제 제한 시간·결과 수집을 맡고, core test의 `BaselineResearchMain`이 Baseline을 실행한다. `BaselineJson`으로 조건·seed별 원본을 저장한 뒤 다시 읽어 CSV·Markdown을 만든다. 알고리즘은 공통 Runner에 넣지 않는다.**
+
+현재 공통 Runner의 `study`, `variant`, `scenario`는 metadata이며 B3 main을 선택하는 설정이 아니다. 기존 TCP 실행에는 서버 주소·요청 수·실제 시간 지표가 필요하므로 B3 tick 실험을 그 설정에 억지로 끼워 넣지 않는다.
+
+공통 config는 `execution.mode=research`, `study`, `experiment`, `repository.root`, `repeat.count`, `run.timeout.ms`, `execution.timeout.ms`, `results.dir`와 `backend.main`·`backend.classpath`·번호별 인자·source 경로·결과 schema·기대 개수를 지원한다. 연구별 옵션은 `backend.option.*`에 두며 공통 Runner의 분기나 등록 없이 JVM main을 선택한다. [공통 backend 계약](../research-backends.md)을 따른다. 기본/`tcp` 모드는 기존 TCP 동작을 유지한다. 모르는 key·치환자·누락된 main은 실행 전에 거절한다. 저장소 경로는 config 기준, 출력과 classpath는 저장소 기준이다. B3 config가 `backend.option.profile=full|quick`를 main 인자로 넘기고 기대 개수를 130/125로 지정한다. 이 값의 의미는 B3에만 있으며 Runner는 해석하지 않는다. N·rho·fault 목록과 seed 1~5는 Baseline suite의 고정 조건이며 repeat는 전체 묶음의 반복이다. 개별 조건 설정과 S/E/M config는 후속으로 추가한다.
+
+현재 B3 호출 순서는 `experiment-runner(config) → 별도 JVM의 BaselineResearchMain → JSON 원본 → 다시 읽기 → CSV·보고서`다. 연구 클래스는 core JAR에 포함되지 않으므로 먼저 `gradlew build :experiment-runner:installDist`를 수행하고 config에 core main/test classpath를 지정한다. main이 없으면 빌드와 classpath 확인을 요청하는 설정 오류로 종료한다. config는 실행할 Java main과 인자를 지정하며 shell command는 실행하지 않는다. 다른 연구도 같은 완료 계약의 backend와 config를 제공하면 Runner 수정 없이 실행한다. test fixture를 공통 Runner production 타입으로 참조하지 않는다.
+
+현재 suite 폴더에는 config·manifest·반복 요약·입구 보고서를 두고 `repeat-001/` 등 하위에 JSON 원본·long CSV·상세 보고서·backend 로그를 둔다. 새 suite ID는 공통 `run-<시각>-<UUID 일부>` 형식이다. manifest는 source hash와 산출물별 SHA-256, 기대 반복·원본 개수를 기록한다. backend는 연구별 검증 후 status·schema·cases를 완료 파일에 기록하고 Runner는 이를 파일 개수와 대조한다. 기존 공식 run은 덮어쓰지 않는다. 설정 예시와 실행 명령은 [migration-comparison/README.md](migration-comparison/README.md)를 따른다.
+
+Git commit은 Runner가 수집해 manifest와 원본 JSON이 공유한다. source hash는 텍스트 CRLF/CR을 LF로 정규화하는 `sha256-lf-text-v1`이며, 실제 backend classpath·Runner 클래스의 hash는 별도 기록한다. `backend.build.receipt`가 빌드 시 소스와 실행 클래스 hash를 함께 보관하고 실행 전 불일치·기록 누락을 거절한다. 빌드 기록의 자동 생성과 검증 범위는 [공통 backend 계약](../research-backends.md)을 따른다. 원본 JSON은 계속 Git에서 제외한다.
+
+공통 Runner는 backend 프로세스 실패·실제 시간 제한·시작하지 못한 반복을 수집한다. 제한 시간이 끝나면 backend 프로세스와 자식을 종료하고 성공 산출물이 없는 반복을 SUCCESS로 표시하지 않는다. B3는 모델 안의 tick timeout·migration 취소·정합성 결과를 보고한다. 의도된 migration 취소가 정합성을 만족하면 실험 실행 자체는 성공일 수 있으며 두 상태를 혼합하지 않는다. backend 중단 시 부분 JSON·오류 상태·미실행 항목을 보존하고 complete 보고서를 만들지 않는다.
+
+현재 `ExperimentResult`·`ResultWriter`는 TCP의 처리량·p99 등 고정 필드를 사용한다. B3 adapter는 동일한 공통 metadata 의미를 가진 별도의 연구 JSON 원본을 생성하고 TCP 고정 지표 record를 사용하지 않는다. 모든 연구를 공유하는 result API로 추출하는 일은 후속이며, B3는 p99·초당 처리량을 0으로 채우거나 tick을 ns로 환산하지 않는다. JSON의 공통 metadata 이름과 의미는 기존 Runner에 맞추고 연구 세부 지표만 별도 영역에 둔다.
+
+#### B3 backend의 공통 실행기와 variant별 adapter
+
+S 비교를 위한 후속 구현은 test의 experiment 내부에서 먼저 일반화한다. B1·공통 API·실제 KvEngine 계약은 유지한다. 공통 Runner에 추가할 부분은 위의 backend 선택·실행·수집과 결과 계약이며, B3 algorithm·fixture의 직접 의존성을 공통 Runner에 추가하지 않는다.
+
+| 계층 | 책임 | 계획된 위치(test experiment 아래) |
+|---|---|---|
+| 조건·입력 | case 검증, 초기 데이터, tick별 요청 시도 재생 | common/ExperimentCase, WorkloadTrace |
+| protocol adapter | 시작·tick 진행·취소·상태/진행도·commit 연결, 성공 write 관찰 hook | common/MigrationDriver + variant별 adapter |
+| 관측·검증 | 쓰기 차단 구간, 요청 결과, 전송량, 실제 종료 사유, oracle·단일 owner·epoch·MOVED 검사 | common/RunObservation 및 검증 코드 |
+| 출력 adapter | 공통 Runner의 결과 계약으로 metric/detail 전달, 파생 CSV·보고서 연결 | common/ExperimentOutput |
+| 단일 이동 suite | S1~S6 × 조건 × seed × variant | comparison/MigrationComparison |
+| 노드 증감 suite | metric stream·fake provisioner/membership | decision/ScalingDecisionExperiment |
+| 여러 job suite | 다중 노드·Tablet fixture, job별 예산·scheduler 진행 | movement/MovementScalingExperiment |
+
+이는 클래스 책임·배치 계획이며 빈 Java 클래스나 공용 framework를 선행 생성하지 않는다. `MigrationDriver`의 최소 연산은 begin, 요청 처리, step, cancel, 불변 관측 snapshot이다. commit의 readiness·CAS·완료 통지는 adapter가 연결한다. 비교 보고서가 구체 protocol을 직접 조회하지 않게 한다.
+
+현재 `MigrationFixture`·`TickRunner`·`BaselineResults`는 Baseline 전용으로 유지한다. pre-copy를 붙일 때 실제 중복을 기준으로 위 책임을 추출하고 기존 Baseline 회귀 결과를 확인한다. `Source`, `Destination`, ACK를 production `migration` 아래로 옮길지는 두 구현의 요구가 확인된 시점에 §7을 개정하며 결정한다.
+
+stop-and-copy와 pre-copy는 source-owned 계약을 공유한다. post-copy는 공통 입력·측정·출력 API를 사용하되, 소유권 선전환·미도착 key 요청·commit 이후 실패 계약을 별도 adapter·계약 테스트로 구현한다. 모든 복사가 끝난 뒤에만 commit한다는 검사를 post-copy에 적용하지 않는다.
+
+#### 시간·종료·정합성 관측
+
+- `blocked_start_tick`은 최초 BUSY, `blocked_end_tick`은 현재 owner가 제어 write를 처리한 시점이다. tick 전후에 같은 값의 제어 write를 수행하고 variant의 freeze·재개 이벤트와 대조한다. 제어 요청은 workload 통계와 dirty 추적에서 제외한다. 같은 tick의 이벤트 순서는 별도로 보존해 경계를 판단한다.
+- `writes_blocked_ticks`는 관측된 차단 구간의 합이다. 한 번도 차단되지 않았음을 확인한 완료 실행만 0으로 기록한다. 재개를 관측하지 못한 실행을 -1이나 0으로 대체하지 않고 미완료 구간과 관측 종료 tick을 남긴다.
+- `total_ticks`는 begin부터 DONE/ABORTED까지, `commit_tick`은 실제 metadata 변경 시점이다. 후속 post-copy의 read 대기·미도착 key 지표는 write 차단과 분리한다.
+- `outcome`은 완료·취소(timeout)·취소(요청)·취소 거부를 기록한다. runner 오류 등으로 lifecycle 결과를 관측할 수 없으면 outcome은 빈 값으로 두고 validation_status와 오류 사유를 남긴다. `termination_reason`은 실제 종료 이벤트, `stop_phase_reason`은 pre-copy가 freeze로 넘어간 이유(threshold/round-limit/non-converging 등)다. 이 둘을 섞지 않는다.
+- 예상 밖 abort·관측 실패·정합성 위반·미지원 조건·runner 오류는 별도의 `validation_status`(valid/invalid/unsupported/error)와 상세 사유로 남긴다. 이를 정상적인 timeout 취소로 바꾸지 않는다. 현재 Baseline은 예상 밖 abort 시 예외 종료하는 기존 동작을 유지한다.
+- `valid`인 의도된 취소도 복구 비용 비교에 포함한다. 미지원·관측 누락·오류는 성능 차이를 계산하지 않고 보고서에서 건수와 이유를 드러낸다.
+
+#### JSON 원본과 파생 요약 · B3 후속 형식
+
+공통 Runner의 **JSON 원본·CSV 요약** 원칙을 따른다. 후속 B3 결과도 JSON이 재분석의 기준이며, CSV·Markdown은 JSON에서 다시 만들 수 있어야 한다. `b3-research-v2`는 비교용 후속 형식의 제안 식별자이며 프로젝트 전체의 schema v2 합의를 의미하지 않는다. 현재 구현된 Baseline JSON은 `b3-baseline-json-1`로 구별하며, 아래 cases/runs/rounds 및 S/E/M 상세 schema는 아직 미구현이다.
+
+과거 SC v1은 CSV가 원본인 형식이었다. 기존 원본과 보고서는 모두 삭제했다. 당시 관측하지 않은 코드·환경 metadata를 추정해 채운 JSON을 사후 원본으로 만들지 않는다. 새 형식은 새 실행부터 적용하며, 공식 run을 대체할 때 공통 조건의 수치·정합성을 비교한다.
+
+| 파일 | 역할 | 작성 기준 |
+|---|---|---|
+| config.properties | suite 실행 설정 | 공통 Runner 진입점과 연구 설정 참조. backend 미구현 동안 실행 가능한 예시를 가장하지 않는다 |
+| manifest.json | suite ID·schema 식별자, 예상 case/seed/candidate, 입력·설정 hash, 생성 파일 목록·수집 상태 | 실행 시작 시 확정하고 관측된 상태로 갱신. 지표 원본의 대체물이 아님 |
+| results/<run_id>.json | **개별 실행의 원본** | 공통 metadata, 실제 설정, outcome·validation·종료 사유, 단위가 있는 metrics와 rounds/decisions/jobs/budgets 세부 관측 |
+| run-summary-<suite_id>.json | 반복 실행의 수집 결과 | 성공·실패·실제 시간 초과·미실행과 개별 원본 경로. 공통 Runner 요약과 의미를 맞춤 |
+| cases.csv / runs.csv | 조건·실행 목록의 파생 요약 | JSON 설정·원본·수집 상태에서 생성 |
+| summary.csv | 조건당 1행의 요약. seed 간 값이 다르면 최솟값~최댓값, 해당 없음은 `–` | JSON에서 생성. Git 보관 대상. 공통 TCP Runner의 wide CSV와 같은 schema로 append하지 않음 |
+| metrics.csv | run ID·metric·value·unit의 숫자 long 형식 | JSON의 숫자 지표에서 생성. 로컬 분석용이며 Git에 올리지 않음 |
+| rounds.csv | pre-copy 라운드별 dirty·전송 bytes·tick·전환 사유 | JSON 세부 관측의 파생 파일. 해당 suite만 생성하고 M은 job ID 추가 |
+| decisions.csv | E 전용 window별 입력·현재/원하는 노드 수·결정·사유 | JSON 세부 관측의 파생 파일 |
+| jobs.csv / budgets.csv | M 전용 job별 lifecycle·정합성 / tick별 node 예산 | JSON 세부 관측의 파생 파일 |
+| results.md | 같은 suite의 비교표·해석·검증·누락 현황 | 원본 JSON 또는 그 원본에서 검증한 파생 요약으로 자동 생성 |
+
+개별 원본은 기존 공통 Runner의 `executionId`, `resultSchemaVersion`, `study`, `variant`, `scenario`, `seed`, `runNumber`, `repeatCount`, `configSnapshot`, `invocation`, Git·JVM/OS metadata의 의미를 따른다. 공통 Runner의 `executionId`는 **개별 실행 ID**다. B3 폴더 경로의 `<execution_id>`는 suite 묶음 ID이므로 JSON에서는 `suiteExecutionId`로 구별하고, 기존 논리 필드 `run_id`가 JSON의 `executionId`에 대응한다. `caseId`, `candidateId`, `timeDomain=virtual`, metric/detail 영역을 연구 확장으로 정의한다. 공통 타입에 실제로 반영할 필드·호환성은 Runner 구현과 함께 검증한다.
+
+`manifest.json`만 있고 metrics가 CSV에만 있는 형식은 JSON 원본 형식으로 인정하지 않는다. 파생 파일만 갱신해 원본과 값이 달라지지 않게 하고, 보고서 생성 전에 ID 참조·metric 단위·행 중복·원본과의 값 일치를 확인한다. 대용량 detail을 JSON 파일로 분리하면 원본 JSON에 상대 경로·hash·범위를 남긴다.
+
+`results/<run_id>.json`은 공통 원본 결과 정책에 따라 Git에 올리지 않는다. 현재 `.gitignore`의 `experiments/**/results/*.json` 규칙이 이 경로를 포함한다. `runs/`에서 Git에 보관하는 것은 각 반복의 `repeat-*/summary.csv`·`repeat-*/results.md`뿐이다(2026-10-22 결정). config snapshot·manifest·launch·로그·완료 표시와 원본 JSON은 `.gitignore`로 제외해 실행한 PC에 남기고, 원본 JSON의 별도 보관 위치·접근 방법·hash는 실행 manifest에 기록한다. 현재 보관된 SC v1 CSV와 보고서는 없다.
+
+해당 없는 설정·metric은 0으로 채우지 않는다. JSON에서는 해당 없음과 관측 누락을 null 및 상태·사유로 구별하고, 적용 자체가 없는 metric은 생략한다. CSV에서는 해당 없음 `–`, 관측 누락은 빈 값과 validation 사유로 구별한다. 관측된 0은 숫자 0으로 보존한다. 숫자 원본의 정밀도를 유지하고 파생 CSV·표의 비율만 소수 6자리로 반올림한다.
+
+JSON key·방법론·코드 식별자는 영어를 유지한다. CSV 열 이름·지표명·상태 설명과 보고서는 한국어로 쓴다. 공통 CSV 열의 대응은 다음과 같다.
+
+| 의미 | CSV 열 이름 |
+|---|---|
+| suiteExecutionId / caseId / candidateId / executionId | 실행 묶음 ID / 조건 ID / 비교 대상 ID / 실행 ID |
+| seed / variant / timeDomain | 난수 초깃값 / 방식 / 시간 기준 |
+| outcome / validationStatus | 결과 / 검증 상태 |
+| terminationReason / stopPhaseReason | 종료 사유 / 쓰기 차단 전환 사유 |
+| metric / value / unit | 측정 항목 / 측정값 / 단위 |
+
+E의 방식은 정책 이름, S/M의 방식은 복사 variant다. 검증 상태는 정상·위반·미지원·오류로 표시한다. suite별 추가 열·단위도 backend 구현 시 명시적으로 고정한다.
+
+- 새 suite마다 `runs/<execution_id>/`를 만들고 기존 폴더에는 쓰지 않는다. 공통 Runner의 누적 CSV와 별도로, B3 suite별 요약은 해당 suite의 JSON에서 생성한다.
+- manifest의 예상 case·seed·candidate와 반복 수로 중복·누락을 확인한다. 중단되면 partial·오류·미실행을 원본/실행 요약에 남긴다. complete는 수집 완료이며 정합성 성공을 뜻하지 않는다.
+- 서로 다른 commit/source hash·입력 hash·budget·time_domain의 실행을 자동으로 짝짓지 않는다. 한쪽 실패·미지원·관측 누락은 차이 대신 상태로 표시한다. valid인 의도된 migration 취소는 복구 비용 비교에 포함한다.
+- S 비교는 같은 case·seed·반복의 `pre-copy - stop-and-copy` 차이를 먼저 계산한다. 해당 없는 metric이나 정의가 다른 metric은 차이를 계산하지 않는다. seed별 범위와 같은 seed의 반복을 구별하고 성능 신뢰구간으로 과장하지 않는다.
+- CSV는 UTF-8 BOM·LF, JSON/Markdown은 UTF-8·LF다. 실제 제어 시간 제한은 ms, 모델 시간은 tick으로 명시하고 혼합 집계하지 않는다.
+
+#### 결과 문서 계층
+
+결과 문서는 세 단계로 둔다. 숫자는 아래 단계의 공식 run에서만 위로 옮기며, 위 단계에서 새로 계산하지 않는다.
+
+| 단계 | 위치 | 내용 | 작성 |
+|---|---|---|---|
+| 실행별 | `<실험 폴더>/runs/<execution_id>/results.md` | 그 실행의 전체 표·검증·누락 현황 | runner가 같은 폴더의 원본에서 자동 생성 |
+| 실험별 입구 | `<실험 폴더>/results.md` | 공식 run 지정(시나리오별), 핵심 결과 몇 줄과 출처 run 링크 | 공식 run을 정하거나 바꿀 때 사람이 갱신 |
+| B3 통합 | `experiments/b3-live-migration/results.md` | 실험별 진행 상태, 결론 2~3줄, 실험별 입구 링크, 실험 사이의 해석 | 사람이 작성 |
+
+- 한 실험 폴더 안에서도 시나리오 묶음마다 공식 run이 다를 수 있다(예: SC run과 S run). 입구 문서의 공식 run 표에 시나리오·run·형식(v1/v2)·상태를 적는다.
+- 실험별 입구 `results.md`는 그 실험의 첫 공식 run이 생길 때 만든다. 그 전에는 B3 통합 문서가 폴더 README를 가리킨다. 빈 결과 문서를 미리 만들지 않는다.
+- 공식 run을 바꾸면 실험별 입구와 B3 통합 문서를 같은 변경에서 함께 갱신한다.
+
+#### 구현 순서와 완료 기준
+
+1. 구현된 공통 Runner의 Baseline config 선택·실행·JSON 원본·파생 출력을 유지하면서 S 비교용 case·요청열·관측을 일반화한다. 새 경로에서 stop-and-copy를 실행하고 기존 공통 조건의 정합성·tick·byte가 유지되는지 확인한다.
+2. pre-copy의 dirty generation·snapshot barrier·delta seq·tombstone·종료 조건과 adapter를 구현한다. S1~S3·S5·공통 S6 경계를 같은 입력의 두 variant로 비교하고, CATCHING_UP은 pre-copy 전용 검사로 남긴다.
+3. Zipf를 구현하고 S4·S3 민감도·라운드 추적·비교 보고서 및 중단된 실행/한쪽 누락 처리를 검증한다. 미구현 시나리오를 포함해 전체 비교 완료라고 표시하지 않는다.
+4. metric stream·fake provisioner/membership으로 E1~E7 runner를 구현한다. 실제 인프라 연동과 분리하고 정책 설정별 결과를 같은 stream에서 비교한다.
+5. 다중 노드/Tablet fixture와 scheduler로 M1~M5를 구현한다. 매 tick node·cluster 예산 합계와 job별 진행·전체 결과를 함께 검증한다. M5는 단일 이동 비교의 variant·pair 규칙을 재사용한다.
+6. post-copy는 실패·미도착 key 계약을 결정한 뒤 같은 비교 입력·출력 체계에 추가한다. source-owned 계약을 만족하는 척 표시하지 않는다.
+
+현재 Baseline adapter의 실제 원본은 `repeat-NNN/results/<run_id>.json`에 있으며, 같은 반복 폴더의 CSV·보고서를 JSON에서 다시 생성한다. `BaselineResearchMain --rebuild <반복 폴더>`로 재생성할 수 있다. 수집 상태는 suite의 `run-summary.json`과 manifest에 남긴다. 아래 §7의 기존 v1 run 및 이 JSON run을 비교용 v2 결과로 간주하지 않는다.
 
 ## 7. 코드 구조
 
@@ -405,20 +549,45 @@ cache-core/src/main/java/io/openkache/core/migration/
 cache-core/src/test/java/io/openkache/core/migration/
 ├── SourceOwnedMigrationContract.java  §5의 1단계 불변식. 우선 stop-copy만 사용
 ├── stopcopy/StopAndCopyProtocolTest.java
-└── experiment/                        1단계 Baseline 러너, 최소 저장소, tick 실행기, 지표
+└── experiment/                        현재 Baseline 러너·fixture·tick·JSON codec·Runner용 BaselineResearchMain
+    ├── common/                       (후속) 입력·adapter·관측·출력
+    ├── comparison/                   (후속) MigrationComparison
+    ├── decision/                     (후속) ScalingDecisionExperiment
+    └── movement/                     (후속) MovementScalingExperiment
 
-(후속) precopy/PreCopyProtocolTest.java, scaling policy·scheduler 실험
+(후속) precopy/PreCopyProtocolTest.java, post-copy 별도 계약, scaling policy·scheduler 실험
 
 experiments/b3-live-migration/
 ├── README.md                      variant 목록
 ├── design.md                      이 문서
 ├── references/                    논문·시스템별 정리
-├── migration-comparison/          6.1 Baseline 검증과 6.2 Pre-Copy 비교 결과 (실험 실행 후)
-├── scaling-decision/              metric 기반 노드 증감 판단 결과 (실험 실행 후)
-└── movement-scaling-comparison/   여러 migration job의 scaling 결과 (실험 실행 후)
+├── results.md                     (공식 run 선정 후 작성) B3 통합 상태·결론·링크
+├── migration-comparison/
+│   ├── README.md                   SC1~SC6 방법·지표, S1~S6 비교 계획
+│   ├── results.md                  (공식 run 선정 후 작성) 실험별 입구
+│   └── runs/                      (재실행 시 생성)
+│       ├── <suite_execution_id>/   JSON Baseline: config·manifest·반복 요약·repeat-NNN/
+│       └── <execution_id>/         (후속) S 비교 v2: manifest·results/*.json·파생 CSV·results.md
+├── scaling-decision/
+│   ├── README.md                   E1~E7 안내(준비됨)
+│   ├── results.md                  (첫 공식 run 후 생성) 입구
+│   └── runs/<execution_id>/        (후속 생성) 정책·설정 비교 원본과 보고서
+└── movement-scaling-comparison/
+    ├── README.md                   M1~M5 안내(준비됨)
+    ├── results.md                  (첫 공식 run 후 생성) 입구
+    └── runs/<execution_id>/        (후속 생성) job·scheduler·variant 결과
 ```
 
 규칙:
+
+1단계 구현 연결(아래 제한은 현재 Baseline에 적용; 후속 일반화의 범위·순서는 §6.6):
+
+- `MigrationJob`은 Change·variant·상태·진행도의 불변 스냅샷이다. protocol은 상태 전이마다 새 스냅샷을 만들고 원래 begin 입력은 session 식별에 사용한다.
+- `MigrationProtocol`의 공통 다섯 연산은 유지한다. `StopAndCopyProtocol`은 외부 실행기용 `job`, `state`, `expectedTable`, `readyToCommit`, `committed`를 추가 제공한다.
+- 저장소·전송 경계는 `StopAndCopyProtocol`의 내부 `Source`, `Destination`, `Acknowledgement`로 둔다. 별도 production 파일이나 공통 계약을 추가하지 않는다. 최소 adapter와 조건부 CAS coordinator, tick 실행기는 test의 `experiment`에 둔다.
+- protocol은 SWITCHING에서 기다린다. 외부 실행기가 freeze·ACK·staging 완료를 확인하고 `MigrationCommitter.commit(job, expectedTable)`을 호출한다. 성공 뒤 게시된 table을 `committed`에 전달하면 cleanup을 진행한다. commit은 복사 완료 다음 tick, cleanup은 그 다음 tick부터다.
+- batch는 기존 검증 metadata에 마지막 표시와 불변 record payload를 더했다. CRC32C와 실험 framing(헤더 29 bytes, record 길이 필드 8 bytes)을 사용한다. 실제 peer wire 계약은 아니다.
+- 전송은 부분 batch도 byte 예산을 소비하며 미사용 예산은 이월하지 않는다. 마지막 batch도 ACK가 있어야 SWITCHING으로 간다. 전달과 ACK polling을 분리하며 누락·지속적인 잘못된 ACK는 실행기의 pre-commit timeout으로 취소한다.
 
 - **패키지는 variant별로 나눈다** (`stopcopy`, `precopy`, `postcopy`). B1과 같은 이유다. "같은 기능의 다른 정책"이 아니라 복사 방식 자체가 비교 대상이다. 공통 타입은 `migration` 바로 아래에 둔다.
 - **variant 하나는 클래스 하나**가 된다. 클래스 Javadoc에 참고 문헌을 적고, `references/`의 정리 문서와 이름을 맞춘다.
@@ -446,6 +615,9 @@ experiments/b3-live-migration/
 | `post-copy` 중 source 장애 시 결말 (남은 key를 MISS로 두고 `DONE` 처리할지) | B3 | `post-copy` 설계 시 |
 | endpoint별 동시 job 수와 전송률 기본값. MongoDB의 참여 shard당 1개는 M2·M3의 baseline일 뿐 OpenKache 결정값은 아님 | B3 | Scaling 실험 후 |
 | 실험 결과 JSON 형식 | Metrics, 팀 합의 | 결과 Schema 합의 후 |
+| `runs/` 커밋 범위: 파일은 각 반복의 `summary.csv`·`results.md`로 결정됨. 어느 run을 커밋할지(공식 run만 / 전부)는 미정 | B3 | S 비교 첫 실행 전 |
+| suite ID와 개별 실행 ID의 구분. 현재 공통 연구 Runner의 suite ID는 run-시각-UUID 일부 형식이다 | B3, Experiment Runner | 공통 runner 구현 시 |
+| SC1~SC6을 공통 runner로 재실행할 때 S1~S6과 한 조건 표로 합칠지, 시나리오 ID 체계(예: 성능 P / 검증 V) | B3 | 공통 runner 구현 시 |
 
 **결정된 사항 (B1에서 넘겨받은 전제, 2026-10-19)**
 
