@@ -3,77 +3,167 @@ package io.openkache.core.replication.ionia;
 import io.openkache.core.api.Command;
 import io.openkache.core.model.ClientId;
 import io.openkache.core.model.OperationId;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 
 /**
- * 한 노드의 요청 기록과 순서 로그를 관리할 구성 요소.
+ * 한 노드의 메모리 쓰기 기록과 연속된 순서 로그. 모든 접근은 해당 Engine의 owner에서만 한다.
  *
- * <p><b>현재 상태: 구조 확인용 골격. 저장과 상태 전이는 아직 구현하지 않았다.</b> 로그를 변경하는 메서드는
- * {@link UnsupportedOperationException}을 던진다. 메서드가 있다는 사실을 기록·commit·적용 구현 완료로 해석하면 안 된다.
- *
- * <p>{@link IoniaEngine}이 노드마다 별도의 인스턴스를 소유한다. 향후 변경 가능한 상태는 해당 Engine의 owner worker에서만
- * 접근하며, 여러 thread에서 공유하지 않는다. 로컬 KV나 실제 네트워크를 직접 호출하지 않는다.
- *
- * <p>구현할 상태와 구분:
- *
- * <ul>
- *   <li>요청 기록: {@code ClientId + OperationId}로 식별한 SET/DELETE와 중복 처리 정보
- *   <li>순서 로그: leader가 제안한 {@link IoniaMessage.LogEntry}와 연속된 index
- *   <li>commit 위치: 순서 합의가 끝난 연속 구간의 마지막 index
- *   <li>적용 위치: 실제 KV 반영까지 끝난 연속 구간의 마지막 index
- * </ul>
- *
- * <p>commit과 KV 적용은 서로 다르다. Client의 대기 timeout만으로 수락한 요청을 삭제하지 않으며, 메모리 로그는 재시작 후
- * 데이터를 보존하지 않는다. 중복 요청, 로그 충돌, index 누락의 처리 규칙은 후속 구현과 테스트에서 확정한다.
+ * <p>요청 수락, 순서 확정(commit), KV 적용은 서로 다른 상태다. 기록 압축, 재시작 후 내구성, 복구는 제공하지 않는다.
  */
 public final class IoniaLog {
 
-    /** 저장소를 아직 만들지 않는 구조 확인용 생성자. */
-    public IoniaLog() {}
+    /** 재시도에도 유지하는 논리 쓰기 식별자. */
+    public record RequestId(ClientId clientId, OperationId operationId) {
+        public RequestId {
+            Objects.requireNonNull(clientId, "clientId");
+            Objects.requireNonNull(operationId, "operationId");
+        }
+    }
 
-    /**
-     * 논리 쓰기 요청을 기록할 진입점. 순서 index 부여와 KV 적용은 별도다.
-     *
-     * @param clientId 클라이언트 ID
-     * @param operationId 재시도에서도 유지하는 논리 연산 ID
-     * @param command 기록할 SET 또는 DELETE
-     * @throws UnsupportedOperationException 기록과 중복 처리 미구현
-     */
+    private final Map<RequestId, Command> recorded = new LinkedHashMap<>();
+    private final List<IoniaMessage.LogEntry> ordered = new ArrayList<>();
+    private final Map<RequestId, IoniaMessage.LogEntry> byRequest = new HashMap<>();
+    private long commitIndex;
+    private long appliedIndex;
+
+    /** 쓰기를 기록한다. 같은 ID/내용은 무시하고 같은 ID의 다른 내용은 상태 변경 없이 거절한다. */
     public void record(ClientId clientId, OperationId operationId, Command command) {
-        Objects.requireNonNull(clientId, "clientId");
-        Objects.requireNonNull(operationId, "operationId");
-        Objects.requireNonNull(command, "command");
-        throw new UnsupportedOperationException("IONIA request recording is not implemented yet");
+        RequestId id = new RequestId(clientId, operationId);
+        requireWrite(command);
+        Command existing = recorded.get(id);
+        if (existing != null && !existing.equals(command)) {
+            throw new IllegalArgumentException("request ID is already used for another command");
+        }
+        recorded.putIfAbsent(id, command);
+    }
+
+    /** leader가 쓰기에 순서를 부여한다. 재시도면 기존 항목을 반환한다. index는 1부터 시작한다. */
+    public IoniaMessage.LogEntry order(ClientId clientId, OperationId operationId, Command command) {
+        record(clientId, operationId, command);
+        RequestId id = new RequestId(clientId, operationId);
+        IoniaMessage.LogEntry existing = byRequest.get(id);
+        if (existing != null) {
+            return existing;
+        }
+        IoniaMessage.LogEntry entry =
+                new IoniaMessage.LogEntry(lastLogIndex() + 1, clientId, operationId, command);
+        ordered.add(entry);
+        byRequest.put(id, entry);
+        return entry;
     }
 
     /**
-     * 순서 제안의 로그 항목을 받아들일 진입점. leader·view 검증은 Engine이 맡는다.
-     *
-     * @param prepare 연속된 로그 항목이 담긴 순서 제안
-     * @throws UnsupportedOperationException 기존 로그와의 비교·추가 미구현
+     * follower가 순서 제안을 수락한다. batch 전체 검사 후 추가하므로 실패 시 부분 기록하지 않는다.
+     * 일치하는 항목의 재전송은 허용하고 중간 누락/충돌/동일 요청의 중복 순서 배정은 거절한다.
      */
     public void accept(IoniaMessage.Prepare prepare) {
         Objects.requireNonNull(prepare, "prepare");
-        throw new UnsupportedOperationException("IONIA ordered log append is not implemented yet");
+        long next = lastLogIndex() + 1;
+        Map<RequestId, Long> incoming = new HashMap<>();
+        for (IoniaMessage.LogEntry entry : prepare.entries()) {
+            RequestId id = idOf(entry);
+            Command known = recorded.get(id);
+            if (known != null && !known.equals(entry.command())) {
+                throw new IllegalArgumentException("request payload conflicts with the local record");
+            }
+            IoniaMessage.LogEntry assigned = byRequest.get(id);
+            if (assigned != null && !assigned.equals(entry)) {
+                throw new IllegalArgumentException("request already has another log position");
+            }
+            if (incoming.putIfAbsent(id, entry.index()) != null) {
+                throw new IllegalArgumentException("request occurs twice in prepare");
+            }
+            if (entry.index() < next) {
+                if (!entry.equals(ordered.get(Math.toIntExact(entry.index() - 1)))) {
+                    throw new IllegalArgumentException("ordered log conflict");
+                }
+            } else if (entry.index() == next) {
+                next++;
+            } else {
+                throw new IllegalArgumentException("ordered log has a gap");
+            }
+        }
+        for (IoniaMessage.LogEntry entry : prepare.entries()) {
+            recorded.putIfAbsent(idOf(entry), entry.command());
+            if (entry.index() > lastLogIndex()) {
+                ordered.add(entry);
+                byRequest.put(idOf(entry), entry);
+            }
+        }
     }
 
-    /**
-     * 이 index까지 순서가 확정되었다고 기록할 진입점. 이 호출 자체가 KV를 변경하지는 않는다.
-     *
-     * @param commitIndex 순서가 확정된 연속 구간의 끝. 0은 빈 구간
-     * @throws UnsupportedOperationException commit 위치 검증·갱신 미구현
-     */
-    public void commitThrough(long commitIndex) {
-        throw new UnsupportedOperationException("IONIA commit tracking is not implemented yet");
+    /** 보유한 연속 구간만 commit한다. 오래된 commit 재전송은 상태를 되돌리지 않는다. */
+    public void commitThrough(long index) {
+        if (index < 0 || index > lastLogIndex()) {
+            throw new IllegalArgumentException("commit index is outside the local log");
+        }
+        commitIndex = Math.max(commitIndex, index);
     }
 
-    /**
-     * KV 적용이 실제로 완료된 항목을 표시할 진입점. 빠진 항목을 건너뛰어 적용 위치를 올리지 않는다.
-     *
-     * @param index KV 반영이 완료된 로그 항목의 index
-     * @throws UnsupportedOperationException 적용 완료 추적 미구현
-     */
+    /** KV 적용 성공 후 호출한다. commit 이전 적용과 연속 적용 위치 건너뛰기를 거절한다. */
     public void markApplied(long index) {
-        throw new UnsupportedOperationException("IONIA applied-index tracking is not implemented yet");
+        if (index < 1 || index > commitIndex) {
+            throw new IllegalArgumentException("only committed entries may be applied");
+        }
+        if (index <= appliedIndex) {
+            return;
+        }
+        if (index != appliedIndex + 1) {
+            throw new IllegalArgumentException("applied index must be a contiguous prefix");
+        }
+        appliedIndex = index;
+    }
+
+    /** index 위치의 항목. 없는 항목은 Optional.empty(). owner에서만 읽는다. */
+    public Optional<IoniaMessage.LogEntry> entry(long index) {
+        if (index < 1 || index > lastLogIndex()) {
+            return Optional.empty();
+        }
+        return Optional.of(ordered.get(Math.toIntExact(index - 1)));
+    }
+
+    /** firstIndex부터 마지막 항목까지의 불변 복사본. 재전송에 사용한다. */
+    public List<IoniaMessage.LogEntry> entriesFrom(long firstIndex) {
+        if (firstIndex < 1 || firstIndex > lastLogIndex() + 1) {
+            throw new IllegalArgumentException("first index is outside the local log");
+        }
+        return List.copyOf(ordered.subList(Math.toIntExact(firstIndex - 1), ordered.size()));
+    }
+
+    /** 아직 순서가 없는 기록까지 포함한 논리 쓰기 수. */
+    public int recordedCount() {
+        return recorded.size();
+    }
+
+    /** 연속된 순서 로그의 끝. 0은 빈 로그다. */
+    public long lastLogIndex() {
+        return ordered.size();
+    }
+
+    /** 확정된 연속 구간의 끝. */
+    public long commitIndex() {
+        return commitIndex;
+    }
+
+    /** KV에 실제 적용한 연속 구간의 끝. */
+    public long appliedIndex() {
+        return appliedIndex;
+    }
+
+    private static RequestId idOf(IoniaMessage.LogEntry entry) {
+        return new RequestId(entry.clientId(), entry.operationId());
+    }
+
+    private static void requireWrite(Command command) {
+        Objects.requireNonNull(command, "command");
+        if (command instanceof Command.Get) {
+            throw new IllegalArgumentException("GET must not be added to the write log");
+        }
     }
 }

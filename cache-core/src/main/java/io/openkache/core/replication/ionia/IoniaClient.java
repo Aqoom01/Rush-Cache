@@ -1,6 +1,7 @@
 package io.openkache.core.replication.ionia;
 
 import io.openkache.core.api.Command;
+import io.openkache.core.api.Deadline;
 import io.openkache.core.api.RequestContext;
 import io.openkache.core.api.Result;
 import io.openkache.core.api.ResultStatus;
@@ -8,80 +9,183 @@ import io.openkache.core.model.ClientId;
 import io.openkache.core.model.NodeId;
 import io.openkache.core.model.OwnershipEpoch;
 import io.openkache.core.model.RoutingVersion;
+import io.openkache.core.runtime.TimerEvent;
+import io.openkache.core.spi.TimeSource;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
- * 여러 노드에 대한 요청 전송 지시와 ACK·읽기 결과 판단을 맡을 IONIA 클라이언트.
+ * 고정 view/3노드 메모리 프로토타입의 클라이언트. 여러 thread에서 호출할 수 있으며 block하지 않는다.
  *
- * <p><b>현재 상태: 구조 확인용 골격.</b> {@link #execute}는 메시지를 보내지 않고 {@code NOT_IMPLEMENTED}를 반환한다.
- * 실제 요청 전송, 기록 ACK 집계, 읽기 검증, 재시도와 timeout 판단은 아직 구현하지 않았다.
+ * <p>SET은 세 노드 모두의 기록 ACK로 완료한다. GET은 leader에서만 읽고 DELETE는 leader의 commit/적용 결과를
+ * 기다린다. 기록 ACK는 SSD 내구성이나 KV 적용 완료를 뜻하지 않는다. follower 읽기 검증, quorum fallback,
+ * leader 변경은 아직 없다. 주소와 TCP는 주입한 전송 구현이 맡는다.
  *
- * <p>Workload는 논리 {@link Command}만 만들고, Runner가 이 Client를 호출한다. Client는 각 서버의
- * {@link IoniaEngine}을 내부에 만들거나 로컬 KV를 소유하지 않는다. IP·호스트명·포트와 실제 socket은 다루지 않는다.
- *
- * <p>후속 구현에서 클라이언트용 기록·읽기 요청과 응답 타입 및 비차단 전송 경계를 연결한다. 공통 {@code Transport}의
- * 로컬 전송 완료나 노드 간 {@code PrepareAck}를 클라이언트의 기록 ACK로 대신 사용하지 않는다.
+ * <p>호출자는 대기 요청의 deadline 처리를 위해 주기적으로 onTimer를 호출해야 한다. 자체 timer thread를 만들지 않는다.
  */
-public final class IoniaClient {
+public final class IoniaClient implements AutoCloseable {
 
     private final ClientId clientId;
     private final List<NodeId> replicas;
     private final NodeId leaderId;
     private final long view;
+    private final IoniaClientTransport transport;
+    private final TimeSource timeSource;
+    private final Map<CompletableFuture<Result>, Deadline> pending = new ConcurrentHashMap<>();
+    private final AtomicBoolean closed = new AtomicBoolean();
 
     /**
-     * 클라이언트와 고정 복제 그룹의 구성을 보관한다. Client 자신은 복제 그룹의 노드가 아니다.
-     *
-     * @param clientId 논리 요청을 발급하는 클라이언트 ID
-     * @param replicas 서로 다른 복제 노드 세 개. 불변 복사본을 보관한다
-     * @param leaderId 복제 그룹에 속한 고정 leader
-     * @param view 실행 동안 고정할 IONIA 세대 번호. 0 이상
+     * 고정 그룹과 비차단 전송 기능을 연결한다. transport의 생명주기는 호출자가 관리한다.
+     * Client는 복제 노드가 아니며 Engine이나 로컬 KV를 생성하지 않는다.
      */
-    public IoniaClient(ClientId clientId, List<NodeId> replicas, NodeId leaderId, long view) {
+    public IoniaClient(
+            ClientId clientId, List<NodeId> replicas, NodeId leaderId, long view,
+            IoniaClientTransport transport, TimeSource timeSource) {
         this.clientId = Objects.requireNonNull(clientId, "clientId");
         this.replicas = List.copyOf(Objects.requireNonNull(replicas, "replicas"));
         this.leaderId = Objects.requireNonNull(leaderId, "leaderId");
-        if (this.replicas.size() != IoniaConfig.REPLICA_COUNT) {
-            throw new IllegalArgumentException("replicas must contain exactly three nodes");
-        }
-        if (new HashSet<>(this.replicas).size() != this.replicas.size()) {
-            throw new IllegalArgumentException("replicas must contain distinct nodes");
+        if (this.replicas.size() != IoniaConfig.REPLICA_COUNT
+                || new HashSet<>(this.replicas).size() != this.replicas.size()) {
+            throw new IllegalArgumentException("replicas must contain exactly three distinct nodes");
         }
         if (!this.replicas.contains(leaderId)) {
             throw new IllegalArgumentException("leaderId must belong to replicas");
         }
         if (view < 0) {
-            throw new IllegalArgumentException("view must be >= 0: " + view);
+            throw new IllegalArgumentException("view must be >= 0");
         }
         this.view = view;
+        this.transport = Objects.requireNonNull(transport, "transport");
+        this.timeSource = Objects.requireNonNull(timeSource, "timeSource");
     }
 
     /**
-     * 논리 요청 하나를 실행할 진입점. 현재는 송신이나 결과 판단 없이 {@code NOT_IMPLEMENTED}로 완료한다.
-     *
-     * <p>후속 구현할 흐름:
-     *
-     * <ul>
-     *   <li>SET: 복제 그룹에 기록 요청 → 같은 view·논리 요청의 서로 다른 노드 ACK 확인
-     *   <li>GET: leader 또는 follower 읽기 → pending 변경·응답 index 검증
-     *   <li>DELETE: leader에서 순서 확정·적용 후 실제 삭제 결과 수신
-     * </ul>
-     *
-     * <p>논리 요청의 식별자는 context의 {@code ClientId + OperationId}를 사용한다. 재시도에서도 유지해야 하며,
-     * timeout을 미적용이나 취소 성공으로 해석하지 않는다. 호출 thread에서 응답을 기다리며 block하지 않아야 한다.
-     *
-     * @param command Workload 또는 테스트가 만든 논리 요청
-     * @param context 논리 요청 ID와 deadline. 이 Client의 clientId를 사용해야 한다
-     * @return 현재는 항상 미구현 결과
+     * 논리 요청을 분기한다. 같은 쓰기의 재시도에는 context의 ClientId/OperationId와 내용을 유지해야 한다.
+     * 반환 stage의 timeout은 서버의 쓰기 취소나 rollback을 의미하지 않는다.
      */
     public CompletionStage<Result> execute(Command command, RequestContext context) {
         Objects.requireNonNull(command, "command");
         Objects.requireNonNull(context, "context");
-        return CompletableFuture.completedFuture(
-                Result.of(ResultStatus.NOT_IMPLEMENTED, RoutingVersion.ZERO, OwnershipEpoch.ZERO));
+        if (closed.get()) {
+            return completed(ResultStatus.UNAVAILABLE);
+        }
+        if (!clientId.equals(context.clientId())) {
+            return completed(ResultStatus.BAD_REQUEST);
+        }
+        if (context.deadline().isExpired(timeSource)) {
+            return completed(ResultStatus.TIMEOUT);
+        }
+        CompletableFuture<Result> future = new CompletableFuture<>();
+        pending.put(future, context.deadline());
+        future.whenComplete((result, error) -> pending.remove(future));
+        if (closed.get()) {
+            future.complete(resultOf(ResultStatus.UNAVAILABLE));
+            return future;
+        }
+        switch (command) {
+            case Command.Set set -> executeSet(set, context, future);
+            case Command.Get get -> executeGet(get, context, future);
+            case Command.Delete delete -> executeDelete(delete, context, future);
+        }
+        return future;
+    }
+
+    private void executeSet(Command.Set set, RequestContext context, CompletableFuture<Result> future) {
+        Set<NodeId> acknowledged = ConcurrentHashMap.newKeySet();
+        // 세 비차단 전송을 시작한다. 전송 stage의 성공이 아닌 각 노드의 기록 응답을 센다.
+        for (NodeId node : replicas) {
+            try {
+                transport.record(node, request(set, context)).whenComplete((ack, error) -> {
+                    if (future.isDone()) {
+                        return;
+                    }
+                    if (context.deadline().isExpired(timeSource)) {
+                        future.complete(resultOf(ResultStatus.TIMEOUT));
+                    } else if (error != null || ack == null) {
+                        future.complete(resultOf(ResultStatus.UNAVAILABLE));
+                    } else if (!node.equals(ack.nodeId()) || ack.view() != view
+                            || !clientId.equals(ack.clientId())
+                            || !context.operationId().equals(ack.operationId())) {
+                        future.complete(resultOf(ResultStatus.BAD_REQUEST));
+                    } else if (ack.status() != ResultStatus.OK) {
+                        future.complete(resultOf(ack.status()));
+                    } else {
+                        acknowledged.add(node);
+                        if (acknowledged.size() == replicas.size()) {
+                            future.complete(resultOf(ResultStatus.OK));
+                        }
+                    }
+                });
+            } catch (RuntimeException error) {
+                future.complete(resultOf(ResultStatus.UNAVAILABLE));
+            }
+        }
+    }
+
+    private void executeGet(Command.Get get, RequestContext context, CompletableFuture<Result> future) {
+        executeAtLeader(get, context, future);
+    }
+
+    private void executeDelete(Command.Delete delete, RequestContext context, CompletableFuture<Result> future) {
+        executeAtLeader(delete, context, future);
+    }
+
+    private void executeAtLeader(Command command, RequestContext context, CompletableFuture<Result> future) {
+        try {
+            transport.execute(leaderId, request(command, context)).whenComplete((reply, error) -> {
+                if (context.deadline().isExpired(timeSource)) {
+                    future.complete(resultOf(ResultStatus.TIMEOUT));
+                } else if (error != null || reply == null) {
+                    future.complete(resultOf(ResultStatus.UNAVAILABLE));
+                } else if (!leaderId.equals(reply.nodeId()) || reply.view() != view
+                        || !clientId.equals(reply.clientId())
+                        || !context.operationId().equals(reply.operationId())) {
+                    future.complete(resultOf(ResultStatus.BAD_REQUEST));
+                } else {
+                    future.complete(reply.result());
+                }
+            });
+        } catch (RuntimeException error) {
+            future.complete(resultOf(ResultStatus.UNAVAILABLE));
+        }
+    }
+
+    private IoniaClientTransport.Request request(Command command, RequestContext context) {
+        long remaining = Math.max(0, context.deadline().monotonicNanos() - timeSource.monotonicNanos());
+        return new IoniaClientTransport.Request(view, command, clientId, context.operationId(),
+                context.routingVersion(), context.ownershipEpoch(), remaining);
+    }
+
+    /** 외부 timer 구동 시 만료된 요청을 완료한다. 이미 수락된 원격 쓰기를 취소하지 않는다. */
+    public void onTimer(TimerEvent event) {
+        Objects.requireNonNull(event, "event");
+        pending.forEach((future, deadline) -> {
+            if (deadline.isExpired(timeSource)) {
+                future.complete(resultOf(ResultStatus.TIMEOUT));
+            }
+        });
+    }
+
+    /** 대기 요청을 UNAVAILABLE로 완료한다. 외부 소유 transport는 닫지 않는다. */
+    @Override
+    public void close() {
+        closed.set(true);
+        pending.keySet().forEach(future -> future.complete(resultOf(ResultStatus.UNAVAILABLE)));
+    }
+
+    private static CompletionStage<Result> completed(ResultStatus status) {
+        Result result = resultOf(status);
+        return CompletableFuture.completedFuture(result);
+    }
+
+    private static Result resultOf(ResultStatus status) {
+        return Result.of(status, RoutingVersion.ZERO, OwnershipEpoch.ZERO);
     }
 }
