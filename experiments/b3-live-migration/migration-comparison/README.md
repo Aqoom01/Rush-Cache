@@ -13,7 +13,8 @@ B1~B3는 연구 담당 영역이고 SC·S는 B3 안의 실험 시나리오 ID다
 |---|---|---|
 | SC1~SC6 | stop-and-copy 단독 Baseline 검증(§6.1) | 실행 코드와 기존 130회 Baseline 결과 보관 |
 | S1~S5 | 같은 입력의 stop-and-copy / pre-copy / post-copy 비교 | 비교 backend·finite Zipf·JSON 원본/요약 생성 구현 |
-| S6·S3 민감도 | 중단 경계·임계/라운드 설정 비교 | 프로토콜 경계 테스트는 있으나 비교 suite는 후속 |
+| S3 민감도 | 종료 임계·라운드 상한 설정 비교 | 별도 sensitivity config·JSON 원본·요약 생성 구현 |
+| S6 | 중단 경계 비교 | 프로토콜 경계 테스트는 있으나 비교 suite는 후속 |
 
 pre-copy·post-copy의 구현과 별도 정합성 테스트는 [프로토콜 구현 안내](../protocols.md)에 있다. Baseline config는 stop-and-copy만 실행하고 아래 comparison config로 세 방식을 비교한다.
 
@@ -41,6 +42,21 @@ java -cp "cache-core/build/classes/java/main;cache-core/build/classes/java/test"
 S6 취소/장애 비교, S3 임계·라운드 민감도, E/M scaling과 실제 KV/peer 실험은 이 suite에 포함하지 않는다.
 
 기존 SC Baseline과 새 비교 결과는 별도 run/schema로 보관한다. Baseline config 실행은 공통 Runner의 연구 backend를 사용하며 JSON 원본 형식 `b3-baseline-json-1`을 생성한다. S1~S6 비교용 `b3-research-v2`와 별도 형식이다. 공식 run은 검증을 마친 뒤 입구 문서에서 명시적으로 선택한다.
+
+## S3 종료 설정 민감도 실행
+
+```powershell
+.\gradlew.bat build :experiment-runner:installDist
+.\experiment-runner\build\install\openkache-experiment-runner\bin\openkache-experiment-runner.bat experiments/b3-live-migration/migration-comparison/sensitivity.properties
+```
+
+`sensitivity.properties`는 N=100,000, B=64 KiB/tick, 균등 분포, DELETE 30%, rho 0.01/0.1/0.5/0.9/1.2에 종료 임계 64/256/1,024 KiB와 라운드 상한 3/10/30을 교차한다. 45조건 × seed 5개 × 세 방식 = 675회다. 같은 설정 조합마다 stop-and-copy·post-copy도 함께 실행하며 두 방식의 candidateConfig는 비어 있다. 설정이 적용되지 않는 칸은 CSV에서 빈 값, Markdown에서 —다.
+
+`sensitivity-quick.properties`는 N=1,000, B=4 KiB/tick, 임계 4/16/64 KiB로 줄인 675회 묶음을 두 번 실행한다. 임계/B 비율은 full과 같지만 N/B 비율은 다르므로 재현 검증용이며 full 성능 결과와 합산하지 않는다.
+
+JSON은 기존 `b3-comparison-json-1`에 `workloadHash`와 그 의미를 나타내는 `workloadHashKind`를 추가한다. workloadHash는 알고리즘 종료 설정을 제외한 요청 생성 규격 hash로, 같은 rho/seed의 모든 설정·방식에서 동일하다. 기존 inputHash는 종료 설정을 포함한 규격 hash로 유지한다. 둘 다 실제 trace 전체를 직렬화한 hash는 아니다.
+
+원본에는 pre-copy의 `live_delta_rounds`, `stopPhaseReason`과 `phaseEvents`가 기록된다. 요약에는 실제 라운드 범위와 THRESHOLD/ROUND_LIMIT/NOT_SHRINKING별 종료 횟수를 추가한다. 원본 재생성 시 누락·중복·출처·설정·workload hash와 라운드 범위를 검증한다. `--rebuild` 명령은 기존 비교와 같다. dirty generation별 상세 bytes를 기록하는 v2 형식과 S6 비교는 후속이다.
 
 ## 공통 Runner로 실행
 
@@ -203,7 +219,7 @@ run 폴더의 `results.md`는 seed별 결과가 같으면 조건당 한 행으�
 
 ## S1~S6 비교 (계획)
 
-**상태: S1~S5 비교 backend·finite Zipf·JSON/요약 생성 구현.** 실행은 위 comparison config를 따른다. S6·민감도·v2 상세 rounds 형식은 후속이다. 상세 조건은 [design.md §6.2](../design.md), 전체 v2 계획은 §6.6을 따른다.
+**상태: S1~S5와 별도 S3 민감도 비교 backend·JSON/요약 생성 구현.** 실행은 위 comparison/sensitivity config를 따른다. S6·v2 상세 rounds 형식은 후속이다. 상세 조건은 [design.md §6.2](../design.md), 전체 v2 계획은 §6.6을 따른다.
 
 같은 조건의 `stop-and-copy`와 `pre-copy`를 비교한다. S 비교에서는 stop-and-copy도 같은 입력으로 새로 실행하며, SC run의 수치를 S 비교 측정값으로 대신 쓰지 않는다.
 

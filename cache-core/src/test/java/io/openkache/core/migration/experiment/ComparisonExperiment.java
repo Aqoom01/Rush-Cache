@@ -65,6 +65,37 @@ final class ComparisonExperiment {
         return List.copyOf(cases);
     }
 
+    static boolean sensitivity(String profile) {
+        return profile.equals("sensitivity-full") || profile.equals("sensitivity-quick");
+    }
+
+    static List<Case> cases(String profile) {
+        if (profile.equals("full") || profile.equals("quick")) return cases(profile.equals("quick"));
+        if (!sensitivity(profile)) throw new IllegalArgumentException("invalid profile: " + profile);
+        boolean quick = profile.equals("sensitivity-quick");
+        List<Case> cases = new ArrayList<>();
+        // quick도 threshold/budget 비율은 보존한다. 데이터 크기를 줄인 재현 검증용이다.
+        for (double rho : new double[] {.01, .1, .5, .9, 1.2}) {
+            for (long threshold : quick ? new long[] {4_096, 16_384, 65_536}
+                    : new long[] {65_536, 262_144, 1_048_576}) {
+                for (int rounds : new int[] {3, 10, 30}) {
+                    cases.add(new Case("S3-sensitivity-rho" + rho + "-threshold" + threshold + "-rounds" + rounds,
+                            "S3-sensitivity", quick ? 1_000 : 100_000, quick ? 4_096 : 65_536,
+                            rho, 30, 0, threshold, rounds));
+                }
+            }
+        }
+        return List.copyOf(cases);
+    }
+
+    /** 알고리즘 설정을 제외한 요청 생성 규격. 설정 사이에도 같은 workload를 사용했는지 검증한다. */
+    static String workloadHash(Case c, long seed) {
+        var config = new java.util.TreeMap<>(c.config());
+        config.remove("stopThresholdBytes");
+        config.remove("maxRounds");
+        return sha256(GENERATOR + ":seed=" + seed + ":" + BaselineJson.encode(config));
+    }
+
     /** 각 tick에 같은 연산 수/내용을 생성하며 결과·variant에 따라 난수 소비를 바꾸지 않는다. */
     static final class Trace {
         private final Case condition;

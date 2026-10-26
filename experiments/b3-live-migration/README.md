@@ -2,7 +2,7 @@
 
 B3는 cluster metric을 보고 **노드를 언제 몇 개 늘리거나 줄일지 결정**하고, B1·B2가 만든 이동 계획(`Change`)을 받아 Tablet 데이터를 실제로 옮기고 소유권을 넘긴다. 비교 대상은 **노드 증감 판단 정책**, **데이터를 옮기는 프로토콜**, **이동 job이 많아질 때의 확장 특성**이다.
 
-**현재 구현(2026-10-23):** stop-and-copy·pre-copy·post-copy의 in-process 프로토콜과 정합성 테스트가 있다. pre/post-copy의 lifecycle·adapter 계약·실패 처리와 실행 방법은 [구현 안내](protocols.md)를 따른다. S1~S5 세 방식 비교 backend와 finite Zipf를 구현했다. 실제 KV/peer 통합, S6·민감도 비교, 노드 증감 정책과 scheduler는 후속이다.
+**현재 구현(2026-10-26):** stop-and-copy·pre-copy·post-copy의 in-process 프로토콜과 정합성 테스트가 있다. pre/post-copy의 lifecycle·adapter 계약·실패 처리와 실행 방법은 [구현 안내](protocols.md)를 따른다. S1~S5 세 방식 비교 backend와 finite Zipf, S3 종료 임계·라운드 상한 민감도 비교를 구현했다. 실제 KV/peer 통합, S6 비교, 노드 증감 정책과 scheduler는 후속이다.
 
 - 노드 증감 판단: target metric으로 desired node count 계산, tolerance·stabilization·warm-up으로 진동 억제
 - 단일 이동: downtime, 총 이동 시간, 전송량 증폭, 정합성
@@ -17,7 +17,7 @@ B3는 desired node count와 scale-in 후보를 정한다. 실제 노드 생성·
 | [design.md](design.md) | B3 전체 설계: 범위, 경계, 공통 모델·인터페이스, 불변식, 지표, 실험 계획 |
 | [protocols.md](protocols.md) | 구현된 pre-copy·post-copy 계약, commit·요청·실패 처리, 테스트 실행 |
 | [references/](references/) | 참고 논문·시스템별 정리. 읽은 내용과 프로젝트 적용 방식을 분리해 적는다 |
-| [migration-comparison/README.md](migration-comparison/README.md) | 단일 이동: SC1~SC6 Baseline 실행 방법, S1~S5 세 방식 비교 실행, S6·민감도 계획 |
+| [migration-comparison/README.md](migration-comparison/README.md) | 단일 이동: SC1~SC6 Baseline·S1~S5 비교·S3 민감도 실행, S6 계획 |
 | [scaling-decision/README.md](scaling-decision/README.md) | E1~E7 노드 증감 판단 계획. runner 미구현 |
 | [movement-scaling-comparison/README.md](movement-scaling-comparison/README.md) | M1~M5 여러 job 이동 계획. runner 미구현 |
 
