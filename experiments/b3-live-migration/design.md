@@ -1,21 +1,23 @@
 # B3 설계
 
-상태: 1단계 in-process baseline 구현(2026-10-21), 공통 Runner 연계와 Baseline 실행 결과 보관(2026-10-22). §7의 구조를 유지하며 stop-and-copy 동작, 외부 조건부 commit adapter, 계약 테스트, §6.1 SC1~SC6 실험을 구현했다. 실제 KV/peer 연계와 후속 variant·scaling은 미구현이다. 실행 방법은 [migration-comparison/README.md](migration-comparison/README.md), 보관된 실행은 [Baseline 보고서](migration-comparison/runs/run-2026-10-22T04-48-53.944252700Z-a4354ce4/repeat-001/results.md)와 [조건별 요약](migration-comparison/runs/run-2026-10-22T04-48-53.944252700Z-a4354ce4/repeat-001/summary.csv)을 따른다. 공식 run은 아직 선정하지 않았으며, 선정 후 B3 통합 `results.md`와 이동 실험 입구 `migration-comparison/results.md`를 작성한다.
+**최신 구현 현황(2026-10-23):** 아래 단계 계획 중 pre-copy와 post-copy 프로토콜·수신기·정합성 테스트를 구현했다. 상세와 확정된 post-copy 실패/조회 계약은 [protocols.md](protocols.md)에 있다. pre-copy의 라운드·seq는 공통 `MigrationJob` 필드를 변경하지 않고 protocol의 `rounds()`·`acknowledgedSequence()`로 제공하며 `DeltaBatch`로 전달한다. source-owned `JobState.CATCHING_UP`을 추가했고 post-copy는 별도 `PostCopyState`를 사용한다. S1~S5 세 방식 비교 backend와 b3-comparison-json-1 원본/요약 생성을 구현했다. S6·민감도·E/M, schema v2 상세 보고서와 실제 KV/peer 연계는 후속이다. 아래 1단계·후속 구분과 초안 설명은 원래 구현 순서이며 최신 완료 여부는 이 문단과 구현 안내를 기준으로 한다.
+
+Baseline 실행: 공통 Runner 연계와 §6.1 SC1~SC6 결과 보관까지 구현했다. S1~S5 variant 비교 backend도 구현했다. 실제 KV/peer 연계·scaling과 S6·민감도 비교는 후속이다. 실행 방법은 [migration-comparison/README.md](migration-comparison/README.md), 보관된 실행은 [Baseline 보고서](migration-comparison/runs/run-2026-10-22T04-48-53.944252700Z-a4354ce4/repeat-001/results.md)와 [조건별 요약](migration-comparison/runs/run-2026-10-22T04-48-53.944252700Z-a4354ce4/repeat-001/summary.csv)을 따른다. S1~S5는 2026-10-23 generator v2 full 240회를 참조 run으로 선정했고 migration-comparison/results.md와 B3 통합 results.md에 정리했다. SC 수치는 별도 Baseline으로 보존한다.
 
 ## 1. 목표와 범위
 
 ### 단계 정의
 
-이 문서의 단계 이름은 아래 표를 따른다. "1단계"만 지금 구현하고, 나머지는 모두 "후속"이다. B1·B2 문서의 "2단계"는 각 연구의 단계를 가리키므로 B3 단계와 섞어 쓰지 않는다.
+이 문서의 단계 이름은 아래 표를 따른다. pre-copy·post-copy의 in-process 프로토콜은 구현했고 각 비교 실험 backend는 후속이다. B1·B2 문서의 "2단계"는 각 연구의 단계를 가리키므로 B3 단계와 섞어 쓰지 않는다.
 
 | 단계 | 구현 내용 | 실행 환경 | 선행 조건 |
 |---|---|---|---|
 | **1단계: Stop-and-Copy Baseline** | job 상태 기계, freeze, snapshot batch 전송·ACK, 조건부 commit, cleanup, 되돌리기 | in-process, 논리 tick | 없음 (지금) |
-| 후속: Pre-Copy 비교 | dirty generation, delta·`seq`, `CATCHING_UP`, 수렴 종료 조건 | in-process | 1단계의 commit·fencing 계약 고정 |
+| Pre-Copy 비교 | dirty generation, delta·`seq`, `CATCHING_UP`, 수렴 종료 조건 구현. 비교 backend는 후속 | in-process | 1단계의 commit·fencing 계약 |
 | 후속: 노드 증감 판단 | `ElasticScalingPolicy`, fake provisioner·membership | in-process | 1단계 |
 | 후속: 이동 Scaling | `MigrationScheduler`, 여러 job의 동시성·전송 예산 | in-process | 1단계 |
 | 후속: 실제 노드 연계 | 노드 간 migration 메시지, multi-node Runner, `MOVED` 재시도 client, lease, 실제 p99 측정, source 지연 삭제 | 실제 노드 | B1 소유권 판정·표 전파, A1 scan·hook API |
-| 후속: Post-Copy 확장 | destination-owned `post-copy`, pull 경로, `PostCopyState` | in-process → 실제 노드 | Pre-Copy 비교 |
+| Post-Copy 확장 | destination-owned `post-copy`, pull 경로, `PostCopyState` 구현. 비교 backend·실제 연계는 후속 | in-process → 실제 노드 | 별도 실패·요청 계약 |
 
 ### 기능과 단계
 
@@ -30,9 +32,9 @@ B3는 cluster metric으로 노드 증감을 결정하고, 그 결과 생긴 "이
 | 이동 실행 Scaling | 노드 증감으로 생긴 여러 `Change`를 받아 전체 이동 시간·동시성·대역폭·요청 영향을 측정 | 후속: 이동 Scaling |
 | 속도 조절 | 동시 job 수, 전송률 제한. p99를 보며 조절하는 동적 제한은 범위 밖 | 후속: 이동 Scaling (고정 예산까지) |
 
-**1단계는 `stop-and-copy` Baseline 하나만 구현한다.** source-owned job의 최소 상태 기계, freeze, 전체 snapshot 전송, 검증, commit, cleanup과 실패 시 되돌리기를 먼저 고정한다. 근거는 [VM Live Migration](references/vm-live-migration.md) §3.1의 pure stop-and-copy다.
+**1단계의 기준형은 `stop-and-copy`다.** source-owned job의 최소 상태 기계, freeze, 전체 snapshot 전송, 검증, commit, cleanup과 실패 시 되돌리기를 고정했다. 근거는 [VM Live Migration](references/vm-live-migration.md) §3.1의 pure stop-and-copy다.
 
-`pre-copy`는 Baseline의 commit·fencing 계약이 고정된 뒤 비교 구현한다. snapshot 중 변경 추적, dirty generation, delta 순서와 수렴 종료 조건이 추가되기 때문이다. destination-owned `post-copy`([Rocksteady](references/rocksteady.md))는 그보다 뒤의 확장 후보다. 시작할 때 소유권을 넘기므로 destination → source pull, 진행 상태, 아직 안 온 key의 read 처리, 늦게 도착한 pull이 새 write를 덮지 않게 하는 규칙이 별도로 필요하다.
+`pre-copy`는 Baseline의 commit·fencing 계약을 재사용하고 snapshot 중 변경 추적, dirty generation, delta 순서와 수렴 종료 조건을 추가했다. destination-owned `post-copy`([Rocksteady](references/rocksteady.md))는 시작할 때 소유권을 넘긴다. destination → source pull, 별도 진행 상태, 미도착 key의 read 재시도, 늦게 도착한 pull의 write 덮어쓰기 방지와 장애 후 재개를 [별도 계약](protocols.md)으로 구현했다.
 
 B3는 **노드 수를 판단하고 이동을 실행한다**. `ElasticScalingPolicy`가 desired node count와 증감 방향을 결정하지만 실제 노드 생성·종료는 외부 provisioner·membership이 수행한다. scale-out의 `READY`, scale-in의 `DRAINING` 상태에서 어떤 Tablet을 어디로 옮길지는 B1의 노드 증감 계획(`DistributionScheme.onNodeAdded/Removed`)이 만들고, load-aware placement·rebalance는 B2(`core.balance`)가 보완한다. 라우팅 표를 바꾸는 연산은 B1(`core.tablet`)이 제공한다. scale-in 노드는 모든 migration이 끝난 뒤에만 종료한다.
 
@@ -151,7 +153,7 @@ abort()                          → JobState   commit 전이면 되돌리고 AB
 | 검증 | 모든 snapshot batch의 checksum·record 수·ACK 확인. 계약 테스트는 source/destination exact map 비교 | 별도 전체 digest scan을 cutover에 추가하지 않는다 |
 | cleanup | commit 직후 source 범위 삭제 | 1단계는 in-process라 삭제를 늦출 이득이 없다. MongoDB는 metadata 갱신 뒤 열린 cursor가 없어지면 비동기로 지운다(Range Migration Procedure 7단계). 후속 실제 노드 연계에서 이 방식을 검토한다 |
 
-### 4.2 `pre-copy` (후속: Pre-Copy 비교)
+### 4.2 `pre-copy` (in-process 프로토콜 구현, 비교 backend는 후속)
 
 상태 순서: `PENDING → COPYING(라운드 0 snapshot, 서비스 유지) → CATCHING_UP(라운드 1, 2, …) → SWITCHING(freeze → 남은 dirty 전송 → final seq ACK → commit) → CLEANING_UP → DONE`. 되돌리기 규칙은 1단계와 같다(commit 전이면 destination 폐기, freeze 해제).
 
@@ -269,7 +271,7 @@ Tablet 하나, key N개(key 16바이트, value 128바이트 고정), 전송률 B
 
 #### 동일 조건
 
-key/value 크기·batch framing·전송 예산 모델은 6.1과 같다. 기본값은 N=10만, B=64 KiB/tick, 균등 분포, SET/DELETE=70/30, seed=1~5다. 각 행에서 명시한 N·rho·DELETE 비율·분포만 바꾼다. S1의 rho=0, S2의 rho=0.1, S3~S6의 기본 rho=0.5를 사용한다. 두 variant에는 동일 초기 데이터와 tick별 요청 **시도** 열을 준다(§6.6). Zipf는 미구현이며, 구현 전 S4를 완료로 표시하지 않는다. θ=0은 균등 분포로 정의하고 두 variant가 같은 생성기를 사용한다.
+key/value 크기·batch framing·전송 예산 모델은 6.1과 같다. 기본값은 N=10만, B=64 KiB/tick, 균등 분포, SET/DELETE=70/30, seed=1~5다. 각 행에서 명시한 N·rho·DELETE 비율·분포만 바꾼다. S1의 rho=0, S2의 rho=0.1, S3~S6의 기본 rho=0.5를 사용한다. 두 variant에는 동일 초기 데이터와 tick별 요청 **시도** 열을 준다(§6.6). finite Zipf는 S1~S5 비교 backend에 구현했다. 공통 Workload Generator의 Zipf와 v2 전체 비교 suite는 별도다. θ=0은 균등 분포로 정의하고 두 variant가 같은 생성기를 사용한다.
 
 #### 시나리오
 
@@ -525,6 +527,8 @@ E의 방식은 정책 이름, S/M의 방식은 복사 variant다. 검증 상태�
 5. 다중 노드/Tablet fixture와 scheduler로 M1~M5를 구현한다. 매 tick node·cluster 예산 합계와 job별 진행·전체 결과를 함께 검증한다. M5는 단일 이동 비교의 variant·pair 규칙을 재사용한다.
 6. post-copy는 실패·미도착 key 계약을 결정한 뒤 같은 비교 입력·출력 체계에 추가한다. source-owned 계약을 만족하는 척 표시하지 않는다.
 
+S1~S5의 1차 비교 backend는 ComparisonExperiment/ComparisonResearchMain이며 b3-comparison-json-1을 사용한다. 16조건 × seed 5개 × 세 방식의 원본과 phaseEvents를 생성한다. S6·민감도·v2 dirty 라운드 상세는 포함하지 않는다. 실행 config는 migration-comparison/comparison.properties와 comparison-quick.properties다.
+
 현재 Baseline adapter의 실제 원본은 `repeat-NNN/results/<run_id>.json`에 있으며, 같은 반복 폴더의 CSV·보고서를 JSON에서 다시 생성한다. `BaselineResearchMain --rebuild <반복 폴더>`로 재생성할 수 있다. 수집 상태는 suite의 `run-summary.json`과 manifest에 남긴다. 아래 §7의 기존 v1 run 및 이 JSON run을 비교용 v2 결과로 간주하지 않는다.
 
 ## 7. 코드 구조
@@ -538,28 +542,37 @@ cache-core/src/main/java/io/openkache/core/migration/
 ├── TransferBatch.java             batch id + record 수 + 바이트 수 + checksum
 ├── TransferProgress.java          snapshot 완료 + 전송/ACK batch id + 전송 바이트
 ├── MigrationCommitter.java        expected table/version 기반 조건부 commit
-├── stopcopy/
-│   └── StopAndCopyProtocol.java   1단계 stop-and-copy Baseline
+├── stopcopy/StopAndCopyProtocol.java   stop-and-copy Baseline
+├── precopy/
+│   ├── PreCopyProtocol.java       dirty generation·라운드·final ACK·외부 commit
+│   ├── PreCopyReceiver.java       session·epoch·snapshot barrier·seq 검증 staging
+│   └── DeltaBatch.java            PUT/DELETE·seq·CRC·metadata ACK
+└── postcopy/
+    ├── PostCopyProtocol.java      소유권 선전환·priority/background pull·실패/재개
+    ├── PostCopyState.java         source-owned와 분리된 상태
+    └── PullReply.java             pull metadata·payload·CRC
 
-(후속) Delta.java, precopy/PreCopyProtocol.java,
-       precopy/DirtyGenerations.java, postcopy/PostCopyProtocol.java,
-       scaling/{ClusterMetrics, ScalingDecision, ScalingState,
+(후속) scaling/{ClusterMetrics, ScalingDecision, ScalingState,
        ElasticScalingPolicy, ScalingController, MigrationScheduler}.java
 
 cache-core/src/test/java/io/openkache/core/migration/
 ├── SourceOwnedMigrationContract.java  §5의 1단계 불변식. 우선 stop-copy만 사용
 ├── stopcopy/StopAndCopyProtocolTest.java
+├── precopy/PreCopyProtocolTest.java
+├── postcopy/PostCopyProtocolTest.java
+├── experiment/LiveMigrationFixture.java   pre/post-copy source·전송·routing adapter
 └── experiment/                        현재 Baseline 러너·fixture·tick·JSON codec·Runner용 BaselineResearchMain
     ├── common/                       (후속) 입력·adapter·관측·출력
     ├── comparison/                   (후속) MigrationComparison
     ├── decision/                     (후속) ScalingDecisionExperiment
     └── movement/                     (후속) MovementScalingExperiment
 
-(후속) precopy/PreCopyProtocolTest.java, post-copy 별도 계약, scaling policy·scheduler 실험
+(후속) scaling policy·scheduler 실험, S1~S6 variant 비교 backend
 
 experiments/b3-live-migration/
 ├── README.md                      variant 목록
 ├── design.md                      이 문서
+├── protocols.md                   구현된 pre/post-copy lifecycle·요청·실패 계약
 ├── references/                    논문·시스템별 정리
 ├── results.md                     (공식 run 선정 후 작성) B3 통합 상태·결론·링크
 ├── migration-comparison/
@@ -609,10 +622,10 @@ experiments/b3-live-migration/
 | 노드 간 migration 메시지(snapshot, delta, pull)의 wire 형식과 batch checksum 알고리즘 | B3, Network/Shared Types(B1) | 후속 실제 노드 연계 전 |
 | lease 도입 여부와 source 장애 시 job 처리 | B3, A1·A3 | 후속 실제 노드 연계 설계 시 |
 | TTL 만료·eviction을 delta로 보내는 규칙 | B3, A1 | A1 TTL·eviction 구현 후 |
-| key별 version이 필요한지 (post-copy pull과 재전송) | B3, A1 | `post-copy` 설계 시 |
-| `post-copy`에서 아직 안 온 key의 read: pull을 기다릴지(Rocksteady §3.3), MISS로 답할지 | B3 | `post-copy` 설계 시 |
-| `post-copy`에서 늦게 도착한 pull이 destination의 새 write·DELETE를 덮지 않게 하는 규칙 | B3, A1 | `post-copy` 설계 시 |
-| `post-copy` 중 source 장애 시 결말 (남은 key를 MISS로 두고 `DONE` 처리할지) | B3 | `post-copy` 설계 시 |
+| 실제 KV의 key별 version과 post-copy resolved/tombstone adapter의 연결 | B3, A1 | in-process는 job별 resolved 집합으로 구현. 실제 KV 연계 전 version 합의 |
+| `post-copy` 미도착 GET | B3 | 구현: priority pull 예약 + BUSY 재시도. source 장애 후 UNAVAILABLE. [구현 계약](protocols.md) |
+| 늦은 pull과 destination write·DELETE 순서 | B3, A1 | 구현: resolved/tombstone이 baseline 적용을 차단. 실제 KV adapter 연계는 후속 |
+| `post-copy` source 장애 | B3 | 구현: FAILED, 소유권·성공 쓰기 보존, 동일 source/fence 복구 후 resume. 미도착을 MISS/DONE으로 처리하지 않음 |
 | endpoint별 동시 job 수와 전송률 기본값. MongoDB의 참여 shard당 1개는 M2·M3의 baseline일 뿐 OpenKache 결정값은 아님 | B3 | Scaling 실험 후 |
 | 실험 결과 JSON 형식 | Metrics, 팀 합의 | 결과 Schema 합의 후 |
 | `runs/` 커밋 범위: 파일은 각 반복의 `summary.csv`·`results.md`로 결정됨. 어느 run을 커밋할지(공식 run만 / 전부)는 미정 | B3 | S 비교 첫 실행 전 |

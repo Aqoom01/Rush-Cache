@@ -3,7 +3,7 @@
 단일 Tablet 이동의 복사 방식(variant)을 같은 조건으로 검증·비교하는 실험 폴더다.
 B1~B3는 연구 담당 영역이고 SC·S는 B3 안의 실험 시나리오 ID다.
 
-- 현재 보관된 결과와 공식 run은 없다. 재실행 후 공식 run을 선정할 때 `results.md`를 작성한다.
+- S1~S5 참조 run과 핵심 수치는 [결과](results.md)에 있다. 2026-10-23 generator v2의 full 240회를 사용한다.
 - **runs/&lt;execution_id&gt;/**: 실행 한 번의 원본과 자동 생성 보고서. 실행마다 새 폴더를 만든다.
 - B3 통합 결과 문서는 공식 run을 선정한 뒤 작성한다. 비교·확장 실험의 공통 계약은 [design.md §6.6](../design.md)에 있다.
 
@@ -11,10 +11,36 @@ B1~B3는 연구 담당 영역이고 SC·S는 B3 안의 실험 시나리오 ID다
 
 | 시나리오 | 내용 | 상태 |
 |---|---|---|
-| SC1~SC6 | stop-and-copy 단독 Baseline 검증(§6.1) | 실행 코드 구현. 기존 결과 삭제, 재실행 가능 |
-| S1~S6 | 같은 입력의 stop-and-copy / pre-copy 비교(§6.2) | 설계만. 비교 backend·pre-copy·Zipf 미구현 |
+| SC1~SC6 | stop-and-copy 단독 Baseline 검증(§6.1) | 실행 코드와 기존 130회 Baseline 결과 보관 |
+| S1~S5 | 같은 입력의 stop-and-copy / pre-copy / post-copy 비교 | 비교 backend·finite Zipf·JSON 원본/요약 생성 구현 |
+| S6·S3 민감도 | 중단 경계·임계/라운드 설정 비교 | 프로토콜 경계 테스트는 있으나 비교 suite는 후속 |
 
-기존 v1 기록과 공통 Runner 실행 결과는 모두 삭제했다. 현재 config 실행은 공통 Runner의 연구 backend를 사용하며 JSON 원본 형식 `b3-baseline-json-1`을 생성한다. S1~S6 비교용 `b3-research-v2`와 별도 형식이다. 공식 run은 검증을 마친 뒤 입구 문서에서 명시적으로 선택한다.
+pre-copy·post-copy의 구현과 별도 정합성 테스트는 [프로토콜 구현 안내](../protocols.md)에 있다. Baseline config는 stop-and-copy만 실행하고 아래 comparison config로 세 방식을 비교한다.
+
+## 세 방식 비교 실행
+
+~~~powershell
+.\gradlew.bat build :experiment-runner:installDist
+.\experiment-runner\build\install\openkache-experiment-runner\bin\openkache-experiment-runner.bat experiments/b3-live-migration/migration-comparison/comparison.properties
+~~~
+
+[comparison.properties](comparison.properties)는 S1~S5의 16조건 × seed 1~5 × 세 방식, 총 240회를 실행한다. N=1만/10만/100만, B=64 KiB/tick, rho=0~1.2, SET/DELETE 비율, Zipf theta=0/0.99/1.2를 바꾼다. 공통 Runner는 새 runs 폴더와 config·source/class hash·실행 로그·원본 JSON을 보존한다.
+
+[comparison-quick.properties](comparison-quick.properties)는 N=100/1,000/10,000, B=4 KiB/tick, pre-copy 종료 임계 1 KiB로 줄여 같은 240회 묶음을 두 번 실행한다. 이는 반복·재현 확인용이며 full 수치와 섞지 않는다. 결과는 cache-core/build/b3-comparison-quick 아래에 생성한다.
+
+비교 원본 schema는 b3-comparison-json-1이다. 기존 Baseline v1 또는 계획된 b3-research-v2 전체 schema와 다르다. 같은 case/seed에 초기 데이터와 tick별 요청 시도 열을 재생한다. 완료 시점이 달라 요청열 소비 길이와 성공 쓰기 수가 다르므로 각 방식은 자신의 성공 요청 oracle과 exact compare한다.
+
+inputHash는 generator 규격·설정·seed의 SHA-256이고 materialized trace 전체 hash가 아니다. 원본 phaseEvents는 상태/라운드 경계와 전송량을 기록하며 dirty generation별 byte 상세를 포함하는 v2 rounds 원본은 아직 없다. finite Zipf는 이 비교 backend에서만 구현했고 공통 Workload Generator의 지원 범위를 바꾸지 않는다.
+
+쓰기 차단은 데이터에 영향을 주지 않는 누락 key DELETE 제어 요청의 BUSY tick 수다. post-copy의 미도착 GET BUSY는 별도 비율로 집계한다. snapshot/delta/post-copy 응답 framing은 각각 실제 모델 크기로 계산하고 ACK/pull 요청 제어 bytes는 제외한다. 원본 JSON을 다시 읽어 누락·중복·입력/소스 출처·정합성을 확인한 뒤 summary.csv와 results.md를 생성한다.
+
+~~~powershell
+java -cp "cache-core/build/classes/java/main;cache-core/build/classes/java/test" io.openkache.core.migration.experiment.ComparisonResearchMain --rebuild "<반복 결과 폴더>"
+~~~
+
+S6 취소/장애 비교, S3 임계·라운드 민감도, E/M scaling과 실제 KV/peer 실험은 이 suite에 포함하지 않는다.
+
+기존 SC Baseline과 새 비교 결과는 별도 run/schema로 보관한다. Baseline config 실행은 공통 Runner의 연구 backend를 사용하며 JSON 원본 형식 `b3-baseline-json-1`을 생성한다. S1~S6 비교용 `b3-research-v2`와 별도 형식이다. 공식 run은 검증을 마친 뒤 입구 문서에서 명시적으로 선택한다.
 
 ## 공통 Runner로 실행
 
@@ -177,7 +203,7 @@ run 폴더의 `results.md`는 seed별 결과가 같으면 조건당 한 행으�
 
 ## S1~S6 비교 (계획)
 
-**상태: 설계만. S 비교 backend·pre-copy·Zipf·비교용 JSON 원본/요약 생성기는 미구현이며 비교 결과는 아직 없다.** 상세 조건은 [design.md §6.2](../design.md), 실행·저장 계약은 §6.6을 따른다.
+**상태: S1~S5 비교 backend·finite Zipf·JSON/요약 생성 구현.** 실행은 위 comparison config를 따른다. S6·민감도·v2 상세 rounds 형식은 후속이다. 상세 조건은 [design.md §6.2](../design.md), 전체 v2 계획은 §6.6을 따른다.
 
 같은 조건의 `stop-and-copy`와 `pre-copy`를 비교한다. S 비교에서는 stop-and-copy도 같은 입력으로 새로 실행하며, SC run의 수치를 S 비교 측정값으로 대신 쓰지 않는다.
 
