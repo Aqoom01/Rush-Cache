@@ -527,7 +527,7 @@ E의 방식은 정책 이름, S/M의 방식은 복사 variant다. 검증 상태�
 5. 다중 노드/Tablet fixture와 scheduler로 M1~M5를 구현한다. 매 tick node·cluster 예산 합계와 job별 진행·전체 결과를 함께 검증한다. M5는 단일 이동 비교의 variant·pair 규칙을 재사용한다.
 6. post-copy는 실패·미도착 key 계약을 결정한 뒤 같은 비교 입력·출력 체계에 추가한다. source-owned 계약을 만족하는 척 표시하지 않는다.
 
-S1~S5의 1차 비교 backend는 ComparisonExperiment/ComparisonResearchMain이며 b3-comparison-json-1을 사용한다. 16조건 × seed 5개 × 세 방식의 원본과 phaseEvents를 생성한다. S6·민감도·v2 dirty 라운드 상세는 포함하지 않는다. 실행 config는 migration-comparison/comparison.properties와 comparison-quick.properties다.
+S1~S5의 1차 비교 backend는 ComparisonExperiment/ComparisonResearchMain이며 b3-comparison-json-1을 사용한다. 16조건 × seed 5개 × 세 방식의 원본과 phaseEvents를 생성한다. 실행 config는 migration-comparison/comparison.properties와 comparison-quick.properties다. 별도의 sensitivity.properties와 sensitivity-quick.properties는 S3 임계·라운드 상한 45조건 × seed 5개 × 세 방식 = 675회를 실행한다. workloadHash로 알고리즘 설정을 제외한 요청 생성 규격의 동일성을 검증하고 실제 라운드 수·종료 사유별 건수를 요약한다. S6·v2 dirty 라운드 상세는 후속이다.
 
 현재 Baseline adapter의 실제 원본은 `repeat-NNN/results/<run_id>.json`에 있으며, 같은 반복 폴더의 CSV·보고서를 JSON에서 다시 생성한다. `BaselineResearchMain --rebuild <반복 폴더>`로 재생성할 수 있다. 수집 상태는 suite의 `run-summary.json`과 manifest에 남긴다. 아래 §7의 기존 v1 run 및 이 JSON run을 비교용 v2 결과로 간주하지 않는다.
 

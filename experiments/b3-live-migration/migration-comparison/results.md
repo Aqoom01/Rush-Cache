@@ -6,7 +6,8 @@
 |---|---|---|---|
 | S1~S5 | [full 실행 보고서](runs/run-2026-10-23T06-14-41.093912600Z-30c42899/repeat-001/results.md) | b3-comparison-json-1, generator v2 | 16조건 × seed 5개 × 3방식 = 240회 완료, 정합성 위반 0, 최종 데이터 240/240 일치 |
 | SC1~SC6 | [기존 Baseline](README.md) | b3-baseline-json-1 | 보관된 130회 결과. 이번 비교 수치와 혼합하지 않음 |
-| S6·S3 민감도 | [계획·실행 범위](README.md) | 후속 | 취소·장애 프로토콜 테스트와 분리. 이번 비교에는 미포함 |
+| S3 민감도 | [별도 공식 run·결과 해석](sensitivity-results.md) | b3-comparison-json-1 | 45조건 × seed 5개 × 세 방식 = 675회 완료, 정합성 위반 0 |
+| S6 | [계획·실행 범위](README.md) | 후속 | 취소·장애 프로토콜 테스트와 분리. 이번 비교에는 미포함 |
 
 [조건별 CSV](runs/run-2026-10-23T06-14-41.093912600Z-30c42899/repeat-001/summary.csv) · [실행 설정](comparison.properties) · [재현 방법](README.md)
 
@@ -99,4 +100,4 @@ rho=0.5에서 DELETE 0%→30%이면 pre-copy 전송량은 약 1.82→1.51배, �
 - 전체 빌드·테스트 325개 통과. 비교 회귀 검증은 동일 요청 재생, finite Zipf 쏠림, 균등 쓰기 key 다양성, 기존 TickRunner와 Baseline 시간/bytes 일치, 불변 스냅샷, 원본 재생성·누락/변조 검출을 포함한다.
 - generator v1의 tick seed 중복으로 요청 다양성이 부족했던 실행(run-2026-10-23T06-05-20.218593800Z-89259ab0)은 제외했다. 원본·진단용 요약은 로컬 보존하며 위 참조 run과 섞지 않는다. 그 이전 스냅샷 생성 병목으로 중단한 실행도 결과에서 제외했다.
 
-S3 임계/라운드 민감도, S6 중단 비교, E/M scaling과 실제 KV/peer 실험은 남아 있다. 이번 v1 비교 원본의 phaseEvents는 단계/라운드 경계이며 계획된 v2 dirty 라운드 상세 원본을 대체하지 않는다.
+S3 임계/라운드 민감도는 2026-10-26 별도 675회 실행을 완료했다([결과](sensitivity-results.md)). S6 중단 비교, E/M scaling과 실제 KV/peer 실험은 남아 있다. 이번 v1 비교 원본의 phaseEvents는 단계/라운드 경계이며 계획된 v2 dirty 라운드 상세 원본을 대체하지 않는다.

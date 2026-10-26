@@ -25,9 +25,10 @@ public final class ComparisonResearchMain {
             regenerate(folder, completion.getProperty("profile"));
             return;
         }
-        if (args.length != 4 || !(args[1].equals("full") || args[1].equals("quick"))) {
-            throw new IllegalArgumentException("<출력 폴더> <full|quick> <반복 번호> <전체 반복 수>");
+        if (args.length != 4) {
+            throw new IllegalArgumentException("<출력 폴더> <full|quick|sensitivity-full|sensitivity-quick> <반복 번호> <전체 반복 수>");
         }
+        var cases = ComparisonExperiment.cases(args[1]);
         Path folder = Path.of(args[0]).toAbsolutePath().normalize();
         int repeat = Integer.parseInt(args[2]), repeats = Integer.parseInt(args[3]);
         if (repeat < 1 || repeat > repeats) throw new IllegalArgumentException("invalid repeat");
@@ -37,7 +38,6 @@ public final class ComparisonResearchMain {
                 "batchTargetBytes", 65_536, "generatorVersion", ComparisonExperiment.GENERATOR,
                 "postCopyReplyHeaderBytes", 33, "timeUnit", "tick", "controlTrafficCounted", false));
         Path originals = Files.createDirectory(folder.resolve("results"));
-        var cases = ComparisonExperiment.cases(args[1].equals("quick"));
         for (var c : cases) {
             for (int seed = 1; seed <= 5; seed++) {
                 for (String variant : ComparisonExperiment.VARIANTS) {
@@ -53,6 +53,8 @@ public final class ComparisonResearchMain {
                     root.put("candidateConfig", variant.equals("pre-copy")
                             ? Map.of("stopThresholdBytes", c.threshold(), "maxRounds", c.maxRounds()) : Map.of());
                     root.put("inputHash", run.inputHash()); root.put("inputHashKind", "generator-specification-sha256");
+                    root.put("workloadHash", ComparisonExperiment.workloadHash(c, seed));
+                    root.put("workloadHashKind", "generator-specification-without-protocol-settings-sha256");
                     root.put("timeDomain", "virtual"); root.put("outcome", "completed");
                     root.put("validationStatus", "valid"); root.put("terminationReason", "completed");
                     root.put("stopPhaseReason", run.stopReason()); root.put("metrics", run.metrics());
@@ -74,8 +76,8 @@ public final class ComparisonResearchMain {
     }
 
     static void regenerate(Path folder, String profile) throws IOException {
-        if (!"quick".equals(profile) && !"full".equals(profile)) throw new IllegalArgumentException("invalid profile");
-        var cases = ComparisonExperiment.cases(profile.equals("quick"));
+        var cases = ComparisonExperiment.cases(profile);
+        boolean sensitivity = ComparisonExperiment.sensitivity(profile);
         Map<String, ComparisonExperiment.Case> expectedCases = new HashMap<>();
         cases.forEach(c -> expectedCases.put(c.id(), c));
         var unique = new HashSet<String>();
@@ -99,6 +101,21 @@ public final class ComparisonResearchMain {
                 expectedCases.get(caseId).config().forEach((name, value) -> ComparisonExperiment.require(
                         actual.get(name) instanceof Number number && Double.compare(number.doubleValue(), ((Number) value).doubleValue()) == 0,
                         "condition mismatch " + name));
+                var condition = expectedCases.get(caseId);
+                var candidate = BaselineJson.object(root.get("candidateConfig"));
+                ComparisonExperiment.require(candidate.equals(variant.equals("pre-copy")
+                        ? BaselineJson.decode(BaselineJson.encode(Map.of("stopThresholdBytes", condition.threshold(),
+                                "maxRounds", condition.maxRounds()))) : Map.of()), "candidate settings mismatch");
+                if (sensitivity) {
+                    ComparisonExperiment.require(ComparisonExperiment.workloadHash(condition, seed).equals(root.get("workloadHash")),
+                            "workload specification hash mismatch");
+                    if (variant.equals("pre-copy")) {
+                        double rounds = metric(root, "live_delta_rounds");
+                        ComparisonExperiment.require(rounds >= 0 && rounds <= condition.maxRounds() && rounds == Math.rint(rounds), "invalid rounds");
+                        ComparisonExperiment.require(List.of("THRESHOLD", "ROUND_LIMIT", "NOT_SHRINKING").contains(root.get("stopPhaseReason")),
+                                "invalid stop reason");
+                    } else ComparisonExperiment.require(root.get("stopPhaseReason") == null, "unexpected stop reason");
+                }
                 ComparisonExperiment.require(metric(root, "invariant_violations") == 0
                         && metric(root, "exact_comparisons") == 1, "invariant result");
                 String signature = root.get("sourceHash") + ":" + root.get("backendHash") + ":" + root.get("suiteExecutionId")
@@ -115,6 +132,10 @@ public final class ComparisonResearchMain {
             }
         }
         ComparisonExperiment.require(rows.size() == cases.size() * 15, "missing results " + rows.size());
+        if (sensitivity) {
+            writeSensitivityReport(folder, cases, rows);
+            return;
+        }
         StringBuilder csv = new StringBuilder("\uFEFF조건 ID,시나리오,초기 키 수,쓰기율 rho,삭제 비율,Zipf theta,방식,seed 수,쓰기 차단 최소 tick,쓰기 차단 최대 tick,총 시간 최소 tick,총 시간 최대 tick,전송량 비율 최소,전송량 비율 최대,조회 BUSY 비율 최소,조회 BUSY 비율 최대,정합성 위반\n");
         StringBuilder md = new StringBuilder("# B3 복사 방식 비교 실험\n\n");
         md.append(BaselineResearchMain.provenance(folder)).append("\n\n");
@@ -149,6 +170,54 @@ public final class ComparisonResearchMain {
                 .append("기존 SC 결과와 이번 결과는 별도 schema이며 자동 합산하지 않는다.\n");
         Files.writeString(folder.resolve("summary.csv"), csv, StandardCharsets.UTF_8);
         Files.writeString(folder.resolve("results.md"), md, StandardCharsets.UTF_8);
+    }
+
+    private static void writeSensitivityReport(Path folder, List<ComparisonExperiment.Case> cases,
+            List<Map<String, Object>> rows) throws IOException {
+        StringBuilder csv = new StringBuilder("\uFEFF조건 ID,시나리오,초기 키 수,쓰기율 rho,방식,종료 임계 bytes,라운드 상한,seed 수,쓰기 차단 최소 tick,쓰기 차단 최대 tick,총 시간 최소 tick,총 시간 최대 tick,전송량 비율 최소,전송량 비율 최대,live 라운드 최소,live 라운드 최대,THRESHOLD 종료 수,ROUND_LIMIT 종료 수,NOT_SHRINKING 종료 수,정합성 위반\n");
+        StringBuilder md = new StringBuilder("# S3 pre-copy 설정 민감도 실험\n\n");
+        md.append(BaselineResearchMain.provenance(folder)).append("\n\n");
+        md.append("쓰기율 5종 × 종료 임계 3종 × 라운드 상한 3종 = 45조건 × seed 5개 × 세 방식, 총 ")
+                .append(rows.size()).append("회. 정합성 위반 0건, 최종 데이터 ").append(rows.size()).append('/').append(rows.size()).append(" 일치.\n\n");
+        md.append("표는 seed 5개의 최솟값~최댓값이다. 종료 사유는 THRESHOLD/ROUND_LIMIT/NOT_SHRINKING 순서의 실행 건수다. ")
+                .append("종료 임계와 라운드 상한은 pre-copy에만 적용하며 다른 방식은 —로 표시한다. 조건 ID에는 비교 상대의 설정이 포함된다.\n\n");
+        md.append("같은 rho/seed는 모든 설정과 방식에 동일한 초기 데이터·tick별 요청 **시도**를 재생한다. ")
+                .append("workloadHash는 알고리즘 설정을 제외한 생성 규격 hash이며 원본 trace 전체 hash가 아니다. 기존 inputHash는 설정을 포함한 규격 hash로 유지한다. ")
+                .append("설정별 완료 시점·성공 쓰기 수가 달라 같은 성공 작업량의 성능 비교로 해석하지 않는다.\n\n");
+        md.append("| 조건 | N | rho | 방식 | 임계 bytes | 라운드 상한 | 쓰기 차단 tick | 전체 tick | 전송량/초기 크기 | live 라운드 | 종료 사유 T/R/N |\n")
+                .append("|---|---:|---:|---|---:|---:|---:|---:|---:|---:|---|\n");
+        for (var c : cases) for (String variant : ComparisonExperiment.VARIANTS) {
+            var group = rows.stream().filter(r -> c.id().equals(r.get("caseId")) && variant.equals(r.get("variant"))).toList();
+            ComparisonExperiment.require(group.size() == 5, "missing paired seed");
+            boolean pre = variant.equals("pre-copy");
+            csv.append(String.format(Locale.ROOT, "%s,%s,%d,%.2f,%s,%s,%s,5,", c.id(), c.scenario(), c.keys(), c.rho(), variant,
+                    pre ? Long.toString(c.threshold()) : "", pre ? Integer.toString(c.maxRounds()) : ""));
+            for (String name : List.of("writes_blocked_ticks", "total_ticks", "transfer_ratio")) {
+                double[] values = range(group, name);
+                csv.append(String.format(Locale.ROOT, "%.6f,%.6f,", values[0], values[1]));
+            }
+            long threshold = reasonCount(group, "THRESHOLD"), limit = reasonCount(group, "ROUND_LIMIT"), shrinking = reasonCount(group, "NOT_SHRINKING");
+            if (pre) {
+                double[] rounds = range(group, "live_delta_rounds");
+                csv.append(String.format(Locale.ROOT, "%.0f,%.0f,%d,%d,%d,", rounds[0], rounds[1], threshold, limit, shrinking));
+            } else csv.append(",,,,,");
+            csv.append("0\n");
+            md.append(String.format(Locale.ROOT, "| %s | %,d | %.2f | %s | %s | %s | %s | %s | %s | %s | %s |\n",
+                    c.id(), c.keys(), c.rho(), variant, pre ? Long.toString(c.threshold()) : "—", pre ? Integer.toString(c.maxRounds()) : "—",
+                    display(group, "writes_blocked_ticks", true), display(group, "total_ticks", true), display(group, "transfer_ratio", false),
+                    pre ? display(group, "live_delta_rounds", true) : "—", pre ? threshold + "/" + limit + "/" + shrinking : "—"));
+        }
+        md.append("\n## 범위와 제한\n\n가상 시간·인메모리 모델이며 실제 서버 latency·throughput은 측정하지 않았다. ")
+                .append("쓰기 차단은 누락 key DELETE 제어 요청의 BUSY tick 수다. 전송량은 migration 데이터 응답 framing을 포함하고 ACK·pull 요청과 client 통신 bytes는 제외한다. ")
+                .append("rho는 쓰기 시도당 152 bytes 기준이며 DELETE·중복 쓰기로 실제 dirty bytes와 다를 수 있다. NOT_SHRINKING은 이 모델의 관측 결과이며 보편적인 수렴 한계가 아니다.\n\n")
+                .append("quick은 N=1,000, B=4 KiB/tick과 임계 4/16/64 KiB를 쓰는 재현 검증용이다. full은 N=100,000, B=64 KiB/tick과 임계 64/256/1,024 KiB다. 두 결과를 합산하지 않는다. ")
+                .append("phaseEvents는 상태·라운드 경계이며 dirty generation별 상세 byte 원본을 대체하지 않는다. S6·E/M scaling·실제 KV/peer 통합은 포함하지 않는다.\n");
+        Files.writeString(folder.resolve("summary.csv"), csv, StandardCharsets.UTF_8);
+        Files.writeString(folder.resolve("results.md"), md, StandardCharsets.UTF_8);
+    }
+
+    private static long reasonCount(List<Map<String, Object>> rows, String reason) {
+        return rows.stream().filter(r -> reason.equals(r.get("stopPhaseReason"))).count();
     }
 
     static double metric(Map<String, Object> root, String name) {
