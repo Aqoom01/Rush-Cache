@@ -6,6 +6,8 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.openkache.core.model.NodeId;
+import io.openkache.core.model.OwnershipEpoch;
+import io.openkache.core.model.RoutingVersion;
 import io.openkache.core.model.TabletId;
 import io.openkache.core.tablet.Change;
 import io.openkache.core.tablet.DistributionScheme;
@@ -15,6 +17,7 @@ import io.openkache.core.tablet.RoutingTable;
 import io.openkache.core.tablet.Tablet;
 import io.openkache.core.tablet.TabletRange;
 import io.openkache.core.tablet.slot.FixedSlotScheme;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import org.junit.jupiter.api.Test;
@@ -105,6 +108,26 @@ class HashRangeSchemeTest extends DistributionSchemeContract {
         for (Change c : plan.moves()) {
             assertEquals(new NodeId(3), c.to());
         }
+    }
+
+    @Test
+    void exactTieDoesNotMoveATabletThatOnlySwapsPlaces() {
+        // 길이가 정확히 2^60인 Tablet 16개(uniform은 마지막 구간이 1 길어서 정확한 동률이 안 나온다). 노드1: 0~7, 노드2: 8~15
+        List<Tablet> tablets = new ArrayList<>();
+        for (int i = 0; i < 16; i++) {
+            long start = (long) i << 60;
+            long end = i == 15 ? 0 : (long) (i + 1) << 60;
+            tablets.add(new Tablet(new TabletId(i), new TabletRange(start, end), new NodeId(i / 8 + 1), OwnershipEpoch.ZERO.next()));
+        }
+        RoutingTable t = RoutingTable.of(RoutingVersion.ZERO.next(), tablets, 16);
+
+        Plan plan = new HashRangeScheme(8).onNodeAdded(t, new NodeId(3));
+
+        // 5개 받으면 (6, 5, 5). 6번째를 받으면 (5, 5, 6)으로 자리만 바뀌므로 옮기지 않는다
+        assertEquals(5, plan.moves().size());
+        RoutingTable after = plan.applyAll();
+        long w3 = weightOf(after, new NodeId(3));
+        assertTrue(w3 <= Math.max(weightOf(after, new NodeId(1)), weightOf(after, new NodeId(2))));
     }
 
     @Test

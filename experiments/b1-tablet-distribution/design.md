@@ -1,6 +1,6 @@
 # B1 설계
 
-상태: 공통 타입·인터페이스·`fixed-slot`까지 구현(§7). 소유권 판정, 전파, 나머지 variant, §6 실험은 미구현.
+상태: 공통 타입·인터페이스·`fixed-slot`·`hash-range-tablet`·표 전파·소유권 판정(in-process)까지 구현(§7). `ring-vnode`, wire 인코딩, §6 실험의 split 시나리오는 미구현.
 
 ## 1. 목표와 범위
 
@@ -92,11 +92,26 @@ metadataBytes(table)          → int       표를 이 variant의 형식으로 �
 |---|---|---|
 | 초기 Tablet 수 | 노드당 T개, 기본 T = 64 (비교 실험은 T = G / 8) | Slicer는 서버당 50~150개 유지(§4.4.1). 사전 실험 3에서 노드당 32~64개면 노드 추가 직후 균형 1.03 이내, 표 5~10 KB |
 | 초기 배치 | 해시 공간을 n·T개로 균등 분할, 연속 블록 배치 | Slicer 처음 할당이 균등 분할(§4.4). 배치는 fixed-slot과 같은 연속 블록(표 압축) |
-| 노드 추가 | 가장 많이 가진 노드에서 하나씩, 새 노드가 평균에 닿을 때까지 | fixed-slot과 같은 기본 규칙. B2의 재배치 계획이 있으면 그것을 쓴다 |
+| 노드 추가 | 가장 긴 노드의 마지막 Tablet부터, 받고 나서 그 donor의 받기 전 길이 이상이 되면 멈춘다. Tablet 하나뿐인 노드는 donor 제외 | 새 노드 길이는 [평균 − 가장 긴 Tablet, 추가 전 최대] 안. 큰 Tablet은 B2가 먼저 split해야 균형이 잡힌다. B2의 재배치 계획이 있으면 그것을 쓴다 |
 | 노드 제거 | 떠나는 노드의 Tablet을 가장 적게 가진 노드에 하나씩 | 위와 같음 |
 | split | `RoutingTable.withSplit(id, at)`. `at`은 해시값. 자식 둘 다 부모의 주인·epoch 승계, 뒤쪽 자식은 새 id | 쪼개기만 하고 주인은 안 바꾼다(Slicer phase 5 "Split hot slices without changing their task assignments"). 옮기는 건 별도 `Change` |
 | merge | `RoutingTable.withMerge(left, right)`. 인접하고 주인이 같을 때만. epoch는 둘 중 큰 값 | Slicer phase 3도 먼저 같은 서버로 옮긴 뒤 합친다 |
 | 노드 균형 기준 | Tablet **개수**가 아니라 해시 공간 **길이** 기준으로 donor를 고른다 | split 후에는 Tablet마다 길이가 달라 개수로 세면 key 균형이 틀어진다. fixed-slot과 다른 유일한 규칙 |
+
+### 4.3 표 전파·소유권 판정의 결정 (2단계)
+
+variant와 무관하게 하나다. 세 참여자(Controller, 노드, 클라이언트)가 각자 표 사본을 들고, 원본은 Controller 하나다. 사본이 낡아도 서비스는 멈추지 않고, 낡은 사본으로 온 요청은 `MOVED`로 바로잡는다. 코드는 `core.tablet.routing`.
+
+| 규칙 | 결정 | 근거 |
+|---|---|---|
+| 전파 | Controller가 변경 직후 모든 노드에 push 1회(실패해도 재시도 없음) + 모든 응답에 응답자의 표 버전(피기백) + 낡은 요청에 `MOVED` | 사전 실험(표 전파 전략 비교)에서 push+피기백+리다이렉트가 수렴 2 ms, Controller 분할 중 실패 0. push를 놓친 노드는 피기백으로 알고 `GetTable`로 받아 간다 |
+| 버전 | `RoutingVersion`은 Controller만 올린다. 노드·클라이언트는 더 큰 버전만 받아들인다 | 늦게 도착한 옛 push로 표가 뒤로 가지 않는다 |
+| 변경 | `Controller.apply(expectedVersion, 변경)`. 요청자가 본 버전이 현재와 다르면 거절(CAS) | B2·B3가 서로 모르고 같은 Tablet을 건드리는 사고 방지. B3 `MigrationCommitter.commit(job, expectedTable)` = `move(expectedTable.version(), job.change())` |
+| 노드 판정 | 내 표에서 내가 주인이면 OK. 아니면 `MOVED` + 새 주인. 요청 epoch < 내 epoch면 `STALE_EPOCH`. 요청 epoch > 내 epoch면 내 표가 낡은 것이므로 redirect 없는 `MOVED`로 거절하고 표를 받아 온다. epoch 0은 검사 안 함 | Redis Cluster MOVED. `ASK`는 쓰지 않는다(§4.1) |
+| 두 주인 방지 | 표가 아니라 노드 로컬에 거절 플래그(`LocalRouting.stopServing`). cutover 순서: (1) 옛 주인 거절 시작 → (2) 마지막 복사 → (3) `Controller.move` → (4) 새 주인 서비스. 플래그는 그때 epoch에 묶이고, 주인이 바뀐 표를 받으면 자동으로 풀린다 | 사전 실험의 stale serve(0.3~1.1건)는 (1) 없이 라우팅만으로 할 때의 수치. 순서는 B3 설계(§3)와 같다 |
+| 클라이언트 | `MOVED`면 표를 받아 오고, 못 받으면 redirect 힌트로 바로 재시도. 최대 3회, 넘으면 `UNAVAILABLE`. 피기백으로 더 새 버전을 보면 다음 호출 전에 갱신 | redis-py 등 Redis 클라이언트의 관례(3회). 응답을 기다리는 경로에서 표를 동기로 받지 않기 위해 |
+| Controller 장애 | 서비스는 계속(노드가 표를 들고 있음), 표 변경만 멈춤. 복제·버전 영속화는 범위 밖 | 보고서에 한계로 명시 |
+| push 수신 확인 | 없음. 못 받은 노드는 `check` 뒤 `needsRefresh()`를 보고 `requestTable`을 부르는 것이 엔진(서버 연동)의 책임 | 피기백이 메우므로 Controller가 확인·재시도하지 않는다 |
 
 ## 5. 불변식
 
@@ -106,7 +121,7 @@ variant 구현은 모두 아래를 지켜야 하며, 단위 테스트로 검증�
 2. 같은 표, 같은 해시에는 같은 `locate` 결과를 낸다. 난수와 실제 시각을 쓰지 않는다.
 3. 변경 연산(`withOwner`, `split`, `merge`, `onNodeAdded`의 결과 적용)은 입력 표를 바꾸지 않고 새 표를 돌려주며, `RoutingVersion`은 정확히 1 증가한다.
 4. `withOwner`는 그 Tablet의 `OwnershipEpoch`만 1 올리고 다른 Tablet의 epoch는 바꾸지 않는다.
-5. `onNodeAdded`가 돌려준 `Change`를 모두 적용하면 새 노드를 포함한 모든 노드의 Tablet 수 차이가 1 이하다(`fixed-slot`, `hash-range-tablet`). `ring-vnode`는 토큰 수만 보장한다.
+5. `onNodeAdded`가 돌려준 `Change`를 모두 적용하면: `fixed-slot`은 새 노드를 포함한 모든 노드의 Tablet 수 차이가 1 이하다. `hash-range-tablet`은 길이 기준이다. 추가 시 새 노드 길이가 [평균 − 가장 긴 Tablet, 추가 전 최대] 안이고, 제거 시 노드 간 길이 차이가 max(이전 차이, 가장 긴 Tablet) 이하다(길이가 모두 같으면 fixed-slot과 같은 결과). `ring-vnode`는 토큰 수만 보장한다.
 6. `onNodeAdded`의 `Change`는 `to`가 모두 새 노드다(기존 노드끼리 이동 없음). `onNodeRemoved`의 `Change`는 `from`이 모두 떠나는 노드다.
 7. `split`의 두 자식 범위는 부모 범위를 빈틈·겹침 없이 덮고, `merge`는 인접하고 owner가 같은 두 Tablet만 합친다.
 
@@ -169,15 +184,25 @@ cache-core/src/main/java/io/openkache/core/tablet/
 ├── Change.java                    (unit, from, to)
 ├── Plan.java                      (prepared, moves)
 ├── DistributionScheme.java        §4 인터페이스
-└── slot/
-    └── FixedSlotScheme.java       fixed-slot
-(이후) range/HashRangeScheme.java, ring/RingScheme.java, OwnershipCheck.java, Controller
+├── slot/
+│   └── FixedSlotScheme.java       fixed-slot
+├── range/
+│   └── HashRangeScheme.java       hash-range-tablet (길이 기준 균형)
+└── routing/                       표 전파·소유권 판정 (variant 무관, §4.1)
+    ├── TableMessage.java          TablePush / GetTable / TableReply (PeerMessage)
+    ├── OwnershipCheck.java        순수 판정: OK / MOVED(redirect) / STALE_EPOCH, 피기백 버전
+    ├── LocalRouting.java          노드 로컬: 표 사본(버전 더 클 때만 교체) + 거절 플래그(B3 cutover 1단계)
+    ├── Controller.java            표 원본. apply(expectedVersion, 변경) = CAS, 성공 시 push
+    └── RoutingClient.java         클라이언트: 표 캐시, MOVED 따라가기(최대 3회), 피기백으로 갱신
+(이후) ring/RingScheme.java, wire 인코딩(MOVED redirect 필드, 표 메시지 opcode)
 
 cache-core/src/test/java/io/openkache/core/tablet/
 ├── KeyHashTest.java, TabletRangeTest.java
 ├── RoutingTableTest.java               §5 불변식 1~4·7 (표 자체)
 ├── DistributionSchemeContract.java     §5 불변식 5·6 + 인터페이스 계약. 모든 variant 테스트가 상속
 ├── slot/FixedSlotSchemeTest.java       계약 상속 + fixed-slot 고유 규칙
+├── range/                              계약 상속 + 길이 기준 균형, 무작위 split/merge/증감
+├── routing/                            판정·클라이언트·Controller 단위 + PropagationScenarioTest(Controller 1 + 노드 3 + 클라이언트, FakeTransport)
 └── experiment/                         §6 실험 러너(DistributionComparison, main), Workload, Metrics, Variants, MetricsTest
 
 experiments/b1-tablet-distribution/
