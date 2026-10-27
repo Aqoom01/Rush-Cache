@@ -112,8 +112,8 @@ public final class HashRangeScheme implements DistributionScheme {
             List<Tablet> list = owned.get(donor);
             Tablet candidate = list.get(list.size() - 1);
             long w = weight(candidate.range());
-            // 받고 나서 donor가 받기 전에 가졌던 길이를 넘으면 균형이 더 나빠지므로 멈춘다
-            if (mine + w > weight.get(donor)) {
+            // 받고 나서 donor가 받기 전 길이 이상이 되면 균형이 더 좋아지지 않으므로 멈춘다(같으면 자리만 바뀌는 이동 낭비)
+            if (mine + w >= weight.get(donor)) {
                 break;
             }
             list.remove(list.size() - 1);
@@ -167,7 +167,7 @@ public final class HashRangeScheme implements DistributionScheme {
 
     /**
      * 구간 길이를 4로 나눈 값. 노드별 합이 2^62를 넘지 않아 부호 있는 long으로 더할 수 있다(전체 공간 2^64는 long에 안 들어간다).
-     * 잘리는 최대 3은 균형 판단에 영향이 없다.
+     * 잘리는 최대 3은 균형 판단에 영향이 없다(길이 4 미만 Tablet은 무게 0이 되지만 그런 Tablet은 실험·운영에서 만들지 않는다).
      */
     static long weight(TabletRange r) {
         if (r.equals(TabletRange.FULL)) {

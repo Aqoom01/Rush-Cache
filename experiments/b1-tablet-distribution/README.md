@@ -16,7 +16,7 @@ variant 하나는 참고 문헌 하나에 대응한다. 실험 결과의 `varian
 | variant | 단위 | split | 임의 이동 | 근거 | 상태 |
 |---|---|---|---|---|---|
 | `fixed-slot` | 고정 개수 슬롯 | 불가 | 가능 | [Redis Cluster 고정 해시 슬롯](references/redis-cluster-hash-slots.md) | 구현·1차 실험 완료 |
-| `hash-range-tablet` | 가변 해시 구간 | 가능 | 가능 | [Google Slicer와 ScyllaDB Tablets](references/slicer-scylla-tablets.md) | 설계 |
+| `hash-range-tablet` | 가변 해시 구간 | 가능 | 가능 | [Google Slicer와 ScyllaDB Tablets](references/slicer-scylla-tablets.md) | 구현 |
 | `ring-vnode` | 링 위 토큰 구간 | 불가 | 불가 | Dynamo (SOSP 2007), Cassandra vnode | 조사 예정 |
 
 - `fixed-slot`은 가장 단순한 Tablet이다. 공통 인터페이스와 라우팅 표를 이것으로 먼저 검증한다.
