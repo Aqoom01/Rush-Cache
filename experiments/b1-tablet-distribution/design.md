@@ -113,6 +113,21 @@ variant와 무관하게 하나다. 세 참여자(Controller, 노드, 클라이�
 | Controller 장애 | 서비스는 계속(노드가 표를 들고 있음), 표 변경만 멈춤. 복제·버전 영속화는 범위 밖 | 보고서에 한계로 명시 |
 | push 수신 확인 | 없음. 못 받은 노드는 `check` 뒤 `needsRefresh()`를 보고 `requestTable`을 부르는 것이 엔진(서버 연동)의 책임 | 피기백이 메우므로 Controller가 확인·재시도하지 않는다 |
 
+### 4.4 `ring-vnode`의 결정 (3단계, 설계만)
+
+참고 자료: [Dynamo와 Cassandra vnode](references/dynamo-cassandra-vnode.md). 표 없이 토큰 목록만으로 분배하는 **Dynamo Strategy 1**(순수 링)을 재현한다. Strategy 3(균등 구간 Q개 고정)는 fixed-slot과 같으므로 따로 두지 않는다. 구간의 주인이 토큰 위치로 정해지므로 임의 재배치가 없고(`supportsMove() = false`), "표를 두면 무엇을 얻는가"의 기준선이다.
+
+| 파라미터 | 기본값 | 근거 |
+|---|---|---|
+| 토큰 수 V | 노드당 V개 (비교 실험은 V = G / 8). 기본값은 실험 후 | ketama 100~200, Cassandra 무작위 256 / 알고리즘 배치 16. Karger는 노드당 Θ(log n)개면 균형 |
+| 토큰 위치 | `hash(nodeId, i)`, i = 0..V−1. 결정적 | 불변식 2(난수 없음). 무작위 배치의 균형 문제를 재현하면서 실험은 재현 가능 |
+| 배치 규칙 옵션 | `RANDOM`(위) / `SPLIT_LONGEST`(새 토큰을 현재 가장 긴 구간의 중점에) | Cassandra 2.x 무작위 vs 4.0 allocator의 차이를 재는 실험 변수. allocator의 복제 인식 부분은 복제가 없어 생략 |
+| 초기 표 | 모든 노드의 토큰을 정렬, 토큰 사이가 Tablet, 주인은 시계 방향 다음 토큰의 노드 | Dynamo §4.2. 첫 토큰 앞 구간은 마지막 토큰에서 wrap |
+| 노드 추가 | `prepared` = 새 토큰 V개 자리에서 `withSplit`(주인 그대로). `moves` = 그 앞쪽 조각 V개를 새 노드로 | `prepared`가 입력과 다른 유일한 variant(§3 `Plan`). 기존 노드끼리 이동 없음(monotone) |
+| 노드 제거 | 떠나는 노드의 Tablet 각각을 시계 방향 다음 토큰의 주인에게 | 받는 노드를 고를 수 없다. 남는 경계는 이동 완료 후 Controller가 `withMerge`로 정리(선택) |
+| split / move | 없음 | B2 실험에서는 그리디 한계를 참고값으로만 |
+| `metadataBytes` | 16 + 토큰 수 × 12 (8 B 토큰 + 4 B NodeId) | 표가 아니라 토큰 목록 크기 |
+
 ## 5. 불변식
 
 variant 구현은 모두 아래를 지켜야 하며, 단위 테스트로 검증한다.
@@ -243,3 +258,4 @@ experiments/b1-tablet-distribution/
 | 이동 중 라우팅 | `ASK` 없음 | §4.1 |
 | `fixed-slot` S 기본값 | 4096 유지. 1차 실험으로 확인(1024도 충분, 16384는 이득 없음) | §4.1, §6 |
 | 인터페이스 모양 | 조회·split/merge·이동 반영은 `RoutingTable` 공통. variant는 `initial`, `onNodeAdded/Removed → Plan`, `supportsSplit/Move`, `metadataBytes`만 | §4 |
+| `ring-vnode` 재현 대상 | Dynamo Strategy 1(토큰이 구간을 정하는 순수 링). Strategy 3는 fixed-slot과 같아 제외. 토큰 배치는 결정적 해시, 배치 규칙 2종을 실험 변수로 (2026-10-27) | §4.4 |
