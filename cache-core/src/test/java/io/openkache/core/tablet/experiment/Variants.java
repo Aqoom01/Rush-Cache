@@ -1,6 +1,7 @@
 package io.openkache.core.tablet.experiment;
 
 import io.openkache.core.tablet.DistributionScheme;
+import io.openkache.core.tablet.range.HashRangeScheme;
 import io.openkache.core.tablet.slot.FixedSlotScheme;
 import java.util.List;
 import java.util.function.IntFunction;
@@ -13,7 +14,7 @@ import java.util.function.IntFunction;
  *
  * <pre>
  * fixed-slot          S = G
- * hash-range-tablet   T = G / BASE_NODES   (구현 후 추가)
+ * hash-range-tablet   T = G / BASE_NODES
  * ring-vnode          V = G / BASE_NODES   (구현 후 추가)
  * </pre>
  */
@@ -24,7 +25,9 @@ final class Variants {
 
     record Variant(String name, IntFunction<DistributionScheme> forGranularity) {}
 
-    static final List<Variant> ALL = List.of(new Variant("fixed-slot", g -> new FixedSlotScheme(g)));
+    static final List<Variant> ALL = List.of(
+            new Variant("fixed-slot", g -> new FixedSlotScheme(g)),
+            new Variant("hash-range-tablet", g -> new HashRangeScheme(Math.max(1, g / BASE_NODES))));
 
     private Variants() {}
 }
