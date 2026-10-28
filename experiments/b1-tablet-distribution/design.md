@@ -1,6 +1,6 @@
 # B1 설계
 
-상태: 공통 타입·인터페이스·`fixed-slot`·`hash-range-tablet`·`ring-vnode`·표 전파·소유권 판정(in-process)까지 구현(§7). wire 인코딩, §6 실험의 split 시나리오(S6)는 미구현.
+상태: 공통 타입·인터페이스·`fixed-slot`·`hash-range-tablet`·`ring-vnode`·`prefix-hash-tablet`·표 전파·소유권 판정(in-process)까지 구현(§7). wire 인코딩, §6 실험의 split 시나리오(S6)는 미구현. 2026-10-28부터 표 계열 variant를 늘려 비교하는 방향(§8).
 
 ## 1. 목표와 범위
 
@@ -53,6 +53,7 @@ variant가 구현하는 계약이다. B2·B3는 이 인터페이스만 호출하
 
 ```
 name()                                    실험 결과의 variant 값
+keyHash(key)                  → long      key → 해시 공간의 점. 기본은 key 전체의 KeyHash (prefix-hash-tablet만 hash tag)
 initial(nodes)                → RoutingTable   첫 표. 버전 1, epoch 1
 onNodeAdded(table, node)      → Plan      새 노드가 받을 Tablet. 이동 실행은 B3
 onNodeRemoved(table, node)    → Plan      떠나는 노드의 Tablet을 받을 노드
@@ -65,7 +66,7 @@ metadataBytes(table)          → int       표를 이 variant의 형식으로 �
   `withSplit(id, at)`, `withMerge(a, b)`, `withOwner`, `apply(Change)`를 variant와 무관하게 공통으로 쓴다. variant는 표를 처음 만드는 규칙과
   노드 증감 시 계획만 정한다. 그 결과 B2·B3가 만지는 타입은 `RoutingTable`, `Tablet`, `Change`, `Plan`뿐이고 `DistributionScheme`은
   Controller와 실험 코드만 쓴다.
-- `lookup`의 입력은 key가 아니라 **64비트 해시값**이다. 세 variant 모두 해시 공간 위에서 동작하므로 key 바이트열을 받을 이유가 없다.
+- `lookup`의 입력은 key가 아니라 **64비트 해시값**이다. 모든 variant가 해시 공간 위에서 동작하므로 표가 key 바이트열을 받을 이유가 없다. key → 해시값은 `keyHash(key)`가 정하고(기본 구현은 `KeyHash.of`), 이것을 바꾸는 variant는 `prefix-hash-tablet`뿐이다(§4.5). 클라이언트와 서버는 같은 variant의 `keyHash`를 써야 한다.
 - Tablet 식별자는 variant마다 다른 타입을 두지 않고 **`TabletId` 하나로 통일**한다(슬롯 번호, 토큰 번호도 `TabletId`). B2·B3 코드가 variant마다 갈라지지 않게 하기 위해서다.
 - `TabletId`는 Controller만 발급한다. split 자식의 id가 노드마다 다르게 매겨지는 일을 막는다.
 - 인터페이스를 지금 두는 이유: 구현이 처음부터 셋이라 근거 없는 추상화가 아니다. 사전 실험의 `Partitioner`(5종 구현)를 정리한 것이다.
@@ -128,6 +129,17 @@ variant와 무관하게 하나다. 세 참여자(Controller, 노드, 클라이�
 | split / move | 없음 | B2 실험에서는 그리디 한계를 참고값으로만 |
 | `metadataBytes` | 16 + 토큰 수 × 12 (8 B 토큰 + 4 B NodeId) | 표가 아니라 토큰 목록 크기 |
 
+### 4.5 `prefix-hash-tablet`의 결정 (4단계, 표 계열 확장 1)
+
+참고 자료: [Hash tag와 partition key](references/hash-tag-partition-key.md). 표·조회·노드 증감·split은 `hash-range-tablet`과 완전히 같고, **key → 해시값 함수만** key 전체가 아니라 key 안의 hash tag(`{...}`)로 바꾼다. 같은 tag의 key는 해시값이 같아 언제나 한 Tablet, 한 노드에 있다. 분배 단위가 key에서 "tag 묶음"으로 커지는 대가로 multi-key 요청을 한 노드에서 끝낼 수 있다.
+
+| 파라미터 | 기본값 | 근거 |
+|---|---|---|
+| 구현 | `PrefixHashScheme`이 `HashRangeScheme`에 위임, `keyHash`만 override | 표 모양이 같으므로 코드를 복제하지 않는다. tag 없는 key만 있으면 결과가 `hash-range-tablet`과 같다(테스트로 확인) |
+| tag 규칙 | Redis Cluster 명세: 첫 `{`와 그 뒤 첫 `}` 사이가 비어 있지 않으면 그 부분, 아니면 key 전체 | 가장 널리 쓰이고 명세가 분명하다. OpenKache key는 바이트열이라 구분자 규칙이 따로 없다 |
+| 묶음과 split | 묶음은 해시값이 하나라 split으로도 나눌 수 없다 | 묶음 하나가 크거나 뜨거우면 그 노드의 불균형은 어떤 재배치로도 못 푼다. DynamoDB의 hot partition 지침과 같은 한계. 응용이 tag 설계를 책임진다 |
+| 비교 실험 | S7 접두사 묶음(§6). S1~S5는 tag 없는 key라 `hash-range-tablet`과 같은 값이어야 한다 | 묶음 크기 쏠림에 따른 key 균형 손실 vs 같은 묶음 두 key가 한 노드에 있을 확률(1.0 vs 약 1/n) |
+
 ## 5. 불변식
 
 variant 구현은 모두 아래를 지켜야 하며, 단위 테스트로 검증한다.
@@ -150,6 +162,7 @@ variant 구현은 모두 아래를 지켜야 하며, 단위 테스트로 검증�
 2. 노드 증감 시 이동량은 이론 최소 1/(n+1)에 붙는가? 반복 증감에도 누적 손실이 없는가?
 3. 요청이 쏠릴 때, 단위를 통째로 옮기는 것만으로 도달할 수 있는 균형의 한계는 G에 따라 어떻게 달라지는가? (split이 필요한 영역과 분배로는 못 푸는 영역을 가른다)
 4. (variant가 늘면) 표를 두는 방식(fixed-slot, hash-range)과 두지 않는 방식(ring-vnode)의 균형·이동량·표 크기 차이는?
+5. key 대신 접두사 묶음을 분배 단위로 삼으면(prefix-hash-tablet) 묶음 크기 쏠림에 따라 key 균형과 쏠림 한계가 얼마나 나빠지고, 그 대가로 같은 묶음 두 key가 한 노드에 있을 확률은 얼마나 오르는가?
 
 ### 동일 조건
 
@@ -164,6 +177,7 @@ variant마다 잘게 자르는 손잡이가 다르므로(fixed-slot은 전체 S,
 | S3 노드 제거 | 8 → 7대 | G 4종 | 이동 비율, 제거 후 균형 | ≈ 1/8 |
 | S4 연속 증감 | 1 → 16대 한 대씩, 다시 16 → 8 | G = 4096 | 누적 이동 비율 vs Σ 1/n, 매 단계 균형 | 누적 = 이론(여분 churn 0), 매 단계 max−min ≤ 1 |
 | S5 쏠림 한계 | 노드 8대, Zipf θ ∈ {0.9, 0.99, 1.2} 요청 100만 | G 4종 | 그대로 max/mean, 단위 이동 그리디 한계, 가장 뜨거운 단위·key 비중 | 그대로 ~1.7(θ=0.99, 실험 2: 1.73). 한계는 G 클수록 1.0에 접근, θ=1.2는 hot key 하나 때문에 ~1.5 바닥(실험 2: 1.516) |
+| S7 접두사 묶음 | 노드 8대, key 100만 개를 tag 묶음 P개에 나눠 담음(`{g<i>}:<j>`), 요청 Zipf θ=0.99 | P ∈ {100, 1천, 1만, 10만} × 묶음 크기 Zipf θ_g ∈ {0, 0.99}, G = 4096 | key 균형, 가장 큰 묶음 비율, 흩어진 묶음 비율, 같은 묶음 두 key 같은 노드 확률, 요청 max/mean·그리디 한계, 노드 추가 이동 비율 | prefix-hash만 흩어진 묶음 0·같은 노드 확률 1.0. key 균형은 θ_g=0.99·P=100에서 가장 큰 묶음(≈19%) × 8 ≈ 1.5 이상, P ≥ 1만이면 표 방식과 비슷. 나머지 variant는 같은 노드 확률 ≈ 1/8 |
 | 보조 | 표 크기(초기 / 추가 후), `lookup` ns | G 4종 | | 표 크기는 구간 수 × 20B, ns는 log G |
 
 "가설"은 실행 전에 적은 것이고 결과가 다르면 그대로 기록한다.
@@ -175,12 +189,13 @@ variant마다 잘게 자르는 손잡이가 다르므로(fixed-slot은 전체 S,
 - 이동 비율: 전·후 표에서 owner가 바뀐 key 수 / K (단위 기준은 `Plan.moves().size()` / 단위 수)
 - 그리디 한계: 단위별 요청 수를 LPT(큰 것부터 가장 한가한 노드에)로 재배치했을 때의 max/mean. 표는 안 바꾼다. "어떤 재배치도 이 아래로는 못 간다". `supportsMove()`가 false인 variant는 참고값
 - Zipf: 순위 r의 확률 ∝ 1/r^θ, 누적분포 이진 탐색, seed 고정
+- S7 묶음 지표: 흩어진 묶음 비율 = key가 두 노드 이상에 있는 묶음 / key 2개 이상인 묶음. 같은 노드 확률 = 같은 묶음의 서로 다른 두 key가 같은 노드에 있는 순서쌍 / 전체 순서쌍(묶음 크기로 가중). key → 해시는 variant의 `keyHash`
 
 ### 실행 환경
 
-- in-process. 서버·네트워크·실제 시계 없음. seed 5개 × 시나리오. 전체 1분 안쪽
+- in-process. 서버·네트워크·실제 시계 없음. seed 5개 × 시나리오. variant 5개 전체 약 10분(`ring-vnode-alloc`의 S4가 5분)
 - 코드: `cache-core/src/test/java/io/openkache/core/tablet/experiment/` (`main`이 있는 러너 + 틀 검증 `MetricsTest`). `./gradlew test`에서는 돌지 않는다
-- 결과: `distribution-comparison/summary.csv` (long 형식: `variant, scenario, G, nodes, keys, theta, seed, metric, value`)
+- 결과: `distribution-comparison/summary.csv` (long 형식: `variant, scenario, G, nodes, keys, theta, groups, seed, metric, value`)
 - 표 전파 시간, `MOVED` 재시도율, Controller 장애 시 실패 수는 2단계(실제 노드·클라이언트)에서 측정한다
 
 ### 1차 결과 요약 (fixed-slot, 2026-10-20)
@@ -205,6 +220,8 @@ cache-core/src/main/java/io/openkache/core/tablet/
 │   └── HashRangeScheme.java       hash-range-tablet (길이 기준 균형)
 ├── ring/
 │   └── RingScheme.java            ring-vnode (토큰 사이 구간, 배치 RANDOM / BALANCED, compact)
+├── prefix/
+│   └── PrefixHashScheme.java      prefix-hash-tablet (hash-range에 위임, keyHash만 hash tag)
 └── routing/                       표 전파·소유권 판정 (variant 무관, §4.3)
     ├── TableMessage.java          TablePush / GetTable / TableReply (PeerMessage)
     ├── OwnershipCheck.java        순수 판정: OK / MOVED(redirect) / STALE_EPOCH, 피기백 버전
@@ -220,6 +237,7 @@ cache-core/src/test/java/io/openkache/core/tablet/
 ├── slot/FixedSlotSchemeTest.java       계약 상속 + fixed-slot 고유 규칙
 ├── range/                              계약 상속 + 길이 기준 균형, 무작위 split/merge/증감
 ├── ring/                               계약 상속 + 링 오라클(토큰 → 시계 방향)과 lookup 일치, 무작위 증감
+├── prefix/                             계약 상속 + tag 규칙, 같은 tag는 한 Tablet, 표·계획이 hash-range와 동일
 ├── routing/                            판정·클라이언트·Controller 단위 + PropagationScenarioTest(Controller 1 + 노드 3 + 클라이언트, FakeTransport)
 └── experiment/                         §6 실험 러너(DistributionComparison, main), Workload, Metrics, Variants, MetricsTest
 
@@ -232,7 +250,7 @@ experiments/b1-tablet-distribution/
 
 규칙:
 
-- **패키지는 variant별로 나눈다** (`slot`, `range`, `ring`). B2가 기능별로 나누는 것과 다른데, B1은 "같은 기능의 다른 구현"이 아니라 "분배 방식 자체"가 비교 대상이기 때문이다. 공통 타입은 `tablet` 바로 아래에 둔다.
+- **패키지는 variant별로 나눈다** (`slot`, `range`, `ring`, `prefix`). B2가 기능별로 나누는 것과 다른데, B1은 "같은 기능의 다른 구현"이 아니라 "분배 방식 자체"가 비교 대상이기 때문이다. 공통 타입은 `tablet` 바로 아래에 둔다.
 - **variant 하나는 클래스 하나**가 된다. 클래스 Javadoc에 참고 문헌을 적고, `references/`의 정리 문서와 이름을 맞춘다.
 - **B2·B3가 쓰는 공통 타입(`Tablet`, `TabletRange`, `RoutingTable`, `Change`)은 영향받는 담당자 리뷰를 받는다.** `core.model`에는 올리지 않고 `core.tablet`에 둔다. `model`에 올릴 필요가 생기면 그때 팀 확인.
 - **실험 폴더는 비교하는 질문 기준으로 만든다.** `distribution-comparison/`은 모든 variant를 같은 시나리오로 비교한다.
@@ -262,3 +280,5 @@ experiments/b1-tablet-distribution/
 | `fixed-slot` S 기본값 | 4096 유지. 1차 실험으로 확인(1024도 충분, 16384는 이득 없음) | §4.1, §6 |
 | 인터페이스 모양 | 조회·split/merge·이동 반영은 `RoutingTable` 공통. variant는 `initial`, `onNodeAdded/Removed → Plan`, `supportsSplit/Move`, `metadataBytes`만 | §4 |
 | `ring-vnode` 재현 대상 | Dynamo Strategy 1(토큰이 구간을 정하는 순수 링). Strategy 3는 fixed-slot과 같아 제외. 토큰 배치는 결정적 해시, 배치 규칙 2종을 실험 변수로 (2026-10-27) | §4.4 |
+| 방향 전환: 표 계열 확장 | 처음 3개를 끝낸 뒤 "표를 두는" variant를 더 넣어 비교 폭을 넓힌다: 접두사 해시(`prefix-hash-tablet`, 완료) → 크기 조절 슬롯(ScyllaDB식 전체 2배/절반) → key 순서 범위(Bigtable 계열). jump/rendezvous 같은 계산식 해시는 B2·B3가 끼어들 자리(`supportsMove`)가 없어 **제외 유지** (2026-10-28) | README, §4.5 |
+| `keyHash` 인터페이스 | key → 해시값을 `DistributionScheme.keyHash(key)`로 variant가 정한다(default = `KeyHash.of`). 표는 여전히 해시값만 받는다 (2026-10-28) | §4 |

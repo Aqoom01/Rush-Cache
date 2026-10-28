@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.openkache.core.model.Bytes;
 import io.openkache.core.model.NodeId;
 import java.util.ArrayList;
 import java.util.List;
@@ -122,6 +123,17 @@ public abstract class DistributionSchemeContract {
     @Test
     void metadataBytesIsPositive() {
         assertTrue(scheme().metadataBytes(scheme().initial(nodes(2))) > 0);
+    }
+
+    @Test
+    void keyHashIsDeterministicAndIndependentOfTheTable() {
+        Bytes key = Bytes.utf8("{user1}:profile");
+        long h = scheme().keyHash(key);
+
+        assertEquals(h, scheme().keyHash(key));
+        assertEquals(h, scheme().keyHash(Bytes.copyOf(key.toByteArray())));
+        RoutingTable t = scheme().initial(nodes(3));
+        assertEquals(t.lookup(h), t.lookup(scheme().keyHash(key)));
     }
 
     /** {@code prepared}는 경계만 바뀔 수 있고 주인은 못 바꾼다: 모든 해시 지점의 주인이 같아야 한다. */

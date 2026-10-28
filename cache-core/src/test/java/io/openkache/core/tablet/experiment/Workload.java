@@ -1,6 +1,7 @@
 package io.openkache.core.tablet.experiment;
 
 import io.openkache.core.model.Bytes;
+import io.openkache.core.tablet.DistributionScheme;
 import io.openkache.core.tablet.KeyHash;
 import java.util.Arrays;
 import java.util.SplittableRandom;
@@ -9,7 +10,8 @@ import java.util.SplittableRandom;
  * 실험 입력 생성. seed가 같으면 같은 key와 같은 요청열이 나온다.
  *
  * <p>key는 길이 16바이트의 난수이고, 실험은 key 자체가 아니라 {@link KeyHash}로 바꾼 해시값만 쓴다. 요청은 Zipf 분포로 key마다 요청
- * 수를 센 배열이다(요청열을 하나씩 보관하지 않는다).
+ * 수를 센 배열이다(요청열을 하나씩 보관하지 않는다). 접두사 묶음 시나리오(S7)만 실제 key 바이트열을 만들고 variant의
+ * {@link DistributionScheme#keyHash}로 해시한다.
  */
 final class Workload {
 
@@ -67,5 +69,38 @@ final class Workload {
             count[rankToKey[idx]]++;
         }
         return count;
+    }
+
+    /** 접두사(hash tag) 묶음이 있는 key 집합. {@code groupOf[i]}는 key i의 묶음 번호(0..groups-1). */
+    record Prefixed(Bytes[] keys, int[] groupOf, int groups) {}
+
+    /**
+     * 묶음 {@code groups}개에 key {@code count}개를 나눠 담은 key 집합. 묶음 g의 key는 {@code "{g<g>}:<i>"} 꼴이라 tag가 {@code g<g>}다.
+     * 묶음별 key 수는 {@link #zipfRequests}와 같은 Zipf({@code thetaGroups})로 정한다. 0이면 거의 균등, 0.99면 큰 묶음 몇 개가 key의
+     * 상당 부분을 차지한다(테넌트·사용자별 데이터 크기 편차).
+     */
+    static Prefixed prefixedKeys(int groups, int count, double thetaGroups, long seed) {
+        int[] sizes = zipfRequests(groups, count, thetaGroups, seed);
+        Bytes[] keys = new Bytes[count];
+        int[] groupOf = new int[count];
+        int k = 0;
+        for (int g = 0; g < groups; g++) {
+            String tag = "{g" + g + "}:";
+            for (int i = 0; i < sizes[g]; i++) {
+                keys[k] = Bytes.utf8(tag + i);
+                groupOf[k] = g;
+                k++;
+            }
+        }
+        return new Prefixed(keys, groupOf, groups);
+    }
+
+    /** variant의 {@link DistributionScheme#keyHash}로 구한 해시값. tag를 보는 variant와 key 전체를 보는 variant가 여기서 갈린다. */
+    static long[] hashesOf(DistributionScheme scheme, Bytes[] keys) {
+        long[] hashes = new long[keys.length];
+        for (int i = 0; i < keys.length; i++) {
+            hashes[i] = scheme.keyHash(keys[i]);
+        }
+        return hashes;
     }
 }

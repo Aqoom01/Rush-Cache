@@ -35,6 +35,12 @@ public final class DistributionComparison {
     static final int NODES = Variants.BASE_NODES;
     static final int REQUESTS = 1_000_000;
     static final int MAX_NODES_S4 = 16;
+    /** S7 접두사 묶음 수. 묶음당 평균 key 수는 100만 / 묶음 수. */
+    static final int[] GROUP_COUNTS = {100, 1_000, 10_000, 100_000};
+    /** S7 묶음 크기의 쏠림. 0이면 묶음 크기가 거의 같고, 0.99면 큰 묶음 몇 개가 key의 상당 부분을 차지한다. */
+    static final double[] GROUP_THETAS = {0.0, 0.99};
+    /** S7 요청 쏠림(key 기준). S5의 중간값. */
+    static final double S7_REQUEST_THETA = 0.99;
 
     private final PrintWriter out;
 
@@ -50,7 +56,7 @@ public final class DistributionComparison {
         Path csv = Path.of(args[0]);
         Files.createDirectories(csv.toAbsolutePath().getParent());
         try (PrintWriter w = new PrintWriter(Files.newBufferedWriter(csv))) {
-            w.println("variant,scenario,G,nodes,keys,theta,seed,metric,value");
+            w.println("variant,scenario,G,nodes,keys,theta,groups,seed,metric,value");
             DistributionComparison run = new DistributionComparison(w);
             for (Variants.Variant v : Variants.ALL) {
                 long t0 = System.nanoTime();
@@ -58,6 +64,7 @@ public final class DistributionComparison {
                 run.s2s3AddRemove(v);
                 run.s4Churn(v);
                 run.s5Skew(v);
+                run.s7PrefixGroups(v);
                 run.aux(v);
                 System.err.printf(Locale.ROOT, "%s done in %.1fs%n", v.name(), (System.nanoTime() - t0) / 1e9);
             }
@@ -188,6 +195,35 @@ public final class DistributionComparison {
         }
     }
 
+    // ---- S7: 접두사 묶음. 같은 tag의 key를 한 노드에 모으는 대가로 균형과 쏠림 한계가 얼마나 나빠지는가 ----
+
+    void s7PrefixGroups(Variants.Variant v) {
+        int g = 4096;
+        int keys = 1_000_000;
+        for (int groups : GROUP_COUNTS) {
+            for (double thetaG : GROUP_THETAS) {
+                for (int seed = 1; seed <= SEEDS; seed++) {
+                    Workload.Prefixed w = Workload.prefixedKeys(groups, keys, thetaG, seed);
+                    int[] requests = Workload.zipfRequests(keys, REQUESTS, S7_REQUEST_THETA, seed);
+                    DistributionScheme s = v.forGranularity().apply(g);
+                    long[] hashes = Workload.hashesOf(s, w.keys());
+                    RoutingTable t = s.initial(nodes(NODES));
+                    long[] unitLoads = Metrics.unitLoads(t, hashes, requests);
+                    Row row = new Row(v.name(), "S7", g, NODES, keys, thetaG, groups, seed);
+                    write(row, "key_max_mean", Metrics.keyMaxMean(t, hashes, nodes(NODES)));
+                    write(row, "largest_group_share", Metrics.largestGroupShare(w.groupOf(), groups));
+                    write(row, "groups_split_ratio", Metrics.groupsSplitRatio(t, hashes, w.groupOf(), groups));
+                    write(row, "same_node_pair_ratio", Metrics.sameNodePairRatio(t, hashes, w.groupOf(), groups));
+                    write(row, "request_max_mean", Metrics.requestMaxMean(t, hashes, requests, nodes(NODES)));
+                    write(row, "greedy_bound", s.supportsMove() ? Metrics.greedyBound(unitLoads, NODES) : Double.NaN);
+                    write(row, "hottest_unit_share", Metrics.hottestUnitShare(unitLoads));
+                    RoutingTable after = s.onNodeAdded(t, new NodeId(NODES + 1)).applyAll();
+                    write(row, "moved_key_ratio_add", Metrics.movedRatio(t, after, hashes));
+                }
+            }
+        }
+    }
+
     // ---- 보조: 표 크기와 조회 비용 ----
 
     void aux(Variants.Variant v) {
@@ -225,11 +261,16 @@ public final class DistributionComparison {
         return l;
     }
 
-    private record Row(String variant, String scenario, int g, int nodes, int keys, double theta, int seed) {}
+    /** 결과 한 줄의 조건. {@code groups}는 S7만 쓰고 나머지는 0({@code -}로 기록). */
+    private record Row(String variant, String scenario, int g, int nodes, int keys, double theta, int groups, int seed) {
+        Row(String variant, String scenario, int g, int nodes, int keys, double theta, int seed) {
+            this(variant, scenario, g, nodes, keys, theta, 0, seed);
+        }
+    }
 
     private void write(Row r, String metric, double value) {
-        out.printf(Locale.ROOT, "%s,%s,%d,%d,%d,%s,%d,%s,%s%n", r.variant(), r.scenario(), r.g(), r.nodes(), r.keys(),
-                Double.isNaN(r.theta()) ? "-" : Double.toString(r.theta()), r.seed(), metric,
-                Double.isNaN(value) ? "NA" : String.format(Locale.ROOT, "%.6f", value));
+        out.printf(Locale.ROOT, "%s,%s,%d,%d,%d,%s,%s,%d,%s,%s%n", r.variant(), r.scenario(), r.g(), r.nodes(), r.keys(),
+                Double.isNaN(r.theta()) ? "-" : Double.toString(r.theta()), r.groups() == 0 ? "-" : Integer.toString(r.groups()),
+                r.seed(), metric, Double.isNaN(value) ? "NA" : String.format(Locale.ROOT, "%.6f", value));
     }
 }
