@@ -157,7 +157,7 @@ final class ComparisonExperiment {
         }
     }
 
-    private abstract static class Driver {
+    abstract static class Driver {
         boolean committed;
         long commitTick = -1;
         abstract void begin();
@@ -171,7 +171,21 @@ final class ComparisonExperiment {
         abstract Map<Bytes, Bytes> source();
         abstract Map<Bytes, Bytes> destination();
         abstract Result requestOwner(Command command);
+        abstract void abort();
+        abstract int commits();
+        abstract boolean frozen();
+        abstract void cleanupFailures(int failures);
+        abstract int cleanupCalls();
+        Map<Bytes, Bytes> staging() { return destination(); }
+        void holdFinalAck() { throw new UnsupportedOperationException(); }
+        boolean finalAckWaiting() { return false; }
+        void sourceAvailable(boolean available) { throw new UnsupportedOperationException(); }
+        void dropPull(boolean drop) { throw new UnsupportedOperationException(); }
+        void fail() { throw new UnsupportedOperationException(); }
+        void resume() { throw new UnsupportedOperationException(); }
         int rounds() { return 0; }
+        long acknowledgedSequence() { return 0; }
+        boolean partialLiveDelta() { return false; }
         String stopReason() { return null; }
 
         Result request(NodeId target, Command command) {
@@ -207,9 +221,13 @@ final class ComparisonExperiment {
         }
     }
 
-    private static Driver driver(String variant, Case c, Map<Bytes, Bytes> initial) {
+    static Driver driver(String variant, Case c, Map<Bytes, Bytes> initial) {
+        return driver(variant, c, initial, 65_536);
+    }
+
+    static Driver driver(String variant, Case c, Map<Bytes, Bytes> initial, int batchBytes) {
         if (variant.equals("stop-and-copy")) {
-            var f = new MigrationFixture(false, MigrationFixture.Fault.NONE);
+            var f = new MigrationFixture(false, MigrationFixture.Fault.NONE, batchBytes);
             f.source.data.putAll(initial);
             return new Driver() {
                 @Override void begin() { f.protocol.begin(f.initialJob); }
@@ -225,6 +243,13 @@ final class ComparisonExperiment {
                 @Override RoutingTable table() { return f.coordinator.current(); }
                 @Override Map<Bytes, Bytes> source() { return f.source.data; }
                 @Override Map<Bytes, Bytes> destination() { return f.destination; }
+                @Override void abort() { f.protocol.abort(); }
+                @Override int commits() { return f.coordinator.successfulCommits; }
+                @Override boolean frozen() { return f.source.frozen(f.protocol.expectedTable().get(LiveMigrationFixture.MOVING)); }
+                @Override void cleanupFailures(int failures) { f.source.cleanupFailures = failures; f.source.partialCleanup = true; }
+                @Override int cleanupCalls() { return f.source.cleanupCalls; }
+                @Override void holdFinalAck() { f.link.holdFinalAck = true; }
+                @Override boolean finalAckWaiting() { return f.link.lastBatch != null && f.link.lastBatch.last() && !ready(); }
                 @Override Result requestOwner(Command command) {
                     return f.request(table().get(LiveMigrationFixture.MOVING).owner(), command);
                 }
@@ -233,7 +258,7 @@ final class ComparisonExperiment {
         var f = new LiveMigrationFixture(false);
         f.source.data.putAll(initial);
         if (variant.equals("pre-copy")) {
-            var p = new PreCopyProtocol(f.source, f.link, f.current, new PreCopyProtocol.Settings(65_536, c.threshold(), c.maxRounds()));
+            var p = new PreCopyProtocol(f.source, f.link, f.current, new PreCopyProtocol.Settings(batchBytes, c.threshold(), c.maxRounds()));
             return new Driver() {
                 private Map<Bytes, Bytes> destination = Map.of();
                 @Override void begin() { p.begin(f.job(p.name())); }
@@ -249,11 +274,24 @@ final class ComparisonExperiment {
                 @Override RoutingTable table() { return f.current; }
                 @Override Map<Bytes, Bytes> source() { return f.source.data; }
                 @Override Map<Bytes, Bytes> destination() { return destination; }
+                @Override Map<Bytes, Bytes> staging() { return f.link.receiver.data(); }
+                @Override void abort() { p.abort(); }
+                @Override int commits() { return f.commits; }
+                @Override boolean frozen() { return f.source.frozen(p.expectedTable().get(LiveMigrationFixture.MOVING)); }
+                @Override void cleanupFailures(int failures) { f.source.cleanupFailures = failures; f.source.partialCleanup = true; }
+                @Override int cleanupCalls() { return f.source.cleanupCalls; }
+                @Override void holdFinalAck() { f.link.holdLastFinalAck = true; }
+                @Override boolean finalAckWaiting() { return f.link.lastDelta != null && f.link.lastDelta.finalRound() && f.link.lastDelta.last() && !ready(); }
                 @Override Result requestOwner(Command command) {
                     return committed ? local(destination, command, true, null)
                             : local(f.source.data, command, p.acceptsWrite(), f.source);
                 }
                 @Override int rounds() { return p.rounds(); }
+                @Override long acknowledgedSequence() { return p.acknowledgedSequence(); }
+                @Override boolean partialLiveDelta() {
+                    return p.state() == JobState.CATCHING_UP && p.acknowledgedSequence() > 0
+                            && f.link.lastDelta != null && !f.link.lastDelta.finalRound() && !f.link.lastDelta.last();
+                }
                 @Override String stopReason() { return p.stopReason().map(Enum::name).orElse(null); }
             };
         }
@@ -273,6 +311,15 @@ final class ComparisonExperiment {
             @Override RoutingTable table() { return f.current; }
             @Override Map<Bytes, Bytes> source() { return f.source.data; }
             @Override Map<Bytes, Bytes> destination() { return p.data(); }
+            @Override void abort() { p.abort(); }
+            @Override int commits() { return f.commits; }
+            @Override boolean frozen() { return f.source.frozen(p.expectedTable().get(LiveMigrationFixture.MOVING)); }
+            @Override void cleanupFailures(int failures) { f.source.cleanupFailures = failures; f.source.partialCleanup = true; }
+            @Override int cleanupCalls() { return f.source.cleanupCalls; }
+            @Override void sourceAvailable(boolean available) { f.source.available = available; }
+            @Override void dropPull(boolean drop) { f.source.dropPull = drop; }
+            @Override void fail() { p.fail(); }
+            @Override void resume() { p.resume(); }
             @Override Result requestOwner(Command command) {
                 return committed ? p.execute(command) : local(f.source.data, command, p.acceptsWrite(), f.source);
             }

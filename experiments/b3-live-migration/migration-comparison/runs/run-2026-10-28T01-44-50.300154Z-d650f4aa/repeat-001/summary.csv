@@ -1,0 +1,28 @@
+﻿경계,방식,지원 여부,seed 수,종료 상태,쓰기 차단 최소 tick,쓰기 차단 최대 tick,주입 후 종료 최소 tick,주입 후 종료 최대 tick,전송 최소 bytes,전송 최대 bytes,취소 거부 수,미도착 조회 UNAVAILABLE 수,정합성 위반,미지원 이유
+COPYING_ABORT,stop-and-copy,true,5,ABORTED,1,1,0,0,65536,65536,0,0,0,
+COPYING_ABORT,pre-copy,true,5,ABORTED,0,0,0,0,65536,65536,0,0,0,
+COPYING_ABORT,post-copy,false,5,unsupported,,,,,,,,,,post-copy는 복사 전에 소유권을 넘겨 source-owned COPYING 취소 경계가 없다
+BEFORE_COMMIT_ABORT,stop-and-copy,true,5,ABORTED,24,24,0,0,1520696,1520696,0,0,0,
+BEFORE_COMMIT_ABORT,pre-copy,true,5,ABORTED,3,4,0,0,2200932,2219081,0,0,0,
+BEFORE_COMMIT_ABORT,post-copy,true,5,ABORTED,0,0,0,0,0,0,0,0,0,
+FINAL_ACK_WAIT_ABORT,stop-and-copy,true,5,ABORTED,24,24,0,0,1520696,1520696,0,0,0,
+FINAL_ACK_WAIT_ABORT,pre-copy,true,5,ABORTED,3,4,0,0,2200932,2219081,0,0,0,
+FINAL_ACK_WAIT_ABORT,post-copy,false,5,unsupported,,,,,,,,,,post-copy는 소유권 전환 전 전체 복사 final ACK를 기다리지 않는다
+AFTER_COMMIT_ABORT,stop-and-copy,true,5,DONE,25,25,1,1,1520696,1520696,5,0,0,
+AFTER_COMMIT_ABORT,pre-copy,true,5,DONE,4,5,1,1,2200932,2219081,5,0,0,
+AFTER_COMMIT_ABORT,post-copy,true,5,DONE,1,1,22,23,1375290,1387326,5,0,0,
+PARTIAL_CLEANUP_ABORT,stop-and-copy,true,5,DONE,25,25,2,2,1520696,1520696,5,0,0,
+PARTIAL_CLEANUP_ABORT,pre-copy,true,5,DONE,4,5,2,2,2200932,2219081,5,0,0,
+PARTIAL_CLEANUP_ABORT,post-copy,true,5,DONE,1,1,2,2,1375290,1387326,5,0,0,
+CATCHING_UP_ABORT,stop-and-copy,false,5,unsupported,,,,,,,,,,CATCHING_UP은 pre-copy 전용 상태다
+CATCHING_UP_ABORT,pre-copy,true,5,ABORTED,0,0,0,0,1520696,1520696,0,0,0,
+CATCHING_UP_ABORT,post-copy,false,5,unsupported,,,,,,,,,,CATCHING_UP은 pre-copy 전용 상태다
+SOURCE_DOWN_RESUME,stop-and-copy,false,5,unsupported,,,,,,,,,,소유권 선전환 뒤 source 의존성은 post-copy 별도 계약이다
+SOURCE_DOWN_RESUME,pre-copy,false,5,unsupported,,,,,,,,,,소유권 선전환 뒤 source 의존성은 post-copy 별도 계약이다
+SOURCE_DOWN_RESUME,post-copy,true,5,DONE,1,1,23,24,1307676,1319181,5,222,0,
+PULL_TIMEOUT_RESUME,stop-and-copy,false,5,unsupported,,,,,,,,,,소유권 선전환 뒤 source 의존성은 post-copy 별도 계약이다
+PULL_TIMEOUT_RESUME,pre-copy,false,5,unsupported,,,,,,,,,,소유권 선전환 뒤 source 의존성은 post-copy 별도 계약이다
+PULL_TIMEOUT_RESUME,post-copy,true,5,DONE,1,1,26,26,1245903,1255815,5,213,0,
+SOURCE_DOWN_UNRECOVERED,stop-and-copy,false,5,unsupported,,,,,,,,,,소유권 선전환 뒤 source 의존성은 post-copy 별도 계약이다
+SOURCE_DOWN_UNRECOVERED,pre-copy,false,5,unsupported,,,,,,,,,,소유권 선전환 뒤 source 의존성은 post-copy 별도 계약이다
+SOURCE_DOWN_UNRECOVERED,post-copy,true,5,FAILED,1,1,3,3,65536,65536,5,292,0,

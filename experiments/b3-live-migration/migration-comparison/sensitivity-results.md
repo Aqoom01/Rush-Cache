@@ -59,4 +59,4 @@ rho=0.9, 라운드 상한 10회에서 종료 임계만 바꿨다.
 
 rho는 쓰기 시도당 152 bytes 기준이며 DELETE·같은 key의 반복 쓰기로 실제 dirty byte 유입량과 다를 수 있다. 전송량에는 데이터 응답 framing을 포함하지만 ACK·pull 요청과 일반 client 통신 bytes는 제외한다. quick은 N과 예산을 줄인 재현 검증용으로 full 결과와 합산하지 않는다.
 
-이 결과는 가상 시간·인메모리 모델이다. 실제 서버 downtime·p99, source 장애 비용은 측정하지 않았다. phaseEvents는 상태·라운드 경계이며 v2 dirty generation별 상세 bytes를 대체하지 않는다. S6 취소·장애 비교와 E/M scaling·실제 KV/peer 실험은 후속이다.
+이 결과는 가상 시간·인메모리 모델이다. 실제 서버 downtime·p99, source 장애 비용은 측정하지 않았다. phaseEvents는 상태·라운드 경계이며 v2 dirty generation별 상세 bytes를 대체하지 않는다. S6 취소·장애 비교는 이후 별도 suite로 구현·실행했다([S6 결과](interruption-results.md)). E/M scaling·실제 KV/peer 실험은 후속이다.

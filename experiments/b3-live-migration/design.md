@@ -1,8 +1,8 @@
 # B3 설계
 
-**최신 구현 현황(2026-10-23):** 아래 단계 계획 중 pre-copy와 post-copy 프로토콜·수신기·정합성 테스트를 구현했다. 상세와 확정된 post-copy 실패/조회 계약은 [protocols.md](protocols.md)에 있다. pre-copy의 라운드·seq는 공통 `MigrationJob` 필드를 변경하지 않고 protocol의 `rounds()`·`acknowledgedSequence()`로 제공하며 `DeltaBatch`로 전달한다. source-owned `JobState.CATCHING_UP`을 추가했고 post-copy는 별도 `PostCopyState`를 사용한다. S1~S5 세 방식 비교 backend와 b3-comparison-json-1 원본/요약 생성을 구현했다. S6·민감도·E/M, schema v2 상세 보고서와 실제 KV/peer 연계는 후속이다. 아래 1단계·후속 구분과 초안 설명은 원래 구현 순서이며 최신 완료 여부는 이 문단과 구현 안내를 기준으로 한다.
+**최신 구현 현황(2026-10-28):** 아래 단계 계획 중 pre-copy와 post-copy 프로토콜·수신기·정합성 테스트를 구현했다. 상세와 확정된 post-copy 실패/조회 계약은 [protocols.md](protocols.md)에 있다. pre-copy의 라운드·seq는 공통 `MigrationJob` 필드를 변경하지 않고 protocol의 `rounds()`·`acknowledgedSequence()`로 제공하며 `DeltaBatch`로 전달한다. source-owned `JobState.CATCHING_UP`을 추가했고 post-copy는 별도 `PostCopyState`를 사용한다. S1~S5 세 방식 비교 backend와 b3-comparison-json-1 원본/요약 생성을 구현했다. S3 민감도와 별도 S6 취소·장애 비교도 구현하고 실험했다. E/M, schema v2 dirty 상세 보고서와 실제 KV/peer 연계는 후속이다. 아래 1단계·후속 구분과 초안 설명은 원래 구현 순서이며 최신 완료 여부는 이 문단과 구현 안내를 기준으로 한다.
 
-Baseline 실행: 공통 Runner 연계와 §6.1 SC1~SC6 결과 보관까지 구현했다. S1~S5 variant 비교 backend도 구현했다. 실제 KV/peer 연계·scaling과 S6·민감도 비교는 후속이다. 실행 방법은 [migration-comparison/README.md](migration-comparison/README.md), 보관된 실행은 [Baseline 보고서](migration-comparison/runs/run-2026-10-22T04-48-53.944252700Z-a4354ce4/repeat-001/results.md)와 [조건별 요약](migration-comparison/runs/run-2026-10-22T04-48-53.944252700Z-a4354ce4/repeat-001/summary.csv)을 따른다. S1~S5는 2026-10-23 generator v2 full 240회를 참조 run으로 선정했고 migration-comparison/results.md와 B3 통합 results.md에 정리했다. SC 수치는 별도 Baseline으로 보존한다.
+Baseline 실행: 공통 Runner 연계와 §6.1 SC1~SC6 결과 보관까지 구현했다. S1~S5 variant 비교 backend도 구현했다. S3 민감도와 별도 S6 취소·장애 비교 backend도 구현했다. 실제 KV/peer 연계·scaling과 v2 dirty 라운드 상세는 후속이다. 실행 방법은 [migration-comparison/README.md](migration-comparison/README.md), 보관된 실행은 [Baseline 보고서](migration-comparison/runs/run-2026-10-22T04-48-53.944252700Z-a4354ce4/repeat-001/results.md)와 [조건별 요약](migration-comparison/runs/run-2026-10-22T04-48-53.944252700Z-a4354ce4/repeat-001/summary.csv)을 따른다. S1~S5는 2026-10-23 generator v2 full 240회를 참조 run으로 선정했고 migration-comparison/results.md와 B3 통합 results.md에 정리했다. SC 수치는 별도 Baseline으로 보존한다.
 
 ## 1. 목표와 범위
 
@@ -287,6 +287,8 @@ key/value 크기·batch framing·전송 예산 모델은 6.1과 같다. 기본�
 
 S6에서 `CATCHING_UP`은 stop-and-copy에 없는 상태이므로 미지원으로 기록하고 해당 행의 차이값을 계산하지 않는다. 비교 전용 한쪽 결과를 다른 상태의 Baseline 결과와 짝짓지 않는다. S3 민감도는 별도 `case_id`로 구분하며 pre-copy 설정은 라운드 상한 10, 종료 임계 256 KiB가 기본이다. 각 설정 조합마다 동일 입력의 stop-and-copy를 함께 실행하되, 이 두 알고리즘 설정은 stop-and-copy에서 적용 대상 아님으로 기록한다.
 
+2026-10-28 S6는 별도 InterruptionExperiment/InterruptionResearchMain으로 구현했다. 공통 readyToCommit 취소·commit 직후 취소 거부·부분 cleanup 실패, source-owned 복사/마지막 ACK 대기 취소, pre-copy CATCHING_UP 취소, post-copy source 접근 불가·pull timeout의 복구 및 미복구를 구별한다. extended profile은 partial live delta 적용·ACK 후 취소까지 10경계 × seed 5개 × 세 방식 = 150행 중 실행 90개·미지원 60개다. 기존 full/quick 135행의 재생성은 유지한다. b3-s6-json-1 원본의 protocolOutcome과 실험 검증 outcome을 분리하고 FAILED를 이동 완료로 간주하지 않는다. 원본·실행·검증 계약은 migration-comparison/README.md의 S6 절을 따른다. source-owned 방식의 마지막 ACK 대기 실제 상태가 COPYING일 수 있으므로 상태 이름 대신 ACK barrier를 공통 경계로 사용한다.
+
 #### 측정 정의
 
 6.1의 정합성 검사를 재사용하고 쓰기 차단은 실제 BUSY 시작부터 재개까지 측정한다. 비교용 전송량 비율의 분모는 두 방식에 공통인 **이동 시작 전 데이터 bytes**로 고정하고, 각 방식의 최종 데이터 bytes도 별도로 기록한다. 이동 중 성공한 DELETE 수가 달라도 분모 변경을 전송 효율 개선으로 혼동하지 않기 위해서다. 아래 지표를 더한다.
@@ -527,7 +529,7 @@ E의 방식은 정책 이름, S/M의 방식은 복사 variant다. 검증 상태�
 5. 다중 노드/Tablet fixture와 scheduler로 M1~M5를 구현한다. 매 tick node·cluster 예산 합계와 job별 진행·전체 결과를 함께 검증한다. M5는 단일 이동 비교의 variant·pair 규칙을 재사용한다.
 6. post-copy는 실패·미도착 key 계약을 결정한 뒤 같은 비교 입력·출력 체계에 추가한다. source-owned 계약을 만족하는 척 표시하지 않는다.
 
-S1~S5의 1차 비교 backend는 ComparisonExperiment/ComparisonResearchMain이며 b3-comparison-json-1을 사용한다. 16조건 × seed 5개 × 세 방식의 원본과 phaseEvents를 생성한다. 실행 config는 migration-comparison/comparison.properties와 comparison-quick.properties다. 별도의 sensitivity.properties와 sensitivity-quick.properties는 S3 임계·라운드 상한 45조건 × seed 5개 × 세 방식 = 675회를 실행한다. workloadHash로 알고리즘 설정을 제외한 요청 생성 규격의 동일성을 검증하고 실제 라운드 수·종료 사유별 건수를 요약한다. S6·v2 dirty 라운드 상세는 후속이다.
+S1~S5의 1차 비교 backend는 ComparisonExperiment/ComparisonResearchMain이며 b3-comparison-json-1을 사용한다. 16조건 × seed 5개 × 세 방식의 원본과 phaseEvents를 생성한다. 실행 config는 migration-comparison/comparison.properties와 comparison-quick.properties다. 별도의 sensitivity.properties와 sensitivity-quick.properties는 S3 임계·라운드 상한 45조건 × seed 5개 × 세 방식 = 675회를 실행한다. workloadHash로 알고리즘 설정을 제외한 요청 생성 규격의 동일성을 검증하고 실제 라운드 수·종료 사유별 건수를 요약한다. S6는 별도 InterruptionResearchMain과 interruption.properties/interruption-quick.properties로 실행하며 b3-s6-json-1에 예상 취소·완료·미복구 실패·미지원을 구별한다. v2 dirty 라운드 상세는 후속이다.
 
 현재 Baseline adapter의 실제 원본은 `repeat-NNN/results/<run_id>.json`에 있으며, 같은 반복 폴더의 CSV·보고서를 JSON에서 다시 생성한다. `BaselineResearchMain --rebuild <반복 폴더>`로 재생성할 수 있다. 수집 상태는 suite의 `run-summary.json`과 manifest에 남긴다. 아래 §7의 기존 v1 run 및 이 JSON run을 비교용 v2 결과로 간주하지 않는다.
 
@@ -567,7 +569,7 @@ cache-core/src/test/java/io/openkache/core/migration/
     ├── decision/                     (후속) ScalingDecisionExperiment
     └── movement/                     (후속) MovementScalingExperiment
 
-(후속) scaling policy·scheduler 실험, S1~S6 variant 비교 backend
+(후속) scaling policy·scheduler 실험, v2 dirty 라운드 상세 원본
 
 experiments/b3-live-migration/
 ├── README.md                      variant 목록

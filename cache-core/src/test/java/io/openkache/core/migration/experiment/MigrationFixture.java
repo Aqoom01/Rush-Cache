@@ -141,6 +141,7 @@ public final class MigrationFixture {
         private final Map<TabletId, Tablet> frozen = new HashMap<>();
         public int cleanupFailures;
         public boolean partialCleanup;
+        public int cleanupCalls;
 
         @Override public boolean freeze(Tablet tablet) { return frozen.putIfAbsent(tablet.id(), tablet) == null; }
         @Override public boolean frozen(Tablet tablet) { return tablet.equals(frozen.get(tablet.id())); }
@@ -158,6 +159,7 @@ public final class MigrationFixture {
 
         @Override
         public boolean cleanup(Tablet tablet) {
+            cleanupCalls++;
             if (cleanupFailures > 0) {
                 cleanupFailures--;
                 if (partialCleanup) {
@@ -184,6 +186,7 @@ public final class MigrationFixture {
         public TransferBatch lastBatch;
         public int validationFailures;
         public int duplicateDeliveries;
+        public boolean holdFinalAck;
         private int finalAckPolls;
         private boolean badAckDetected;
 
@@ -240,6 +243,7 @@ public final class MigrationFixture {
             if (candidate != session || fault == Fault.LOST_ACK) return Optional.empty();
             Acknowledgement ack = acks.get(batchId);
             if (ack == null) return Optional.empty();
+            if (holdFinalAck && complete) return Optional.empty();
             if (fault == Fault.ACK_DELAY && complete && finalAckPolls++ < 3) return Optional.empty();
             if (fault == Fault.BAD_ACK) {
                 if (!badAckDetected) { validationFailures++; badAckDetected = true; }
