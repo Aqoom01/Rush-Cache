@@ -1,5 +1,6 @@
 package io.openkache.core.tablet;
 
+import io.openkache.core.model.Bytes;
 import io.openkache.core.model.NodeId;
 import java.util.List;
 
@@ -17,6 +18,15 @@ public interface DistributionScheme {
 
     /** 실험 결과의 {@code variant} 값으로 쓰는 이름. 예: {@code "fixed-slot"}. */
     String name();
+
+    /**
+     * key를 해시 공간의 점으로 바꾼다. {@link RoutingTable#lookup}의 입력이다. 기본은 key 전체의 {@link KeyHash}이고, 접두사 방식은
+     * key의 일부(hash tag)만 해시해 같은 접두사의 key를 한 Tablet에 모은다. 표와 무관하게 결정적이어야 하며, 클라이언트와 서버는 같은
+     * variant의 이 메서드를 써야 한다.
+     */
+    default long keyHash(Bytes key) {
+        return KeyHash.of(key);
+    }
 
     /**
      * 처음 표. 버전은 1이고 모든 Tablet의 epoch는 1이다(epoch 0은 wire에서 "모름"을 뜻하므로 실제 값으로 쓰지 않는다).
