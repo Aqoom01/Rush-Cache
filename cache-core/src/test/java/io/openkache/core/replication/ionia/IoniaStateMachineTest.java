@@ -367,6 +367,9 @@ class IoniaStateMachineTest {
             return engines.get(to).execute(request);
         }
 
+        @Override public CompletionStage<IoniaEngine.ViewInfo> probe(NodeId to) {
+            return CompletableFuture.completedFuture(engines.get(to).viewInfo());
+        }
         private void runOwners() {
             int limit = 10000;
             while (!tasks.isEmpty()) {

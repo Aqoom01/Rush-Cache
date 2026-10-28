@@ -47,6 +47,9 @@ class IoniaWorkerIntegrationTest {
             return java.util.concurrent.CompletableFuture.completedFuture(null);
         };
         IoniaClientTransport clients = new IoniaClientTransport() {
+            @Override public CompletionStage<IoniaEngine.ViewInfo> probe(NodeId to) {
+                return java.util.concurrent.CompletableFuture.completedFuture(engines.get(to).viewInfo());
+            }
             @Override public CompletionStage<WriteAck> record(NodeId to, Request request) {
                 return engines.get(to).recordWrite(request);
             }

@@ -17,7 +17,7 @@ import java.util.concurrent.CompletionStage;
 /**
  * IONIA 클라이언트용 비차단 요청/응답 경계. 주소, socket, Engine 구현을 알지 않는다.
  *
- * <p>실제 TCP 구현은 runner에, 테스트용 구현은 test 소스에 둔다. stage는 전송 완료가 아닌 원격 응답으로 완료한다.
+ * <p>실제 TCP 구현은 server.ionia에, 테스트용 구현은 test 소스에 둔다. stage는 전송 완료가 아닌 원격 응답으로 완료한다.
  * 여러 thread의 호출에 안전해야 하며 호출 thread를 block하지 않는다. 노드 간 순서 합의용 Transport와 별개다.
  */
 public interface IoniaClientTransport {
@@ -67,6 +67,30 @@ public interface IoniaClientTransport {
         public Reply {
             requireIdentity(nodeId, view, clientId, operationId);
             Objects.requireNonNull(result, "result");
+        }
+    }
+
+    default CompletionStage<ReadReply> followerRead(NodeId to, Request request) {
+        return java.util.concurrent.CompletableFuture.failedFuture(new UnsupportedOperationException("follower read transport"));
+    }
+    default CompletionStage<MetaReply> metaQuery(NodeId to, Request request) {
+        return java.util.concurrent.CompletableFuture.failedFuture(new UnsupportedOperationException("meta query transport"));
+    }
+    default CompletionStage<IoniaEngine.ViewInfo> probe(NodeId to) {
+        return java.util.concurrent.CompletableFuture.failedFuture(new UnsupportedOperationException("view probe transport"));
+    }
+    record ReadReply(NodeId nodeId, long view, ClientId clientId, OperationId operationId, long appliedIndex, Result result) {
+        public ReadReply {
+            requireIdentity(nodeId, view, clientId, operationId);
+            if (appliedIndex < 0) throw new IllegalArgumentException("negative applied index");
+            Objects.requireNonNull(result);
+        }
+    }
+    /** data=null means INDEX; DATA includes MISS as well as values and errors. */
+    record MetaReply(NodeId nodeId, long view, ClientId clientId, OperationId operationId, long index, Result data) {
+        public MetaReply {
+            requireIdentity(nodeId, view, clientId, operationId);
+            if (index < 0) throw new IllegalArgumentException("negative history index");
         }
     }
 

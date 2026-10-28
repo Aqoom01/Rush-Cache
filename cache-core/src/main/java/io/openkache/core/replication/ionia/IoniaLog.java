@@ -136,6 +136,17 @@ public final class IoniaLog {
         return List.copyOf(ordered.subList(Math.toIntExact(firstIndex - 1), ordered.size()));
     }
 
+    /** Pending durability records in local arrival order; finalized requests remain in the dedup table. */
+    public List<IoniaMessage.LogEntry> durabilityEntries() {
+        List<IoniaMessage.LogEntry> entries = new ArrayList<>();
+        recorded.forEach((id, command) -> {
+            IoniaMessage.LogEntry orderedEntry = byRequest.get(id);
+            if (orderedEntry == null || orderedEntry.index() > appliedIndex)
+                entries.add(new IoniaMessage.LogEntry(entries.size() + 1L, id.clientId(), id.operationId(), command));
+        });
+        return List.copyOf(entries);
+    }
+
     /** 아직 순서가 없는 기록까지 포함한 논리 쓰기 수. */
     public int recordedCount() {
         return recorded.size();

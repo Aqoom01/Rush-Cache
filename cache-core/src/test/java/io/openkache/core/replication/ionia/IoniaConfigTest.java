@@ -51,7 +51,7 @@ class IoniaConfigTest {
     }
 
     @Test
-    void rejectsReplicaCountsOutsideTheThreeNodePrototype() {
+    void rejectsEvenAndTooSmallReplicaCounts() {
         assertAll(
                 () -> assertThrows(IllegalArgumentException.class,
                         () -> new IoniaConfig(A, A, List.of(), 0)),

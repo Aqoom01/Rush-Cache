@@ -67,11 +67,13 @@ class IoniaClientTest {
     }
 
     @Test
-    void failedRemoteCallReturnsUnavailableRatherThanSuccessfulLocalSend() {
+    void failedFastCallUsesFallbackAndDoesNotTreatLocalSendAsRemoteAck() {
         ManualTransport transport = new ManualTransport();
         try (IoniaClient client = new IoniaClient(CLIENT, NODES, NODES.getFirst(), 0, transport, CLOCK)) {
             CompletionStage<Result> result = client.execute(SET, CONTEXT);
             transport.records.get(NODES.getFirst()).completeExceptionally(new IllegalStateException("disconnected"));
+            transport.reply.complete(new IoniaClientTransport.Reply(NODES.getFirst(), 0, CLIENT, new OperationId(1),
+                    Result.of(ResultStatus.UNAVAILABLE, RoutingVersion.ZERO, OwnershipEpoch.ZERO)));
             assertEquals(ResultStatus.UNAVAILABLE, result.toCompletableFuture().join().status());
         }
     }
@@ -115,6 +117,9 @@ class IoniaClientTest {
     }
 
     private static final class ManualTransport implements IoniaClientTransport {
+        @Override public CompletionStage<IoniaEngine.ViewInfo> probe(NodeId to) {
+            return CompletableFuture.completedFuture(new IoniaEngine.ViewInfo(0, NODES.getFirst(), IoniaEngine.Status.NORMAL));
+        }
         private final Map<NodeId, CompletableFuture<WriteAck>> records = new HashMap<>();
         private final CompletableFuture<Reply> reply = new CompletableFuture<>();
         private final List<NodeId> executeTargets = new ArrayList<>();

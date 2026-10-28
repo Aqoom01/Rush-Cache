@@ -1,191 +1,207 @@
 package io.openkache.core.replication.ionia;
 
-import io.openkache.core.api.Command;
-import io.openkache.core.api.Deadline;
-import io.openkache.core.api.RequestContext;
-import io.openkache.core.api.Result;
-import io.openkache.core.api.ResultStatus;
-import io.openkache.core.model.ClientId;
-import io.openkache.core.model.NodeId;
-import io.openkache.core.model.OwnershipEpoch;
-import io.openkache.core.model.RoutingVersion;
+import io.openkache.core.api.*;
+import io.openkache.core.model.*;
 import io.openkache.core.runtime.TimerEvent;
 import io.openkache.core.spi.TimeSource;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
-import java.util.Set;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.CompletionStage;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.*;
+import java.util.concurrent.*;
+import java.util.concurrent.atomic.*;
 
-/**
- * 고정 view/3노드 메모리 프로토타입의 클라이언트. 여러 thread에서 호출할 수 있으며 block하지 않는다.
- *
- * <p>SET은 세 노드 모두의 기록 ACK로 완료한다. GET은 leader에서만 읽고 DELETE는 leader의 commit/적용 결과를
- * 기다린다. 기록 ACK는 SSD 내구성이나 KV 적용 완료를 뜻하지 않는다. follower 읽기 검증, quorum fallback,
- * leader 변경은 아직 없다. 주소와 TCP는 주입한 전송 구현이 맡는다.
- *
- * <p>호출자는 대기 요청의 deadline 처리를 위해 주기적으로 onTimer를 호출해야 한다. 자체 timer thread를 만들지 않는다.
+/** Nonblocking IONIA client. Same logical identity is retained across fast/slow paths and retries.
+ * The default constructor certifies reads; disabling certificates is only for fixed-view simulations.
+ * View probes run in parallel with reads to fence an isolated old primary without a clock lease.
  */
 public final class IoniaClient implements AutoCloseable {
-
+    public record Options(NodeId readReplica, boolean certifyReads, long fallbackAfterNanos) {
+        public Options { Objects.requireNonNull(readReplica); if (fallbackAfterNanos < 0) throw new IllegalArgumentException("negative fallback delay"); }
+    }
+    private record Endpoint(long view, NodeId leader) { }
+    private record FastWrite(Command.Set command, RequestContext context, long started, Endpoint endpoint, AtomicBoolean fallback) { }
     private final ClientId clientId;
     private final List<NodeId> replicas;
-    private final NodeId leaderId;
-    private final long view;
+    private final IoniaConfig membership;
     private final IoniaClientTransport transport;
-    private final TimeSource timeSource;
+    private final TimeSource time;
+    private final Options options;
     private final Map<CompletableFuture<Result>, Deadline> pending = new ConcurrentHashMap<>();
+    private final Map<CompletableFuture<Result>, FastWrite> fastWrites = new ConcurrentHashMap<>();
     private final AtomicBoolean closed = new AtomicBoolean();
+    private volatile Endpoint endpoint;
 
-    /**
-     * 고정 그룹과 비차단 전송 기능을 연결한다. transport의 생명주기는 호출자가 관리한다.
-     * Client는 복제 노드가 아니며 Engine이나 로컬 KV를 생성하지 않는다.
-     */
-    public IoniaClient(
-            ClientId clientId, List<NodeId> replicas, NodeId leaderId, long view,
-            IoniaClientTransport transport, TimeSource timeSource) {
-        this.clientId = Objects.requireNonNull(clientId, "clientId");
-        this.replicas = List.copyOf(Objects.requireNonNull(replicas, "replicas"));
-        this.leaderId = Objects.requireNonNull(leaderId, "leaderId");
-        if (this.replicas.size() != IoniaConfig.REPLICA_COUNT
-                || new HashSet<>(this.replicas).size() != this.replicas.size()) {
-            throw new IllegalArgumentException("replicas must contain exactly three distinct nodes");
-        }
-        if (!this.replicas.contains(leaderId)) {
-            throw new IllegalArgumentException("leaderId must belong to replicas");
-        }
-        if (view < 0) {
-            throw new IllegalArgumentException("view must be >= 0");
-        }
-        this.view = view;
-        this.transport = Objects.requireNonNull(transport, "transport");
-        this.timeSource = Objects.requireNonNull(timeSource, "timeSource");
+    public IoniaClient(ClientId clientId, List<NodeId> replicas, NodeId leaderId, long view,
+                       IoniaClientTransport transport, TimeSource time) {
+        this(clientId, replicas, leaderId, view, transport, time, new Options(leaderId, true, 10_000_000L));
+    }
+    /** For real clusters use a follower readReplica and certifyReads=true. Membership's base view is zero. */
+    public IoniaClient(ClientId clientId, List<NodeId> replicas, NodeId leaderId, long view,
+                       IoniaClientTransport transport, TimeSource time, Options options) {
+        this.clientId = Objects.requireNonNull(clientId);
+        this.replicas = List.copyOf(replicas);
+        membership = new IoniaConfig(leaderId, leaderId, replicas, view);
+        this.transport = Objects.requireNonNull(transport);
+        this.time = Objects.requireNonNull(time);
+        this.options = Objects.requireNonNull(options);
+        if (!replicas.contains(options.readReplica())) throw new IllegalArgumentException("read replica is not a member");
+        endpoint = new Endpoint(view, leaderId);
+    }
+    public synchronized void updateView(long view, NodeId leader) {
+        if (view < endpoint.view() || !replicas.contains(leader)) throw new IllegalArgumentException("invalid endpoint");
+        if (view == endpoint.view() && !leader.equals(endpoint.leader())) throw new IllegalArgumentException("two leaders in one view");
+        endpoint = new Endpoint(view, leader);
     }
 
-    /**
-     * 논리 요청을 분기한다. 같은 쓰기의 재시도에는 context의 ClientId/OperationId와 내용을 유지해야 한다.
-     * 반환 stage의 timeout은 서버의 쓰기 취소나 rollback을 의미하지 않는다.
-     */
-    public CompletionStage<Result> execute(Command command, RequestContext context) {
-        Objects.requireNonNull(command, "command");
-        Objects.requireNonNull(context, "context");
-        if (closed.get()) {
-            return completed(ResultStatus.UNAVAILABLE);
-        }
-        if (!clientId.equals(context.clientId())) {
-            return completed(ResultStatus.BAD_REQUEST);
-        }
-        if (context.deadline().isExpired(timeSource)) {
-            return completed(ResultStatus.TIMEOUT);
-        }
-        CompletableFuture<Result> future = new CompletableFuture<>();
-        pending.put(future, context.deadline());
-        future.whenComplete((result, error) -> pending.remove(future));
-        if (closed.get()) {
-            future.complete(resultOf(ResultStatus.UNAVAILABLE));
-            return future;
-        }
-        switch (command) {
-            case Command.Set set -> executeSet(set, context, future);
-            case Command.Get get -> executeGet(get, context, future);
-            case Command.Delete delete -> executeDelete(delete, context, future);
-        }
-        return future;
-    }
-
-    private void executeSet(Command.Set set, RequestContext context, CompletableFuture<Result> future) {
-        Set<NodeId> acknowledged = ConcurrentHashMap.newKeySet();
-        // 세 비차단 전송을 시작한다. 전송 stage의 성공이 아닌 각 노드의 기록 응답을 센다.
-        for (NodeId node : replicas) {
-            try {
-                transport.record(node, request(set, context)).whenComplete((ack, error) -> {
-                    if (future.isDone()) {
-                        return;
-                    }
-                    if (context.deadline().isExpired(timeSource)) {
-                        future.complete(resultOf(ResultStatus.TIMEOUT));
-                    } else if (error != null || ack == null) {
-                        future.complete(resultOf(ResultStatus.UNAVAILABLE));
-                    } else if (!node.equals(ack.nodeId()) || ack.view() != view
-                            || !clientId.equals(ack.clientId())
-                            || !context.operationId().equals(ack.operationId())) {
-                        future.complete(resultOf(ResultStatus.BAD_REQUEST));
-                    } else if (ack.status() != ResultStatus.OK) {
-                        future.complete(resultOf(ack.status()));
-                    } else {
-                        acknowledged.add(node);
-                        if (acknowledged.size() == replicas.size()) {
-                            future.complete(resultOf(ResultStatus.OK));
-                        }
-                    }
-                });
-            } catch (RuntimeException error) {
-                future.complete(resultOf(ResultStatus.UNAVAILABLE));
-            }
-        }
-    }
-
-    private void executeGet(Command.Get get, RequestContext context, CompletableFuture<Result> future) {
-        executeAtLeader(get, context, future);
-    }
-
-    private void executeDelete(Command.Delete delete, RequestContext context, CompletableFuture<Result> future) {
-        executeAtLeader(delete, context, future);
-    }
-
-    private void executeAtLeader(Command command, RequestContext context, CompletableFuture<Result> future) {
-        try {
-            transport.execute(leaderId, request(command, context)).whenComplete((reply, error) -> {
-                if (context.deadline().isExpired(timeSource)) {
-                    future.complete(resultOf(ResultStatus.TIMEOUT));
-                } else if (error != null || reply == null) {
-                    future.complete(resultOf(ResultStatus.UNAVAILABLE));
-                } else if (!leaderId.equals(reply.nodeId()) || reply.view() != view
-                        || !clientId.equals(reply.clientId())
-                        || !context.operationId().equals(reply.operationId())) {
-                    future.complete(resultOf(ResultStatus.BAD_REQUEST));
-                } else {
-                    future.complete(reply.result());
-                }
-            });
-        } catch (RuntimeException error) {
-            future.complete(resultOf(ResultStatus.UNAVAILABLE));
-        }
-    }
-
-    private IoniaClientTransport.Request request(Command command, RequestContext context) {
-        long remaining = Math.max(0, context.deadline().monotonicNanos() - timeSource.monotonicNanos());
-        return new IoniaClientTransport.Request(view, command, clientId, context.operationId(),
-                context.routingVersion(), context.ownershipEpoch(), remaining);
-    }
-
-    /** 외부 timer 구동 시 만료된 요청을 완료한다. 이미 수락된 원격 쓰기를 취소하지 않는다. */
-    public void onTimer(TimerEvent event) {
-        Objects.requireNonNull(event, "event");
-        pending.forEach((future, deadline) -> {
-            if (deadline.isExpired(timeSource)) {
-                future.complete(resultOf(ResultStatus.TIMEOUT));
-            }
+    /** Best-effort discovery only chooses a destination; writes still need ACK quorums and reads need view certificates. */
+    public CompletionStage<IoniaEngine.ViewInfo> refreshView() {
+        List<CompletableFuture<IoniaEngine.ViewInfo>> observations = replicas.stream().map(node -> {
+            try { return transport.probe(node).exceptionally(error -> null).toCompletableFuture(); }
+            catch (RuntimeException error) { return CompletableFuture.<IoniaEngine.ViewInfo>completedFuture(null); }
+        }).toList();
+        return CompletableFuture.allOf(observations.toArray(CompletableFuture<?>[]::new)).thenApply(ignored -> {
+            IoniaEngine.ViewInfo newest = observations.stream().map(CompletableFuture::join).filter(Objects::nonNull)
+                    .filter(info -> info.status() == IoniaEngine.Status.NORMAL)
+                    .filter(info -> membership.leaderFor(info.view()).equals(info.leaderId()))
+                    .max(Comparator.comparingLong(IoniaEngine.ViewInfo::view)).orElseThrow(() -> new IllegalStateException("no normal primary"));
+            updateView(newest.view(), newest.leaderId());
+            return newest;
         });
     }
 
-    /** 대기 요청을 UNAVAILABLE로 완료한다. 외부 소유 transport는 닫지 않는다. */
-    @Override
-    public void close() {
-        closed.set(true);
-        pending.keySet().forEach(future -> future.complete(resultOf(ResultStatus.UNAVAILABLE)));
+    public CompletionStage<Result> execute(Command command, RequestContext context) {
+        Objects.requireNonNull(command); Objects.requireNonNull(context);
+        CompletableFuture<Result> result = register(context);
+        if (result.isDone()) return result;
+        Endpoint target = endpoint;
+        switch (command) {
+            case Command.Set set -> set(set, context, target, result);
+            case Command.Delete delete -> atLeader(delete, context, target, result);
+            case Command.Get get -> {
+                CompletableFuture<Result> data = new CompletableFuture<>();
+                if (options.readReplica().equals(target.leader())) atLeader(get, context, target, data);
+                else follower(get, context, target, options.readReplica(), data);
+                finishCertifiedRead(data, context, target, result);
+            }
+        }
+        return result;
     }
-
-    private static CompletionStage<Result> completed(ResultStatus status) {
-        Result result = resultOf(status);
-        return CompletableFuture.completedFuture(result);
+    public CompletionStage<Result> readAtFollower(NodeId follower, Command.Get get, RequestContext context) {
+        if (!replicas.contains(follower)) throw new IllegalArgumentException("not a replica");
+        CompletableFuture<Result> result = register(context);
+        if (!result.isDone()) {
+            Endpoint target = endpoint;
+            CompletableFuture<Result> data = new CompletableFuture<>();
+            follower(get, context, target, follower, data);
+            finishCertifiedRead(data, context, target, result);
+        }
+        return result;
     }
-
-    private static Result resultOf(ResultStatus status) {
-        return Result.of(status, RoutingVersion.ZERO, OwnershipEpoch.ZERO);
+    private CompletableFuture<Result> register(RequestContext context) {
+        CompletableFuture<Result> future = new CompletableFuture<>();
+        if (closed.get()) { future.complete(resultOf(ResultStatus.UNAVAILABLE)); return future; }
+        if (!clientId.equals(context.clientId())) { future.complete(resultOf(ResultStatus.BAD_REQUEST)); return future; }
+        if (context.deadline().isExpired(time)) { future.complete(resultOf(ResultStatus.TIMEOUT)); return future; }
+        pending.put(future, context.deadline());
+        future.whenComplete((result, error) -> { pending.remove(future); fastWrites.remove(future); });
+        if (closed.get()) future.complete(resultOf(ResultStatus.UNAVAILABLE));
+        return future;
     }
+    private void set(Command.Set command, RequestContext context, Endpoint target, CompletableFuture<Result> result) {
+        Set<NodeId> acks = ConcurrentHashMap.newKeySet();
+        AtomicInteger replies = new AtomicInteger();
+        FastWrite state = new FastWrite(command, context, time.monotonicNanos(), target, new AtomicBoolean());
+        fastWrites.put(result, state);
+        for (NodeId node : replicas) {
+            try {
+                transport.record(node, request(command, context, target)).whenComplete((ack, error) -> {
+                    if (result.isDone()) return;
+                    int received = replies.incrementAndGet();
+                    if (context.deadline().isExpired(time)) result.complete(resultOf(ResultStatus.TIMEOUT));
+                    else if (ack != null && !identity(node, target, context, ack.nodeId(), ack.view(), ack.clientId(), ack.operationId()))
+                        result.complete(resultOf(ResultStatus.BAD_REQUEST));
+                    else if (ack != null && ack.status() == ResultStatus.BAD_REQUEST) result.complete(resultOf(ResultStatus.BAD_REQUEST));
+                    else {
+                        if (error == null && ack != null && ack.status() == ResultStatus.OK) acks.add(node);
+                        if (acks.size() >= membership.fastWriteQuorumSize() && acks.contains(target.leader())) result.complete(resultOf(ResultStatus.OK));
+                        else if (acks.size() + replicas.size() - received < membership.fastWriteQuorumSize()
+                                || node.equals(target.leader()) && !acks.contains(node)) fallback(state, result);
+                    }
+                });
+            } catch (RuntimeException error) { replies.incrementAndGet(); fallback(state, result); }
+        }
+    }
+    private void fallback(FastWrite state, CompletableFuture<Result> result) {
+        if (!result.isDone() && !state.context().deadline().isExpired(time) && state.fallback().compareAndSet(false, true))
+            atLeader(state.command(), state.context(), state.endpoint(), result);
+    }
+    private void atLeader(Command command, RequestContext context, Endpoint target, CompletableFuture<Result> result) {
+        try {
+            transport.execute(target.leader(), request(command, context, target)).whenComplete((reply, error) -> {
+                if (context.deadline().isExpired(time)) result.complete(resultOf(ResultStatus.TIMEOUT));
+                else if (error != null || reply == null) result.complete(resultOf(ResultStatus.UNAVAILABLE));
+                else if (!identity(target.leader(), target, context, reply.nodeId(), reply.view(), reply.clientId(), reply.operationId()))
+                    result.complete(resultOf(ResultStatus.BAD_REQUEST));
+                else result.complete(reply.result());
+            });
+        } catch (RuntimeException error) { result.complete(resultOf(ResultStatus.UNAVAILABLE)); }
+    }
+    private void follower(Command.Get get, RequestContext context, Endpoint target, NodeId node, CompletableFuture<Result> result) {
+        CompletableFuture<IoniaClientTransport.ReadReply> read;
+        try { read = transport.followerRead(node, request(get, context, target)).toCompletableFuture(); }
+        catch (RuntimeException error) { read = CompletableFuture.failedFuture(error); }
+        CompletableFuture<IoniaClientTransport.ReadReply> follower = read;
+        try {
+            transport.metaQuery(target.leader(), request(get, context, target)).whenComplete((meta, error) -> {
+                if (error != null || meta == null) { result.complete(resultOf(ResultStatus.UNAVAILABLE)); return; }
+                if (!identity(target.leader(), target, context, meta.nodeId(), meta.view(), meta.clientId(), meta.operationId())) {
+                    result.complete(resultOf(ResultStatus.UNAVAILABLE)); return;
+                }
+                if (meta.data() != null) { result.complete(meta.data()); return; }
+                follower.whenComplete((reply, readError) -> {
+                    if (readError == null && reply != null
+                            && identity(node, target, context, reply.nodeId(), reply.view(), reply.clientId(), reply.operationId())
+                            && (reply.result().status() == ResultStatus.OK || reply.result().status() == ResultStatus.MISS)
+                            && reply.appliedIndex() >= meta.index()) result.complete(reply.result());
+                    else atLeader(get, context, target, result);
+                });
+            });
+        } catch (RuntimeException error) { result.complete(resultOf(ResultStatus.UNAVAILABLE)); }
+    }
+    private void finishCertifiedRead(CompletableFuture<Result> data, RequestContext context, Endpoint target, CompletableFuture<Result> result) {
+        CompletableFuture<Boolean> certificate = options.certifyReads() ? certify(target) : CompletableFuture.completedFuture(true);
+        data.thenCombine(certificate, (value, valid) -> valid && endpoint.equals(target) ? value : resultOf(ResultStatus.UNAVAILABLE))
+                .whenComplete((value, error) -> result.complete(context.deadline().isExpired(time) ? resultOf(ResultStatus.TIMEOUT)
+                        : error == null && value != null ? value : resultOf(ResultStatus.UNAVAILABLE)));
+    }
+    private CompletableFuture<Boolean> certify(Endpoint target) {
+        CompletableFuture<Boolean> result = new CompletableFuture<>();
+        Set<NodeId> confirmations = ConcurrentHashMap.newKeySet();
+        AtomicInteger finished = new AtomicInteger();
+        for (NodeId node : replicas) {
+            try {
+                transport.probe(node).whenComplete((info, error) -> {
+                    if (error == null && info != null && info.status() == IoniaEngine.Status.NORMAL
+                            && info.view() == target.view() && info.leaderId().equals(target.leader())) confirmations.add(node);
+                    if (confirmations.size() >= membership.orderingQuorumSize()) result.complete(true);
+                    if (finished.incrementAndGet() == replicas.size()) result.complete(false);
+                });
+            } catch (RuntimeException error) { if (finished.incrementAndGet() == replicas.size()) result.complete(false); }
+        }
+        return result;
+    }
+    private boolean identity(NodeId expected, Endpoint target, RequestContext context, NodeId node, long view, ClientId client, OperationId operation) {
+        return expected.equals(node) && target.view() == view && clientId.equals(client) && context.operationId().equals(operation);
+    }
+    private IoniaClientTransport.Request request(Command command, RequestContext context, Endpoint target) {
+        return new IoniaClientTransport.Request(target.view(), command, clientId, context.operationId(), context.routingVersion(),
+                context.ownershipEpoch(), Math.max(0, context.deadline().monotonicNanos() - time.monotonicNanos()));
+    }
+    public void onTimer(TimerEvent event) {
+        Objects.requireNonNull(event);
+        pending.forEach((future, deadline) -> { if (deadline.isExpired(time)) future.complete(resultOf(ResultStatus.TIMEOUT)); });
+        fastWrites.forEach((future, state) -> { if (time.monotonicNanos() - state.started() >= options.fallbackAfterNanos()) fallback(state, future); });
+    }
+    @Override public void close() {
+        closed.set(true); pending.keySet().forEach(future -> future.complete(resultOf(ResultStatus.UNAVAILABLE)));
+    }
+    private static Result resultOf(ResultStatus status) { return Result.of(status, RoutingVersion.ZERO, OwnershipEpoch.ZERO); }
 }
