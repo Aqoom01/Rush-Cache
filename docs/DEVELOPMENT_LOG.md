@@ -50,3 +50,24 @@
 - 보호 대상 146개 기존 파일 hash 동일, production jar 새 클래스 포함·test 클래스 제외 확인. 상세: docs/IONIA_V02A.md, docs/IONIA_V02A_VALIDATION.json.
 - 포트 17301~17303, 예제 N=1024, 데이터 build/ionia-third/target-1024/node-*. 1024를 최적값으로 주장하지 않음.
 - 공통 데이터셋·성능·실측 heap/SSD·다중 머신·power-loss·D-PERSIST는 미진행. commit/push/merge는 실행하지 않음.
+
+## 2026-10-28 | V03 Prepare 배치 명세 v1.0·사전 검토
+
+- 기준 revision: 9abfcb68cf493c74b7d7281155aa5f3336e6bc4d. V02a 검증 산출물 23개 hash 일치 확인. 원본·V01·V02a Java 코드는 변경하지 않음.
+- IONIA/Skyros 배경 배치와 VR 저부하 대기를 현재 flush/matched/ACK/읽기/복구 코드에 대조하고 docs/IONIA_V03_DESIGN.md에 구현 기준·인수 항목 12개 고정.
+- 개수·전체 encoded bytes·목표 대기, Follower별 한 개 확인 대기 구간, ACK 후 다음 chunk, 유실 재전송·동기 barrier·View/generation 경계를 명시. 이 전송 창은 O00와 다른 설계이므로 순수 batch 크기 효과로 단정하지 않음.
+- 기존 코덱으로 320개 실제 Prepare frame의 바이트 계산·round trip 확인. 외부 길이 prefix 및 writeUTF의 modified UTF-8 포함. 큰 단일 요청은 목표 초과와 hard limit을 분리하고 wire/KV 수용 여부를 기록 ACK 전에 검사하도록 명세.
+- 작업용 단일 Follower 정책 모형 6,912조합(발송 22,839회/전이 42,222회)·반례 3개 확인. authoritative 복구 prefix 일관성을 가정하며 quorum/Java 엔진/RPC/분산 정확성 증명 아님.
+- 후속 소스 예정 위치 replication/ionia-fourth, package ionia_fourth, 포트 17401~17403 및 별도 데이터 경로 확정. 이번 단계에서는 생성하지 않음.
+- V03 Java 구현·통합/장애 시험·성능 측정 미진행. 이전 257개 통과는 V02a까지의 기록이며 이번 전체 build를 재실행한 숫자가 아님.
+- 노션 V03 명세·진행 상태 동기화. commit/push/merge는 실행하지 않음.
+
+## 2026-10-28 | V03 구현 전 추가 문헌 검토·기능 대조군 설계 v1.1
+
+- 이전 v1.0의 ‘고정’은 당시 계획 기록이다. 성능 설계 확정 표현을 철회하고 docs/IONIA_V03_DESIGN.md를 기능 대조군 v1.1로 수정; 근거·판본·접근 제한은 docs/IONIA_V03_RESEARCH.md에 기록.
+- IONIA/Skyros/VR 관련 절 재대조. Tuning Paxos 저자 공개 선행 원고의 모델·정책·실험 관련 절, JPaxos §6/9, Adaptive Batching §1–4/6 검토. 2013 Optimizing Paxos는 출판사 서지/초록만 확인; 최종 원문 미확보를 상세 분석으로 올리지 않음.
+- JPaxos Algorithm 2 PDF p.24를 렌더 확인. 원문 부등호와 본문 의미의 차이, 빈 batch/초과 항목 처리는 자체 due 명세로 구분.
+- 실제 TCP는 메시지별 새 연결이며 원문 지속 연결과 다름. Wf=1은 논리 flight이며 논문 WND·physical socket 상한 아님. timer/retry20ms는 기능 fixture, 최적값 아님.
+- 첫 시각 보존·slot/owner 대기·urgent barrier의 ACK 대기·TCP 역순·겹친 retry·공정 비교 조건 보완. 인수 계획 V03-13–18 추가; Java에서 아직 미실행.
+- 작업용 작은 반례 시나리오 5개 확인. 실제 quorum/엔진/TCP 테스트·선형성 증명·벤치마크 결과 아님. 이전 320 frame/6,912모형/257회귀와 합산하지 않음.
+- 기존 소스·테스트·설정·빌드 파일을 보존. V03 Java·ionia-fourth 디렉터리 생성·전체 build·성능/SSD/fsync 재현 미실행. commit/push/merge 하지 않음.
