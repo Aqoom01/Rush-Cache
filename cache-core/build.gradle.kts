@@ -7,6 +7,7 @@ val ioniaSecondRoot = "src/main/java/io/openkache/core/replication/ionia-second"
 val ioniaThirdRoot = "src/main/java/io/openkache/core/replication/ionia-third"
 val ioniaFourthRoot = "src/main/java/io/openkache/core/replication/ionia-fourth"
 val ioniaFifthRoot = "src/main/java/io/openkache/core/replication/ionia-fifth"
+val ioniaSixthRoot = "src/main/java/io/openkache/core/replication/ionia-sixth"
 sourceSets {
     named("main") {
         java.exclude("io/openkache/core/replication/ionia-second/**")
@@ -17,12 +18,15 @@ sourceSets {
         java.srcDir("$ioniaFourthRoot/src/main/java")
         java.exclude("io/openkache/core/replication/ionia-fifth/**")
         java.srcDir("$ioniaFifthRoot/src/main/java")
+        java.exclude("io/openkache/core/replication/ionia-sixth/**")
+        java.srcDir("$ioniaSixthRoot/src/main/java")
     }
     named("test") {
         java.srcDir("$ioniaSecondRoot/src/test/java")
         java.srcDir("$ioniaThirdRoot/src/test/java")
         java.srcDir("$ioniaFourthRoot/src/test/java")
         java.srcDir("$ioniaFifthRoot/src/test/java")
+        java.srcDir("$ioniaSixthRoot/src/test/java")
     }
 }
 

@@ -98,3 +98,41 @@
 - K1/2/4/65536×64 seeds×10 CRUD 유한 이력·오류 대조군, 허가/순서/예외/취소/reset 경계, 실제 TCP K1/K4 각각 32 hot-key·S2 파일 배치, 독립 JVM 3개 crash/restart/rejoin/CLI·profile 보호 확인.
 - 기존 보호 194개 파일과 직전 V03 산출물 22개(공유 Gradle/개발 기록 제외) hash 동일. 기존 파일 변경은 core Gradle sourceSet·개발 기록 추가뿐. production JAR 새 클래스 포함/test 제외 확인.
 - 상세: docs/IONIA_V04A.md, docs/IONIA_V04A_VALIDATION.json. V04b·공통 성능 데이터/driver·성능/SSD·power-loss/D-PERSIST·원문 최종판 전체 재현은 미완료. commit/push/merge 미실행.
+
+
+## 2026-10-28 | V04b 고정 파일 배치와 실제 I/O worker 분리
+
+- 시작 HEAD 3998af206d7b2363f9d130b0c185b5f99b0c4d3e, 작업 트리 clean. commit/push/merge 미실행.
+- replication/ionia-sixth(package ionia_sixth)에 Settings/main/test roots를 분리하고 server.ionia_sixth의 파일 어댑터·Node/Main/CLI·예제 17601–17603을 추가. 이전 모든 방식 보존.
+- 원본 IoniaEngine/Client/Log/History/Recovery/DTO/wire/TCP/stable View 직접 재사용. final/private 파일 어댑터는 별도 사본으로 분리. 공통 API·의존성 변경 없음, V01/V02a/V03/V04a 정책을 누적하지 않음.
+- S=storage.shards와 W=storage.io.workers 1..256을 독립 설정. key hash→S 파일 배치 고정, shard%W 고정 owner FIFO, W 실제 전용 스레드. W<S의 공유 worker 대기와 W>S의 유휴 thread를 명시.
+- S/W·정책 SHA-256 profile/wire/stable View 보호, exclusive layout manifest로 잘못된 S·legacy/손상/extra shard 거절. Node의 W 변경 기존 디렉터리도 KV 열기 전 거절. 자동 migration/삭제 없음.
+- reset이 W 아닌 모든 S 파일을 처리하며 old apply drain 후 reset/replay. immutable 비원자 작업 카운터 제공. diagnostics는 SSD/처리량 지표 아님.
+- Java 21.0.11 최종 전체 build/installDist --rerun-tasks --no-parallel --max-workers=1 성공. 413개(core 321/server 76/runner 16), 실패·오류·skip 0; 신규 V04b 21개(core 3/server 18).
+- 직전 병렬 전체 실행의 기존 V02a TCP GET 버전 32/0 실패 1회는 소스 변경 없이 분리 실행 및 최종 전체 직렬 실행 통과. 원인 미확정, 병렬 안정성 해결로 표시하지 않음. V04b는 해당 실행도 통과.
+- S4/W1,2,4,8 실제 thread overlap·FIFO/동일 hash·cancel/BUSY/예외/close/reset, 4096 실제 파일 CRUD 참조 비교, 원본 엔진 old apply/View 복구, TCP W1/W4 각각32 hot-key, 독립 JVM3개 crash/restart/rejoin/CLI 확인.
+- 기존 보호 213개 파일 hash 동일. 기존 파일 수정은 core Gradle sourceSet·개발 기록 추가뿐. production JAR 새 클래스 포함/test 제외·installDist 확인.
+- 상세 docs/IONIA_V04B.md 및 IONIA_V04B_VALIDATION.json. 공통 성능 비교·최적W/SSD/NIC/multi-host/power-loss/D-PERSIST·V05/V06은 미완료. Replica RAM 로그·stable View·초기 layout force·선택적 KV force 구별.
+
+
+## 2026-10-28 | V02a TCP 읽기 간헐 실패 재현·회귀 실행 사전진단
+
+- 시작 HEAD3998af206d7b2363f9d130b0c185b5f99b0c4d3e 및 직전 미커밋 V04b 변경을 사본/hash로 보호. commit/push/merge 미실행.
+- 읽기 status/RPC 관측을 추가했다. 분리30회 통과 후 전체+추가30회에서22번째 GET의 UNAVAILABLE/version0와 READ/META/probe BindException을 재현. OS 동적 포트16384개, TIME_WAIT19730연결/고유로컬포트15064개 관측. 추가 반복9회 실패를 일반 실패확률로 주장하지 않음.
+- 이전 32/0 한 건은 당시 RPC 로그가 없어 소급 원인 확정 불가. 이번 동일 형태의 실패는 포트 할당 실패였으며 성공 값 손상으로 재현되지 않음. 엔진 NORMAL/failureReason 없음·각 replica32기록 확인.
+- 기존 V02a TCP 테스트에 OK 상태·RPC/엔진 진단을 보강하고 새 오류 회귀3개 추가. 시험용 Windows 포트 사전진단/반복 실행 도구·증거 저장 추가. 첫 도구 검증의 전체1회 통과 후 다음 전체 실행에서 V01 관측용 GET ConnectException 실패1회를 별도 확인하고, 정상 View0 엔진만 같은ID·총5초 안에서 접속 거절 재시도하도록 관측 경계를 보완. OS/알고리즘/Client/Transport/wire/저장소/실험 profile 변경 없음.
+- Java21.0.11 대상4개×3회, 기존 병렬 전체 build/installDist 각416개(core321/server79/runner16)×2회 통과. 각 실패·오류·skip0. 반복을 다른 테스트832개로 합산하지 않음. 두 번째 실행 전 포트 회복 대기 실제 확인.
+- 시작 보호 226개 파일 hash 동일. 기존 파일 변경은 V02a TCP 진단·V01 관측 경계·개발 기록뿐. V04b 포함 이전 production 구현/문서 보존. 임시30회 진단 클래스는 hash 확인 뒤 제거.
+- docs/IONIA_TCP_READ_AUDIT.md, IONIA_TCP_READ_VALIDATION.json, experiments/ionia-validation/README.md 참조. 메시지별 새 TCP 연결 제약/운영 포트 고갈 가능성은 남으며 성능·SSD·multi-host·power-loss 검증 아님. 다음 V05 문헌·안전 조건 검토는 후속.
+
+
+## 2026-10-28 | V05a 문헌 근거·Follower 선택 상세 설계 v1.0
+
+- 시작 HEAD3998af206d7b2363f9d130b0c185b5f99b0c4d3e 및 미커밋 V04b/TCP 감사 변경을 사본/hash로 보존. commit/push/merge 미실행.
+- IONIA §4.2.1–4.2.2와 현재 readAtFollower/Meta/View 인증·실제 DTO를 대조. C3(P080) 공식16쪽 §3.1–3.3/4, Tars(P081) arXivv1 11쪽 §III/IV.A–B/VI 핵심 절을 검토하고 수식/Algorithm 원본 페이지를 렌더 확인. 전체 정독/성능 재현 완료로 표시하지 않음.
+- V05a는 client raw READ RTT×(1+local outstanding)의 자체 가설로 축소. 서버 queue/service/현재lag/SSD IOPS는 미관측이며 V05b·C3/Tars 전체 재현과 구분. RR 대조군·TTL/탐색/cooldown·L/P·원본 인증·raw completion/취소/View/seq 경계를 명세.
+- 원본 Client의 readAtFollower/Engine/Node/Transport/wire/저장소 재사용 계획. wrapper endpoint와 delegate를 함께 갱신, client policy hash는 서버 wire/stable View에 넣지 않음. 다음 코드 위치 ionia-seventh를 계획했지만 이번에 Java/Gradle/sourceSet은 생성/변경하지 않음.
+- 유한 모형 36456개 단일 선택 스냅샷·탐색6조건·lifecycle 예시6개·설명용 잘못된 경우5개 확인. Java/RPC/분산 선형성/전체 interleaving 증명 아님. Java 인수 조건18개 및 I1–I4 구현 순서는 계획 상태.
+- 기존 보호 241개 파일 hash 동일(개발 기록 추가 제외). Java/Gradle/기존 설정 변경 없음. 직전416개×2회 회귀 결과와 이번 모형을 합산하거나 재실행으로 표시하지 않음.
+- docs/IONIA_V05.md, IONIA_V05_REVIEW.json, docs/models/v05_selector_model.py. Java V05 구현·공통 성능 비교·lag/서버 계측·V06·최적값/실측SSD/multi-host/power-loss/D-PERSIST는 미완료.
+- 노션03-7 상세 설계와 문헌 P080/P081 추가. DB 전체84행=고유81편+DUP3, ID충돌0·핵심절12/서지초록69/전체상세분석·재현0 직접 확인. local admission은 정상 leader가 있어도 모든 후보 cooldown/full이면 BUSY이므로 동일 읽기 가용성 보장으로 표시하지 않음.

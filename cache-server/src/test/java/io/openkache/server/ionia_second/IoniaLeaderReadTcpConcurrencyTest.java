@@ -37,19 +37,49 @@ class IoniaLeaderReadTcpConcurrencyTest {
                 for (int i = 1; i <= 32; i++) writes.add(client.execute(new Command.Set(key, Bytes.utf8("v" + i)), context(clientId, i, time)).toCompletableFuture());
                 for (CompletableFuture<Result> write : writes) assertEquals(ResultStatus.OK, write.get(5, TimeUnit.SECONDS).status());
                 Result leader = client.execute(new Command.Get(key), context(clientId, 40, time)).toCompletableFuture().get(5, TimeUnit.SECONDS);
+                assertEquals(ResultStatus.OK,leader.status(),leader.toString());
                 assertEquals(32, leader.valueVersion());
                 long until = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
                 while (nodes.stream().anyMatch(node -> node.engine().progress().appliedIndex() != 32) && System.nanoTime() - until < 0) Thread.sleep(10);
                 for (NodeId id : ids) {
                     IoniaClientTransport.Request request = new IoniaClientTransport.Request(0, new Command.Get(key), clientId, new OperationId(50 + id.value()),
                             RoutingVersion.ZERO, OwnershipEpoch.ZERO, TimeUnit.SECONDS.toNanos(5));
-                    IoniaClientTransport.ReadReply reply = transport.followerRead(id, request).toCompletableFuture().get(5, TimeUnit.SECONDS);
+                    IoniaClientTransport.ReadReply reply = readReplica(transport,id,request,nodes);
+                    assertEquals(ResultStatus.OK,reply.result().status(),reply.toString());
                     assertEquals(32, reply.appliedIndex()); assertEquals(leader.value(), reply.result().value()); assertEquals(32, reply.result().valueVersion());
                 }
             }
         } finally {
             for (IoniaNode node : nodes) node.close();
             for (ServerSocket reservation : reservations) reservation.close();
+        }
+    }
+    // A completed applied prefix does not guarantee that the TCP accept path is idle.
+    // Only an observation connection refusal may retry; a failed/fenced engine still fails.
+    private static IoniaClientTransport.ReadReply readReplica(IoniaTcpTransport transport,NodeId id,
+            IoniaClientTransport.Request request,List<IoniaNode> nodes)throws Exception{
+        long deadline=System.nanoTime()+request.timeoutNanos();ExecutionException last=null;
+        while(System.nanoTime()-deadline<0){
+            healthy(nodes);
+            long remaining=Math.max(1,deadline-System.nanoTime());
+            var attempt=new IoniaClientTransport.Request(request.view(),request.command(),request.clientId(),request.operationId(),
+                    request.routingVersion(),request.ownershipEpoch(),remaining);
+            try{
+                var reply=transport.followerRead(id,attempt).toCompletableFuture().get(remaining,TimeUnit.NANOSECONDS);
+                healthy(nodes);return reply;
+            }catch(ExecutionException error){
+                if(!(error.getCause() instanceof ConnectException))throw error;
+                healthy(nodes);last=error;
+                TimeUnit.NANOSECONDS.sleep(Math.max(0,Math.min(TimeUnit.MILLISECONDS.toNanos(20),deadline-System.nanoTime())));
+            }
+        }
+        throw new AssertionError("replica observation failed: target="+id+" states="+nodes.stream().map(n->n.engine().progress()).toList(),last);
+    }
+    private static void healthy(List<IoniaNode> nodes){
+        for(var node:nodes){
+            assertTrue(node.engine().failureReason().isEmpty(),node.engine().failureReason().toString());
+            assertEquals(IoniaEngine.Status.NORMAL,node.engine().viewInfo().status());
+            assertEquals(0,node.engine().viewInfo().view());
         }
     }
     private static RequestContext context(ClientId id, long operation, TimeSource time) {
