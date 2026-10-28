@@ -1,0 +1,106 @@
+{
+  "date": "2026-10-28",
+  "variant": "V02a",
+  "baseline_revision": "99d25a3805081d84296d284a1ce8e9b00cbc3205",
+  "command": ".\\gradlew.bat build :cache-server:installDist --rerun-tasks --console=plain",
+  "environment": "Windows / Microsoft OpenJDK 21.0.11",
+  "total_tests": 257,
+  "new_v02_tests": 62,
+  "modules": {
+    "cache-core": {
+      "tests": 195,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "cache-server": {
+      "tests": 46,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "experiment-runner": {
+      "tests": 16,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    }
+  },
+  "v02_suites": [
+    {
+      "suite": "io.openkache.core.replication.ionia_third.IoniaBudgetHistoryTest",
+      "tests": 10,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "io.openkache.core.replication.ionia_third.IoniaHistorySettingsTest",
+      "tests": 2,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "io.openkache.core.replication.ionia_third.IoniaThirdHistoryTest",
+      "tests": 7,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "io.openkache.core.replication.ionia_third.IoniaThirdIntegrationTest",
+      "tests": 6,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "io.openkache.core.replication.ionia_third.IoniaThirdRegressionTest",
+      "tests": 32,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "io.openkache.server.ionia_third.IoniaThirdProcessTest",
+      "tests": 1,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "io.openkache.server.ionia_third.IoniaThirdProfileTest",
+      "tests": 3,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "io.openkache.server.ionia_third.IoniaThirdTcpConcurrencyTest",
+      "tests": 1,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    }
+  ],
+  "protected_reference_files_unchanged": 146,
+  "jars": {
+    "cache-core": {
+      "entry_present": "io/openkache/core/replication/ionia_third/IoniaThirdEngine.class",
+      "test_classes_present": false
+    },
+    "cache-server": {
+      "entry_present": "io/openkache/server/ionia_third/IoniaThirdMain.class",
+      "test_classes_present": false
+    }
+  },
+  "performance_benchmark_run": false,
+  "limits": [
+    "bounded histories only",
+    "single loopback host",
+    "no power-loss / physical SSD performance verification",
+    "replicated RAM Durability Log; per-request WAL+fsync not implemented"
+  ],
+  "test_observation": "One earlier TCP observation GET received ConnectException. Observation-only retries retain request identity and a total 5s deadline; engine failure/fencing still fails the test. Final complete build passed."
+}

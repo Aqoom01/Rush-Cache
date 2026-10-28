@@ -4,13 +4,17 @@ plugins {
 
 // Keep the user-facing hyphenated variant folder and valid Java package paths separate.
 val ioniaSecondRoot = "src/main/java/io/openkache/core/replication/ionia-second"
+val ioniaThirdRoot = "src/main/java/io/openkache/core/replication/ionia-third"
 sourceSets {
     named("main") {
         java.exclude("io/openkache/core/replication/ionia-second/**")
         java.srcDir("$ioniaSecondRoot/src/main/java")
+        java.exclude("io/openkache/core/replication/ionia-third/**")
+        java.srcDir("$ioniaThirdRoot/src/main/java")
     }
     named("test") {
         java.srcDir("$ioniaSecondRoot/src/test/java")
+        java.srcDir("$ioniaThirdRoot/src/test/java")
     }
 }
 

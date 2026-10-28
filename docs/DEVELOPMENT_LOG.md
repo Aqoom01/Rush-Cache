@@ -37,3 +37,16 @@
 - production jar에 V01 클라이언트 포함·테스트 클래스 미포함 확인. 명세·실행·한계: docs/IONIA_V01.md.
 - 성능용 공통 데이터셋·비교 driver·G7 성능/SSD/다중 머신·power-loss 실험은 미진행. D-PERSIST는 미구현.
 - Git 변경 작업(commit/push/merge)은 실행하지 않음. 기존 변경 파일은 작업 채팅 v01-baseline에 보존.
+## 2026-10-28 | V02a History/LTI 기능 구현·검증
+
+- 기준 revision: 99d25a3805081d84296d284a1ce8e9b00cbc3205. 작업 시작 시 tracked/untracked 변경 없음.
+- replication/ionia-third 아래 별도 main/test roots와 ionia_third package에 정책·별도 엔진 구현. 기존 ionia·ionia-second 및 공통 API/외부 의존성은 보존.
+- N=0 원본 prefix trim 대조, 양수 N의 안전 prefix 최소 정리·초과 허용, 1초 owner tick, View/generation을 구분한 불변 진단 구현.
+- 정석 IoniaClient/Log/Recovery/Config/Message/DTO 및 기존 디스크·stable View·wire/TCP를 재사용. 엔진은 final/private 경계로 인해 분리한 사본이므로 이후 원본 수정 시 수동 대조 필요.
+- 고정 길이 SHA-256 profile을 서버/클라이언트/stable configuration에 적용. 다른 N·O00 혼용 거절, profile 불일치 시 기존 KV 파일 열기 전 거절.
+- 실제 저장소에서 Java 21.0.11로 전체 build와 installDist --rerun-tasks 성공. 257 테스트(core 195 / server 46 / runner 16), 실패·오류·skip 0. V02 신규 62(새 엔진 연결 회귀 32 포함).
+- N=0 64×200 History 대조, 여러 N의 64×80 상태 불변식, N=0/1/2/MAX 각각 64×10 완료 CRUD 이력, pending/timeout 쓰기의 View 복구·같은 ID 재시도 및 오류 대조군 확인.
+- 실제 TCP 32 동시 쓰기·1초 trim, 독립 JVM 3개 강제 종료/재시작/CLI CRUD, profile/디렉터리 불일치 거절 확인. 관측 GET의 단일 연결 거절은 총 5초·동일 ID의 한정 재시도로 시험 보완. 지속 엔진/응답 오류는 실패 처리.
+- 보호 대상 146개 기존 파일 hash 동일, production jar 새 클래스 포함·test 클래스 제외 확인. 상세: docs/IONIA_V02A.md, docs/IONIA_V02A_VALIDATION.json.
+- 포트 17301~17303, 예제 N=1024, 데이터 build/ionia-third/target-1024/node-*. 1024를 최적값으로 주장하지 않음.
+- 공통 데이터셋·성능·실측 heap/SSD·다중 머신·power-loss·D-PERSIST는 미진행. commit/push/merge는 실행하지 않음.
