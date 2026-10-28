@@ -86,6 +86,21 @@ class FixedDeadlineFailureDetectorTest {
         assertEquals(NodeStatus.ALIVE, detector.status("target"));
     }
 
+    @Test
+    void unregisteredTargetCannotBecomeStaleAndCanBeRegisteredAgain() {
+        FixedDeadlineFailureDetector detector = detector();
+        detector.registerTarget(0, "target", 1);
+        detector.unregisterTarget("target");
+
+        detector.tick(10 * SECOND);
+        assertEquals(NodeStatus.ALIVE, detector.status("target"));
+        assertTrue(detector.drainEvents().isEmpty());
+
+        detector.registerTarget(10 * SECOND, "target", 1);
+        detector.tick(13 * SECOND);
+        assertEquals(NodeStatus.SUSPECT, detector.status("target"));
+    }
+
     private static FixedDeadlineFailureDetector detector() {
         return new FixedDeadlineFailureDetector(
                 "observer",

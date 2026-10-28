@@ -35,6 +35,12 @@ public final class FixedDeadlineFailureDetector extends AbstractFailureDetector 
         peers.computeIfAbsent(target, ignored -> new PeerState(nowNanos, incarnation));
     }
 
+    /** Stops observing a target after a membership-view reassignment. */
+    public void unregisterTarget(String target) {
+        peers.remove(target);
+        clearStatus(target);
+    }
+
     public boolean recordHeartbeat(long nowNanos, String target, long incarnation) {
         PeerState peer = peers.computeIfAbsent(
                 target,

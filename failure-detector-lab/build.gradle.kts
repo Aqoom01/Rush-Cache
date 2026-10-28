@@ -60,3 +60,10 @@ tasks.register<JavaExec>("ringAdjacentCrashExperiment") {
     classpath = sourceSets.main.get().runtimeClasspath
     mainClass.set("com.openkache.failuredetector.cli.RingAdjacentCrashMain")
 }
+
+tasks.register<JavaExec>("ringMembershipReconfigurationExperiment") {
+    group = "verification"
+    description = "Compares static and ideal shared-view Ring membership reconfiguration."
+    classpath = sourceSets.main.get().runtimeClasspath
+    mainClass.set("com.openkache.failuredetector.cli.RingMembershipReconfigurationMain")
+}

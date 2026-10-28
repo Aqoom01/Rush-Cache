@@ -51,6 +51,10 @@ public abstract class AbstractFailureDetector implements FailureDetector {
         ));
     }
 
+    protected final void clearStatus(String target) {
+        statuses.remove(target);
+    }
+
     @Override
     public final List<DetectorEvent> drainEvents() {
         List<DetectorEvent> copy = List.copyOf(events);
