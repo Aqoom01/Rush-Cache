@@ -23,13 +23,17 @@ public final class DistributedRingMembershipExperiment {
     private final Duration faultStart;
     private final Duration duration;
     private final Duration propagationDelay;
+    private final int verificationHelperCount;
+    private final int verificationFailureQuorum;
 
     public DistributedRingMembershipExperiment() {
         this(
                 FixedDeadlineConfig.ring(),
                 RingMultiCrashExperiment.DEFAULT_FAULT_START,
                 RingMultiCrashExperiment.DEFAULT_DURATION,
-                DEFAULT_PROPAGATION_DELAY
+                DEFAULT_PROPAGATION_DELAY,
+                1,
+                1
         );
     }
 
@@ -38,6 +42,17 @@ public final class DistributedRingMembershipExperiment {
             Duration faultStart,
             Duration duration,
             Duration propagationDelay
+    ) {
+        this(detectorConfig, faultStart, duration, propagationDelay, 1, 1);
+    }
+
+    public DistributedRingMembershipExperiment(
+            FixedDeadlineConfig detectorConfig,
+            Duration faultStart,
+            Duration duration,
+            Duration propagationDelay,
+            int verificationHelperCount,
+            int verificationFailureQuorum
     ) {
         if (detectorConfig == null
                 || detectorConfig.peerSelectionMode()
@@ -49,10 +64,17 @@ public final class DistributedRingMembershipExperiment {
                 || propagationDelay.isNegative()) {
             throw new IllegalArgumentException("experiment durations are invalid");
         }
+        if (verificationHelperCount < 1
+                || verificationFailureQuorum < 1
+                || verificationFailureQuorum > verificationHelperCount) {
+            throw new IllegalArgumentException("verification helper quorum is invalid");
+        }
         this.detectorConfig = detectorConfig;
         this.faultStart = faultStart;
         this.duration = duration;
         this.propagationDelay = propagationDelay;
+        this.verificationHelperCount = verificationHelperCount;
+        this.verificationFailureQuorum = verificationFailureQuorum;
     }
 
     public Result runConsecutiveCrash(
@@ -106,6 +128,7 @@ public final class DistributedRingMembershipExperiment {
         List<QueuedUpdate> pending = new ArrayList<>();
         Map<String, Long> firstLiveObserverAt = new LinkedHashMap<>();
         long heartbeatMessages = 0;
+        long verificationMessages = 0;
         long controlMessages = 0;
         long faultAtNanos = faultStart.toNanos();
         long durationNanos = duration.toNanos();
@@ -161,7 +184,22 @@ public final class DistributedRingMembershipExperiment {
                     continue;
                 }
                 state.detector.tick(nowNanos);
-                List<DetectorEvent> roundEvents = state.detector.drainEvents();
+                List<DetectorEvent> roundEvents = new ArrayList<>(
+                        state.detector.drainEvents());
+                if (detectorConfig.verifySuspectEnabled()) {
+                    for (String target : List.copyOf(state.registeredTargets)) {
+                        if (state.detector.beginVerification(target)) {
+                            verificationMessages += 3L * verificationHelperCount;
+                            int failedHelpers = faultActive && crashed.contains(target)
+                                    ? verificationHelperCount : 0;
+                            boolean verificationSucceeded = failedHelpers
+                                    < verificationFailureQuorum;
+                            state.detector.recordVerification(
+                                    nowNanos, target, verificationSucceeded);
+                        }
+                    }
+                    roundEvents.addAll(state.detector.drainEvents());
+                }
                 detectorEvents.addAll(roundEvents);
                 for (DetectorEvent event : roundEvents) {
                     if (event.newStatus() != NodeStatus.DEAD
@@ -219,8 +257,12 @@ public final class DistributedRingMembershipExperiment {
                 faultAtNanos,
                 durationNanos,
                 propagationDelay.toNanos(),
+                verificationHelperCount,
+                verificationFailureQuorum,
                 heartbeatMessages,
                 heartbeatMessages * detectorConfig.payloadBytes(),
+                verificationMessages,
+                verificationMessages * detectorConfig.payloadBytes(),
                 controlMessages,
                 controlBytes,
                 convergedAtNanos == null ? null : convergedAtNanos - faultAtNanos,
@@ -425,8 +467,12 @@ public final class DistributedRingMembershipExperiment {
             long faultAtNanos,
             long durationNanos,
             long propagationDelayNanos,
+            int verificationHelperCount,
+            int verificationFailureQuorum,
             long heartbeatMessages,
             long heartbeatBytes,
+            long verificationMessages,
+            long verificationBytes,
             long membershipControlMessages,
             long membershipControlBytes,
             Long viewConvergenceLatencyNanos,

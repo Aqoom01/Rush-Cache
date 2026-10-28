@@ -53,7 +53,10 @@ public record UdpWireMessage(
         PING(2),
         ACK(3),
         PING_REQUEST(4),
-        FAULT_START(5);
+        FAULT_START(5),
+        MEMBERSHIP_REMOVE(6),
+        EXPERIMENT_FINISH(7),
+        PROCESS_CRASH(8);
 
         private final byte code;
 

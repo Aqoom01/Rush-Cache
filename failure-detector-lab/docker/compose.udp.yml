@@ -5,11 +5,20 @@ x-node: &node
     context: ..
     dockerfile: docker/Dockerfile.udp
   image: openkache-fd-udp:local
+  entrypoint:
+    - java
+    - -cp
+    - /app/lab.jar
+    - ${FD_MAIN_CLASS:-com.openkache.failuredetector.transport.UdpExperimentNodeMain}
   environment: &node-environment
     FD_PROFILE: ${FD_PROFILE:-swim-base}
     FD_PORT: "19000"
-    FD_DURATION_SECONDS: ${FD_DURATION_SECONDS:-15}
+    FD_DURATION_SECONDS: ${FD_PEER_DURATION_SECONDS:-20}
     FD_PEERS: "${FD_PEERS:-0=node0:19000,1=node1:19000,2=node2:19000}"
+    FD_VERIFY_HELPER_COUNT: ${FD_VERIFY_HELPER_COUNT:-1}
+    FD_VERIFY_FAILURE_QUORUM: ${FD_VERIFY_FAILURE_QUORUM:-1}
+    FD_VERIFY_FAILED_ROUNDS: ${FD_VERIFY_FAILED_ROUNDS:-2}
+    FD_RING_NEIGHBOR_COUNT: ${FD_RING_NEIGHBOR_COUNT:-2}
   networks:
     - fd-lab
 
@@ -19,6 +28,7 @@ services:
     environment:
       <<: *node-environment
       FD_NODE_ID: "0"
+      FD_DURATION_SECONDS: ${FD_OBSERVER_DURATION_SECONDS:-15}
 
   node1:
     <<: *node

@@ -22,6 +22,7 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CountDownLatch;
@@ -79,11 +80,17 @@ public final class UdpExperimentNodeMain {
         private final AtomicLong receivedBytes = new AtomicLong();
         private final CountDownLatch finished = new CountDownLatch(1);
         private final Map<Long, Probe> probes = new HashMap<>();
+        private final Map<Long, VerificationRound> verificationRounds = new HashMap<>();
         private final List<DetectorEvent> detectorEvents = new ArrayList<>();
         private final FailureDetector detector;
         private final long startedAtNanos = System.nanoTime();
         private long sequence;
         private Long faultAtNanos;
+        private long nextVerificationAtNanos;
+        private long verificationRoundSuccesses;
+        private long verificationRoundFailures;
+        private long verificationProbeSuccesses;
+        private long verificationProbeFailures;
 
         private Node(NodeConfig config) throws SocketException {
             this.config = config;
@@ -96,6 +103,14 @@ public final class UdpExperimentNodeMain {
             this.receiver = new Thread(this::receiveLoop, "udp-fd-receiver-" + config.nodeId());
             this.receiver.setDaemon(true);
             this.detector = createDetector(config.profile());
+            if (config.nodeId() == OBSERVER_ID
+                    && config.profile() == DetectorProfile.F6_FIXED_DEADLINE_RING_VERIFY) {
+                verificationHelpers(
+                        OBSERVER_ID,
+                        TARGET_ID,
+                        config.peers().keySet(),
+                        config.verificationHelperCount());
+            }
             if (detector instanceof FixedDeadlineFailureDetector fixed) {
                 fixed.registerTarget(0, nodeName(TARGET_ID), 1);
             } else if (detector instanceof AdaptiveDeadlineFailureDetector adaptive) {
@@ -168,9 +183,10 @@ public final class UdpExperimentNodeMain {
                 case F3_SWIM_LIFEGUARD -> new SwimLifeguardDetector(
                         nodeName(OBSERVER_ID), config.peers().size() + 1, swimConfig(true));
                 case F5_FIXED_DEADLINE_RING -> new FixedDeadlineFailureDetector(
-                        nodeName(OBSERVER_ID), udpRingConfig(false));
+                        nodeName(OBSERVER_ID), udpRingConfig(false, 2));
                 case F6_FIXED_DEADLINE_RING_VERIFY -> new FixedDeadlineFailureDetector(
-                        nodeName(OBSERVER_ID), udpRingConfig(true));
+                        nodeName(OBSERVER_ID),
+                        udpRingConfig(true, config.failedVerificationRoundsToDead()));
                 case F7A_SWIM_LHA_PROBE -> new SwimLifeguardDetector(
                         nodeName(OBSERVER_ID), config.peers().size() + 1,
                         udpSwimConfig(SwimLifeguardConfig.lhaProbeOnly()));
@@ -182,17 +198,20 @@ public final class UdpExperimentNodeMain {
             };
         }
 
-        private static FixedDeadlineConfig udpRingConfig(boolean verify) {
+        private static FixedDeadlineConfig udpRingConfig(
+                boolean verify,
+                int failedVerificationRoundsToDead
+        ) {
             return new FixedDeadlineConfig(
                     Duration.ofMillis(HEARTBEAT_INTERVAL_MILLIS),
                     Duration.ofMillis(600),
                     Duration.ofMillis(400),
-                    Duration.ofMillis(600),
+                    Duration.ofSeconds(3),
                     FixedDeadlineConfig.PeerSelectionMode.DETERMINISTIC_RING,
                     UdpWireMessage.WIRE_BYTES,
                     verify,
                     Duration.ofMillis(PROBE_TIMEOUT_MILLIS),
-                    2
+                    failedVerificationRoundsToDead
             );
         }
 
@@ -236,8 +255,8 @@ public final class UdpExperimentNodeMain {
                     || config.profile() == DetectorProfile.F5_FIXED_DEADLINE_RING
                     || config.profile() == DetectorProfile.F6_FIXED_DEADLINE_RING_VERIFY) {
                 Iterable<Integer> heartbeatPeers = isRingProfile()
-                        ? List.of(ringHeartbeatRecipient(
-                                config.nodeId(), config.peers().size() + 1))
+                        ? ringHeartbeatRecipients(
+                                config.nodeId(), config.peers().size() + 1, 2)
                         : config.peers().keySet();
                 for (int peer : heartbeatPeers) {
                     send(peer, new UdpWireMessage(
@@ -278,9 +297,7 @@ public final class UdpExperimentNodeMain {
             }
             if (probe.stage() == ProbeStage.VERIFY) {
                 probes.remove(probeId);
-                FixedDeadlineFailureDetector fixed = (FixedDeadlineFailureDetector) detector;
-                fixed.recordVerification(elapsedNanos(), nodeName(TARGET_ID), false);
-                drainEvents();
+                completeVerificationProbe(probe, false);
                 return;
             }
             if (probe.stage() == ProbeStage.DIRECT) {
@@ -352,6 +369,9 @@ public final class UdpExperimentNodeMain {
                                 + faultAtNanos + ",\"target\":\"node-1\"}");
                     }
                 }
+                case MEMBERSHIP_REMOVE, EXPERIMENT_FINISH, PROCESS_CRASH -> {
+                    // Reserved for the distributed-membership UDP harness.
+                }
             }
         }
 
@@ -380,9 +400,7 @@ public final class UdpExperimentNodeMain {
                 return;
             }
             if (probe.stage() == ProbeStage.VERIFY) {
-                FixedDeadlineFailureDetector fixed = (FixedDeadlineFailureDetector) detector;
-                fixed.recordVerification(elapsedNanos(), nodeName(TARGET_ID), true);
-                drainEvents();
+                completeVerificationProbe(probe, true);
                 return;
             }
             SwimLifeguardDetector swim = (SwimLifeguardDetector) detector;
@@ -396,12 +414,27 @@ public final class UdpExperimentNodeMain {
             }
             detector.tick(elapsedNanos());
             drainEvents();
+            long now = elapsedNanos();
             if (detector instanceof FixedDeadlineFailureDetector fixed
                     && fixed.config().verifySuspectEnabled()
+                    && now >= nextVerificationAtNanos
                     && fixed.beginVerification(nodeName(TARGET_ID))) {
+                startVerificationRound();
+            }
+        }
+
+        private void startVerificationRound() {
+            List<Integer> helpers = verificationHelpers(
+                    config.nodeId(), TARGET_ID, config.peers().keySet(),
+                    config.verificationHelperCount());
+            long roundId = ++sequence;
+            verificationRounds.put(
+                    roundId,
+                    new VerificationRound(roundId, helpers.size()));
+            for (int helper : helpers) {
                 long probeId = ++sequence;
-                probes.put(probeId, new Probe(probeId, ProbeStage.VERIFY));
-                send(HELPER_ID, new UdpWireMessage(
+                probes.put(probeId, new Probe(probeId, ProbeStage.VERIFY, roundId));
+                send(helper, new UdpWireMessage(
                         UdpWireMessage.Type.PING_REQUEST,
                         probeId,
                         config.nodeId(),
@@ -414,6 +447,39 @@ public final class UdpExperimentNodeMain {
                         TimeUnit.MILLISECONDS
                 );
             }
+        }
+
+        private void completeVerificationProbe(Probe probe, boolean reachable) {
+            VerificationRound round = verificationRounds.get(probe.verificationRoundId());
+            if (round == null) {
+                return;
+            }
+            if (reachable) {
+                verificationProbeSuccesses++;
+            } else {
+                verificationProbeFailures++;
+            }
+            round.complete(reachable);
+            if (!round.complete()) {
+                return;
+            }
+            verificationRounds.remove(round.id());
+            boolean verificationSucceeded = round.failures()
+                    < config.verificationFailureQuorum();
+            if (verificationSucceeded) {
+                verificationRoundSuccesses++;
+            } else {
+                verificationRoundFailures++;
+            }
+            FixedDeadlineFailureDetector fixed = (FixedDeadlineFailureDetector) detector;
+            long now = elapsedNanos();
+            fixed.recordVerification(now, nodeName(TARGET_ID), verificationSucceeded);
+            nextVerificationAtNanos = now + fixed.config().verificationInterval().toNanos();
+            System.out.println("EVENT_JSON={\"kind\":\"verification\",\"atNanos\":"
+                    + now + ",\"helperFailures\":" + round.failures()
+                    + ",\"helperCount\":" + config.verificationHelperCount()
+                    + ",\"succeeded\":" + verificationSucceeded + "}");
+            drainEvents();
         }
 
         private boolean isRingProfile() {
@@ -457,22 +523,33 @@ public final class UdpExperimentNodeMain {
             if (!running.compareAndSet(true, false)) {
                 return;
             }
-            Long suspectAt = detectorEvents.stream()
-                    .filter(event -> event.newStatus().name().equals("SUSPECT"))
-                    .map(DetectorEvent::atNanos)
-                    .findFirst()
-                    .orElse(null);
-            Long deadAt = detectorEvents.stream()
+            Long suspectAt = firstEventAtOrAfterFault("SUSPECT");
+            Long deadAt = firstEventAtOrAfterFault("DEAD");
+            long preFaultDeadEvents = detectorEvents.stream()
                     .filter(event -> event.newStatus().name().equals("DEAD"))
-                    .map(DetectorEvent::atNanos)
-                    .findFirst()
-                    .orElse(null);
+                    .filter(event -> faultAtNanos == null || event.atNanos() < faultAtNanos)
+                    .count();
             System.out.println("RESULT_JSON={"
                     + "\"profile\":\"" + config.profile().id() + "\","
                     + "\"nodeId\":" + config.nodeId() + ","
+                    + "\"verificationHelperCount\":"
+                    + config.verificationHelperCount() + ","
+                    + "\"verificationFailureQuorum\":"
+                    + config.verificationFailureQuorum() + ","
+                    + "\"failedVerificationRoundsToDead\":"
+                    + config.failedVerificationRoundsToDead() + ","
+                    + "\"verificationRoundSuccesses\":"
+                    + verificationRoundSuccesses + ","
+                    + "\"verificationRoundFailures\":"
+                    + verificationRoundFailures + ","
+                    + "\"verificationProbeSuccesses\":"
+                    + verificationProbeSuccesses + ","
+                    + "\"verificationProbeFailures\":"
+                    + verificationProbeFailures + ","
                     + "\"timeSource\":\"observer-monotonic\","
                     + "\"wireSource\":\"real-udp-observed\","
                     + "\"faultAtNanos\":" + nullable(faultAtNanos) + ","
+                    + "\"preFaultDeadEvents\":" + preFaultDeadEvents + ","
                     + "\"suspectLatencyNanos\":" + latency(suspectAt) + ","
                     + "\"deadLatencyNanos\":" + latency(deadAt) + ","
                     + "\"sentFrames\":" + sentFrames.get() + ","
@@ -483,6 +560,18 @@ public final class UdpExperimentNodeMain {
             socket.close();
             state.shutdownNow();
             finished.countDown();
+        }
+
+        private Long firstEventAtOrAfterFault(String status) {
+            if (faultAtNanos == null) {
+                return null;
+            }
+            return detectorEvents.stream()
+                    .filter(event -> event.newStatus().name().equals(status))
+                    .map(DetectorEvent::atNanos)
+                    .filter(atNanos -> atNanos >= faultAtNanos)
+                    .findFirst()
+                    .orElse(null);
         }
 
         private String latency(Long eventAt) {
@@ -498,7 +587,41 @@ public final class UdpExperimentNodeMain {
         }
     }
 
-    private record Probe(long id, ProbeStage stage) {
+    private record Probe(long id, ProbeStage stage, Long verificationRoundId) {
+        private Probe(long id, ProbeStage stage) {
+            this(id, stage, null);
+        }
+    }
+
+    private static final class VerificationRound {
+        private final long id;
+        private final int expected;
+        private int completed;
+        private int failures;
+
+        private VerificationRound(long id, int expected) {
+            this.id = id;
+            this.expected = expected;
+        }
+
+        private void complete(boolean reachable) {
+            completed++;
+            if (!reachable) {
+                failures++;
+            }
+        }
+
+        private boolean complete() {
+            return completed == expected;
+        }
+
+        private long id() {
+            return id;
+        }
+
+        private int failures() {
+            return failures;
+        }
     }
 
     private enum ProbeStage {
@@ -512,12 +635,22 @@ public final class UdpExperimentNodeMain {
             int port,
             DetectorProfile profile,
             int durationSeconds,
+            int verificationHelperCount,
+            int verificationFailureQuorum,
+            int failedVerificationRoundsToDead,
             Map<Integer, InetSocketAddress> peers
     ) {
         private static NodeConfig fromEnvironment() {
             int nodeId = integer("FD_NODE_ID");
             int port = integer("FD_PORT");
             int duration = integer("FD_DURATION_SECONDS");
+            int helperCount = optionalInteger("FD_VERIFY_HELPER_COUNT", 1);
+            int failureQuorum = optionalInteger("FD_VERIFY_FAILURE_QUORUM", 1);
+            int failedRoundsToDead = optionalInteger("FD_VERIFY_FAILED_ROUNDS", 2);
+            if (helperCount < 1 || failureQuorum < 1 || failureQuorum > helperCount
+                    || failedRoundsToDead < 1) {
+                throw new IllegalArgumentException("invalid UDP verification settings");
+            }
             DetectorProfile profile = DetectorProfile.fromId(required("FD_PROFILE"));
             Map<Integer, InetSocketAddress> peers = new LinkedHashMap<>();
             for (String item : required("FD_PEERS").split(",")) {
@@ -529,11 +662,18 @@ public final class UdpExperimentNodeMain {
                 );
             }
             peers.remove(nodeId);
-            return new NodeConfig(nodeId, port, profile, duration, Map.copyOf(peers));
+            return new NodeConfig(
+                    nodeId, port, profile, duration, helperCount, failureQuorum,
+                    failedRoundsToDead, Map.copyOf(peers));
         }
 
         private static int integer(String name) {
             return Integer.parseInt(required(name));
+        }
+
+        private static int optionalInteger(String name, int defaultValue) {
+            String value = System.getenv(name);
+            return value == null || value.isBlank() ? defaultValue : Integer.parseInt(value);
         }
 
         private static String required(String name) {
@@ -551,10 +691,47 @@ public final class UdpExperimentNodeMain {
 
     /** A node sends its liveness heartbeat to the predecessor that monitors it. */
     static int ringHeartbeatRecipient(int nodeId, int nodeCount) {
+        return ringHeartbeatRecipients(nodeId, nodeCount, 1).get(0);
+    }
+
+    static List<Integer> ringHeartbeatRecipients(
+            int nodeId,
+            int nodeCount,
+            int neighborCount
+    ) {
         if (nodeCount < 2 || nodeId < 0 || nodeId >= nodeCount) {
             throw new IllegalArgumentException("invalid ring node");
         }
-        return (nodeId - 1 + nodeCount) % nodeCount;
+        if (neighborCount < 1 || neighborCount >= nodeCount) {
+            throw new IllegalArgumentException("invalid Ring neighbor count");
+        }
+        List<Integer> recipients = new ArrayList<>();
+        for (int offset = 1; offset <= neighborCount; offset++) {
+            recipients.add((nodeId - offset + nodeCount) % nodeCount);
+        }
+        return List.copyOf(recipients);
+    }
+
+    static List<Integer> verificationHelpers(
+            int observerId,
+            int targetId,
+            Iterable<Integer> peerIds,
+            int helperCount
+    ) {
+        if (helperCount < 1) {
+            throw new IllegalArgumentException("verification helper count must be positive");
+        }
+        List<Integer> helpers = new ArrayList<>();
+        for (int peerId : peerIds) {
+            if (peerId != observerId && peerId != targetId) {
+                helpers.add(peerId);
+            }
+        }
+        helpers.sort(Comparator.naturalOrder());
+        if (helpers.size() < helperCount) {
+            throw new IllegalArgumentException("not enough distinct verification helpers");
+        }
+        return List.copyOf(helpers.subList(0, helperCount));
     }
 
     private static String nullable(Long value) {

@@ -74,3 +74,45 @@ tasks.register<JavaExec>("distributedRingMembershipExperiment") {
     classpath = sourceSets.main.get().runtimeClasspath
     mainClass.set("com.openkache.failuredetector.cli.DistributedRingMembershipMain")
 }
+
+tasks.register<JavaExec>("ringPartitionSafetyExperiment") {
+    group = "verification"
+    description = "Compares partition membership safety with and without Verify Suspect."
+    classpath = sourceSets.main.get().runtimeClasspath
+    mainClass.set("com.openkache.failuredetector.cli.RingPartitionSafetyMain")
+}
+
+tasks.register<JavaExec>("ringPartitionRobustnessExperiment") {
+    group = "verification"
+    description = "Sweeps Verify helper partition and seeded packet loss."
+    classpath = sourceSets.main.get().runtimeClasspath
+    mainClass.set("com.openkache.failuredetector.cli.RingPartitionRobustnessMain")
+}
+
+tasks.register<JavaExec>("ringVerificationQuorumExperiment") {
+    group = "verification"
+    description = "Compares multi-helper Verify failure quorums under partition and loss."
+    classpath = sourceSets.main.get().runtimeClasspath
+    mainClass.set("com.openkache.failuredetector.cli.RingVerificationQuorumMain")
+}
+
+tasks.register<JavaExec>("udpComparisonReport") {
+    group = "verification"
+    description = "Aggregates real-UDP Ring H3/Q3/R3 and SWIM Lifeguard matrix results."
+    classpath = sourceSets.main.get().runtimeClasspath
+    mainClass.set("com.openkache.failuredetector.cli.UdpComparisonReportMain")
+}
+
+tasks.register<JavaExec>("udpDistributedMembershipReport") {
+    group = "verification"
+    description = "Aggregates real-UDP distributed Ring membership survivor results."
+    classpath = sourceSets.main.get().runtimeClasspath
+    mainClass.set("com.openkache.failuredetector.cli.UdpDistributedMembershipReportMain")
+}
+
+tasks.register<JavaExec>("udpDistributedMembershipMatrixReport") {
+    group = "verification"
+    description = "Aggregates repeated real-UDP distributed Ring membership runs."
+    classpath = sourceSets.main.get().runtimeClasspath
+    mainClass.set("com.openkache.failuredetector.cli.UdpDistributedMembershipMatrixReportMain")
+}

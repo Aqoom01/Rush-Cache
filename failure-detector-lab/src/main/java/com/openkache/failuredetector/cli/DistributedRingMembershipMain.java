@@ -83,7 +83,8 @@ public final class DistributedRingMembershipMain {
             writer.write("run_id,node_count,detected_dead,target_count,all_detected,");
             writer.write("last_dead_latency_ms,view_convergence_latency_ms,");
             writer.write("heartbeat_messages,membership_control_messages,total_messages,");
-            writer.write("heartbeat_bytes,membership_control_bytes,total_bytes,");
+            writer.write("verification_messages,heartbeat_bytes,membership_control_bytes,");
+            writer.write("verification_bytes,total_bytes,");
             writer.write("stale_or_duplicate_deliveries,latency_source,traffic_source\n");
             for (NamedResult row : results) {
                 DistributedRingMembershipExperiment.Result result = row.result();
@@ -98,11 +99,15 @@ public final class DistributedRingMembershipMain {
                         Long.toString(result.heartbeatMessages()),
                         Long.toString(result.membershipControlMessages()),
                         Long.toString(result.heartbeatMessages()
-                                + result.membershipControlMessages()),
+                                + result.membershipControlMessages()
+                                + result.verificationMessages()),
+                        Long.toString(result.verificationMessages()),
                         Long.toString(result.heartbeatBytes()),
                         Long.toString(result.membershipControlBytes()),
+                        Long.toString(result.verificationBytes()),
                         Long.toString(result.heartbeatBytes()
-                                + result.membershipControlBytes()),
+                                + result.membershipControlBytes()
+                                + result.verificationBytes()),
                         Long.toString(result.staleOrDuplicateDeliveries()),
                         csv("simulation-observed"),
                         csv("model-estimated")

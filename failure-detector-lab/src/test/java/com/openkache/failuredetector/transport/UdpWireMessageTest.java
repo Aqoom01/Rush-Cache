@@ -43,4 +43,26 @@ class UdpWireMessageTest {
             assertEquals(source, UdpWireMessage.decode(packet.getData(), packet.getLength()));
         }
     }
+
+    @Test
+    void membershipRemovalRoundTripsWithoutGrowingTheWireFrame() {
+        UdpWireMessage source = new UdpWireMessage(
+                UdpWireMessage.Type.MEMBERSHIP_REMOVE, 9, 0, 0, 3);
+
+        byte[] encoded = source.encode();
+
+        assertEquals(UdpWireMessage.WIRE_BYTES, encoded.length);
+        assertEquals(source, UdpWireMessage.decode(encoded, encoded.length));
+    }
+
+    @Test
+    void processCrashControlUsesTheSameVersionedWireFrame() {
+        UdpWireMessage source = new UdpWireMessage(
+                UdpWireMessage.Type.PROCESS_CRASH, 0, -1, -1, -1);
+
+        byte[] encoded = source.encode();
+
+        assertEquals(UdpWireMessage.WIRE_BYTES, encoded.length);
+        assertEquals(source, UdpWireMessage.decode(encoded, encoded.length));
+    }
 }

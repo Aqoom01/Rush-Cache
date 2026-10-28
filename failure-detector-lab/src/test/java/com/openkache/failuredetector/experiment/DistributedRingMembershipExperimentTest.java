@@ -1,5 +1,6 @@
 package com.openkache.failuredetector.experiment;
 
+import com.openkache.failuredetector.deadline.FixedDeadlineConfig;
 import org.junit.jupiter.api.Test;
 
 import java.time.Duration;
@@ -50,5 +51,55 @@ class DistributedRingMembershipExperimentTest {
                         >= result.lastDeadLatencyNanos());
             }
         }
+    }
+
+    @Test
+    void verifySuspectStillDetectsEveryCrashRotation() {
+        DistributedRingMembershipExperiment verified =
+                new DistributedRingMembershipExperiment(
+                        FixedDeadlineConfig.ringVerified(),
+                        RingMultiCrashExperiment.DEFAULT_FAULT_START,
+                        RingMultiCrashExperiment.DEFAULT_DURATION,
+                        DistributedRingMembershipExperiment.DEFAULT_PROPAGATION_DELAY
+                );
+        for (int nodeCount : List.of(5, 8)) {
+            for (int firstCrash = 0; firstCrash < nodeCount; firstCrash++) {
+                DistributedRingMembershipExperiment.Result result =
+                        verified.runConsecutiveCrash(nodeCount, 2, firstCrash, 3);
+
+                assertTrue(result.allDetectedDead());
+                assertTrue(result.verificationMessages() > 0);
+            }
+        }
+    }
+
+    @Test
+    void multiHelperAllFailureQuorumKeepsCrashDetectionAndCountsEveryProbe() {
+        FixedDeadlineConfig config = FixedDeadlineConfig.ringVerified();
+        DistributedRingMembershipExperiment single =
+                new DistributedRingMembershipExperiment(
+                        config,
+                        RingMultiCrashExperiment.DEFAULT_FAULT_START,
+                        RingMultiCrashExperiment.DEFAULT_DURATION,
+                        DistributedRingMembershipExperiment.DEFAULT_PROPAGATION_DELAY,
+                        1,
+                        1);
+        DistributedRingMembershipExperiment triple =
+                new DistributedRingMembershipExperiment(
+                        config,
+                        RingMultiCrashExperiment.DEFAULT_FAULT_START,
+                        RingMultiCrashExperiment.DEFAULT_DURATION,
+                        DistributedRingMembershipExperiment.DEFAULT_PROPAGATION_DELAY,
+                        3,
+                        3);
+
+        DistributedRingMembershipExperiment.Result one =
+                single.runConsecutiveCrash(8, 2, 0, 3);
+        DistributedRingMembershipExperiment.Result three =
+                triple.runConsecutiveCrash(8, 2, 0, 3);
+
+        assertTrue(three.allDetectedDead());
+        assertEquals(one.lastDeadLatencyNanos(), three.lastDeadLatencyNanos());
+        assertEquals(one.verificationMessages() * 3, three.verificationMessages());
     }
 }
