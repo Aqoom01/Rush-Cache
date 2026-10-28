@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="470" viewBox="0 0 1100 470" role="img" aria-labelledby="title desc">
+  <title id="title">관측 모듈별 정상 상태 통신 비용</title>
+  <desc id="desc">100노드 정상 시뮬레이션의 모델 추정 바이트 비용. All-to-all 6476.8, Gossip 294.4, SWIM Probe 130.844, Ring 65.422 바이트 매 노드 매 초.</desc>
+  <rect width="1100" height="470" fill="#ffffff"/>
+  <text x="48" y="48" font-family="Arial, sans-serif" font-size="26" font-weight="700" fill="#172033">B 관측·전파 모듈의 정상 상태 비용</text>
+  <text x="48" y="76" font-family="Arial, sans-serif" font-size="14" fill="#667085">100 nodes · model-estimated bytes/node/s · 동일한 실제 wire 계측이 아님</text>
+  <line x1="300" y1="104" x2="300" y2="366" stroke="#98a2b3"/>
+  <g font-family="Arial, sans-serif" font-size="12" fill="#667085" text-anchor="middle">
+    <line x1="300" y1="104" x2="300" y2="366" stroke="#e4e7ec"/><text x="300" y="390">0</text>
+    <line x1="500" y1="104" x2="500" y2="366" stroke="#e4e7ec"/><text x="500" y="390">2,000</text>
+    <line x1="700" y1="104" x2="700" y2="366" stroke="#e4e7ec"/><text x="700" y="390">4,000</text>
+    <line x1="900" y1="104" x2="900" y2="366" stroke="#e4e7ec"/><text x="900" y="390">6,000</text>
+  </g>
+  <g font-family="Arial, sans-serif" font-size="15" fill="#344054">
+    <text x="48" y="147">All-to-all Heartbeat</text><text x="48" y="167" font-size="12" fill="#667085">F0 / F4</text><rect x="300" y="122" width="648" height="38" rx="5" fill="#3478f6"/><text x="960" y="147" font-weight="700">6,476.800</text>
+    <text x="48" y="213">Gossip Heartbeat</text><text x="48" y="233" font-size="12" fill="#667085">F1</text><rect x="300" y="188" width="29" height="38" rx="5" fill="#f59e42"/><text x="341" y="213" font-weight="700">294.400</text>
+    <text x="48" y="279">SWIM Probe</text><text x="48" y="299" font-size="12" fill="#667085">F2 / F3 / F7a-c</text><rect x="300" y="254" width="13" height="38" rx="5" fill="#12b76a"/><text x="325" y="279" font-weight="700">130.844</text>
+    <text x="48" y="345">Deterministic Ring</text><text x="48" y="365" font-size="12" fill="#667085">F5 / F6</text><rect x="300" y="320" width="7" height="38" rx="4" fill="#7f56d9"/><text x="319" y="345" font-weight="700">65.422</text>
+  </g>
+  <rect x="48" y="416" width="1004" height="34" rx="6" fill="#f4f3ff"/>
+  <text x="550" y="438" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" font-weight="700" fill="#5925dc">현재 모델에서 All-to-all은 Ring 대비 약 99배의 bytes/node/s — 실제 UDP 반복 계측으로 재검증 필요</text>
+</svg>

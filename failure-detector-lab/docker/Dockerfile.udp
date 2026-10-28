@@ -1,0 +1,8 @@
+FROM eclipse-temurin:17-jre-alpine
+
+RUN apk add --no-cache iproute2
+
+WORKDIR /app
+COPY build/libs/openkache-failure-detector-lab-0.1.0-SNAPSHOT.jar /app/lab.jar
+
+ENTRYPOINT ["java", "-cp", "/app/lab.jar", "com.openkache.failuredetector.transport.UdpExperimentNodeMain"]

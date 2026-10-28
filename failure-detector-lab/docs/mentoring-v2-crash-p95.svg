@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="720" viewBox="0 0 1100 720" role="img" aria-labelledby="title desc">
+  <title id="title">100노드 Crash DEAD p95 비교</title>
+  <desc id="desc">10개 프로필의 100노드 crash 시뮬레이션 DEAD p95. SWIM Base, LHA-Probe, Buddy는 90초 안에 30회 모두 DEAD를 선언하지 못했다.</desc>
+  <rect width="1100" height="720" fill="#ffffff"/>
+  <text x="48" y="48" font-family="Arial, sans-serif" font-size="26" font-weight="700" fill="#172033">100노드 Crash DEAD p95</text>
+  <text x="48" y="76" font-family="Arial, sans-serif" font-size="14" fill="#667085">30 seeds · simulation-observed · 낮을수록 빠름</text>
+  <line x1="330" y1="104" x2="330" y2="644" stroke="#98a2b3"/>
+  <g font-family="Arial, sans-serif" font-size="12" fill="#667085" text-anchor="middle">
+    <line x1="330" y1="104" x2="330" y2="644" stroke="#e4e7ec"/><text x="330" y="668">0s</text>
+    <line x1="492.5" y1="104" x2="492.5" y2="644" stroke="#e4e7ec"/><text x="492.5" y="668">10s</text>
+    <line x1="655" y1="104" x2="655" y2="644" stroke="#e4e7ec"/><text x="655" y="668">20s</text>
+    <line x1="817.5" y1="104" x2="817.5" y2="644" stroke="#e4e7ec"/><text x="817.5" y="668">30s</text>
+    <line x1="980" y1="104" x2="980" y2="644" stroke="#e4e7ec"/><text x="980" y="668">40s</text>
+  </g>
+  <g font-family="Arial, sans-serif" font-size="15" fill="#344054">
+    <text x="48" y="133">F0 Fixed Deadline</text><rect x="330" y="112" width="81" height="28" rx="4" fill="#3478f6"/><text x="421" y="132" font-weight="700">4.963s</text>
+    <text x="48" y="187">F1 Phi + Gossip</text><rect x="330" y="166" width="313" height="28" rx="4" fill="#f59e42"/><text x="653" y="186" font-weight="700">19.263s</text>
+    <text x="48" y="241">F2 SWIM Base</text><line x1="330" y1="234" x2="980" y2="234" stroke="#d92d20" stroke-dasharray="7 6"/><text x="344" y="228" fill="#b42318" font-weight="700">90초 내 DEAD 미검출 30/30</text>
+    <text x="48" y="295">F3 SWIM + Lifeguard</text><rect x="330" y="274" width="630" height="28" rx="4" fill="#12b76a"/><text x="970" y="294" font-weight="700">38.784s</text>
+    <text x="48" y="349">F4 Adaptive Deadline</text><rect x="330" y="328" width="81" height="28" rx="4" fill="#3478f6"/><text x="421" y="348" font-weight="700">4.963s</text>
+    <text x="48" y="403">F5 Ring</text><rect x="330" y="382" width="81" height="28" rx="4" fill="#7f56d9"/><text x="421" y="402" font-weight="700">4.963s</text>
+    <text x="48" y="457">F6 Ring + Verify</text><rect x="330" y="436" width="71" height="28" rx="4" fill="#6941c6"/><text x="411" y="456" font-weight="700">4.363s</text>
+    <text x="48" y="511">F7a LHA-Probe</text><line x1="330" y1="504" x2="980" y2="504" stroke="#d92d20" stroke-dasharray="7 6"/><text x="344" y="498" fill="#b42318" font-weight="700">90초 내 DEAD 미검출 30/30</text>
+    <text x="48" y="565">F7b LHA-Suspicion</text><rect x="330" y="544" width="630" height="28" rx="4" fill="#12b76a"/><text x="970" y="564" font-weight="700">38.784s</text>
+    <text x="48" y="619">F7c Buddy</text><line x1="330" y1="612" x2="980" y2="612" stroke="#d92d20" stroke-dasharray="7 6"/><text x="344" y="606" fill="#b42318" font-weight="700">90초 내 DEAD 미검출 30/30</text>
+  </g>
+  <text x="48" y="704" font-family="Arial, sans-serif" font-size="12" fill="#667085">주의: 미검출은 0ms가 아니며, 현재 90초 horizon과 suspicion scaling의 상호작용이다.</text>
+</svg>
