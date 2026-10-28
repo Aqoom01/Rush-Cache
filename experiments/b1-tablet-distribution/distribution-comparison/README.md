@@ -11,7 +11,7 @@ java -cp cache-core/build/classes/java/main:cache-core/build/classes/java/test \
     experiments/b1-tablet-distribution/distribution-comparison/summary.csv
 ```
 
-러너는 `cache-core/src/test/java/io/openkache/core/tablet/experiment/`에 있다. JUnit 테스트가 아니라 `main`이라 `./gradlew test`에서는 돌지 않는다(돌 때마다 결과 파일을 쓰지 않기 위해). 틀 자체의 검증은 같은 패키지의 `MetricsTest`가 한다. 전체 실행은 1분 안쪽이다.
+러너는 `cache-core/src/test/java/io/openkache/core/tablet/experiment/`에 있다. JUnit 테스트가 아니라 `main`이라 `./gradlew test`에서는 돌지 않는다(돌 때마다 결과 파일을 쓰지 않기 위해). 틀 자체의 검증은 같은 패키지의 `MetricsTest`가 한다. 전체 실행은 variant 4개로 약 7분이다(`ring-vnode-alloc`의 S4가 5분).
 
 ## 동일 조건
 
@@ -21,7 +21,8 @@ variant마다 잘게 자르는 손잡이가 다르다. 같은 조건으로 비�
 |---|---|---|
 | `fixed-slot` | 전체 슬롯 수 S | S = G |
 | `hash-range-tablet` | 노드당 Tablet 수 T | T = G / 8 |
-| `ring-vnode` | 노드당 토큰 수 V | V = G / 8 |
+| `ring-vnode` | 노드당 토큰 수 V (무작위 토큰) | V = G / 8 |
+| `ring-vnode-alloc` | 노드당 토큰 수 V (노드별 소유량이 고르도록 계산한 토큰) | V = G / 8 |
 
 그 밖의 입력은 variant와 무관하게 같다: key(seed별 16바이트 난수 → `KeyHash`), 노드 ID 1..n, 노드 추가·제거 순서, Zipf 요청열(seed별). 지표는 전부 `RoutingTable`의 공개 연산(`lookup`, `ownedBy`, `tablets`)으로만 계산하므로 variant 코드가 지표에 끼어들지 않는다.
 

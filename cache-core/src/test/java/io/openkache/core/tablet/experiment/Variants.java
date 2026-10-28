@@ -2,6 +2,7 @@ package io.openkache.core.tablet.experiment;
 
 import io.openkache.core.tablet.DistributionScheme;
 import io.openkache.core.tablet.range.HashRangeScheme;
+import io.openkache.core.tablet.ring.RingScheme;
 import io.openkache.core.tablet.slot.FixedSlotScheme;
 import java.util.List;
 import java.util.function.IntFunction;
@@ -15,8 +16,11 @@ import java.util.function.IntFunction;
  * <pre>
  * fixed-slot          S = G
  * hash-range-tablet   T = G / BASE_NODES
- * ring-vnode          V = G / BASE_NODES   (구현 후 추가)
+ * ring-vnode          V = G / BASE_NODES   (무작위 토큰)
+ * ring-vnode-alloc    V = G / BASE_NODES   (가장 많이 맡은 노드에서 공정 몫만큼 잘라 오는 토큰)
  * </pre>
+ *
+ * <p>ring 둘은 {@code supportsMove() = false}라 S5의 그리디 한계는 참고값이고, 표 크기는 토큰 목록 크기다.
  */
 final class Variants {
 
@@ -27,7 +31,10 @@ final class Variants {
 
     static final List<Variant> ALL = List.of(
             new Variant("fixed-slot", g -> new FixedSlotScheme(g)),
-            new Variant("hash-range-tablet", g -> new HashRangeScheme(Math.max(1, g / BASE_NODES))));
+            new Variant("hash-range-tablet", g -> new HashRangeScheme(Math.max(1, g / BASE_NODES))),
+            new Variant("ring-vnode", g -> new RingScheme(Math.max(1, g / BASE_NODES), RingScheme.Placement.RANDOM)),
+            new Variant("ring-vnode-alloc",
+                    g -> new RingScheme(Math.max(1, g / BASE_NODES), RingScheme.Placement.BALANCED)));
 
     private Variants() {}
 }
