@@ -50,17 +50,28 @@ public final class RingMultiCrashExperiment {
     }
 
     public Result runAdjacentCrash(int nodeCount, int neighborCount, int firstCrashIndex) {
+        return runConsecutiveCrash(nodeCount, neighborCount, firstCrashIndex, 2);
+    }
+
+    public Result runConsecutiveCrash(
+            int nodeCount,
+            int neighborCount,
+            int firstCrashIndex,
+            int crashCount
+    ) {
         List<String> members = members(nodeCount);
         if (firstCrashIndex < 0 || firstCrashIndex >= nodeCount) {
             throw new IllegalArgumentException("firstCrashIndex is outside the Ring");
         }
+        if (crashCount < 2 || crashCount > nodeCount) {
+            throw new IllegalArgumentException("crashCount must be between 2 and nodeCount");
+        }
         return run(
                 members,
                 neighborCount,
-                List.of(
-                        members.get(firstCrashIndex),
-                        members.get((firstCrashIndex + 1) % nodeCount)
-                )
+                java.util.stream.IntStream.range(0, crashCount)
+                        .mapToObj(offset -> members.get((firstCrashIndex + offset) % nodeCount))
+                        .toList()
         );
     }
 

@@ -14,7 +14,7 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
 
-/** Runs the static Ring-1 adjacent two-node crash edge-case matrix. */
+/** Runs a static Ring-k consecutive-node crash edge-case matrix. */
 public final class RingAdjacentCrashMain {
     private RingAdjacentCrashMain() {
     }
@@ -32,11 +32,14 @@ public final class RingAdjacentCrashMain {
         List<NamedResult> results = new ArrayList<>();
         for (int nodeCount : options.nodeCounts()) {
             for (int firstCrash = 0; firstCrash < nodeCount; firstCrash++) {
-                RingMultiCrashExperiment.Result result = experiment.runAdjacentCrash(
-                        nodeCount, options.neighborCount(), firstCrash);
+                RingMultiCrashExperiment.Result result = experiment.runConsecutiveCrash(
+                        nodeCount,
+                        options.neighborCount(),
+                        firstCrash,
+                        options.crashCount()
+                );
                 results.add(new NamedResult(
-                        "ring-" + options.neighborCount()
-                                + "-adjacent-crash-n" + nodeCount + "-p" + firstCrash,
+                        runId(options, nodeCount, firstCrash),
                         result
                 ));
             }
@@ -58,8 +61,9 @@ public final class RingAdjacentCrashMain {
                 .mapToLong(named -> named.result().outcomes().size())
                 .sum();
         System.out.printf(Locale.ROOT,
-                "Ring-%d adjacent crash: completeRuns=%d/%d, detectedTargets=%d/%d, output=%s%n",
-                options.neighborCount(), completeRuns, results.size(),
+                "Ring-%d consecutive-%d crash: completeRuns=%d/%d, "
+                        + "detectedTargets=%d/%d, output=%s%n",
+                options.neighborCount(), options.crashCount(), completeRuns, results.size(),
                 detectedTargets, totalTargets, options.outputDirectory());
     }
 
@@ -68,10 +72,11 @@ public final class RingAdjacentCrashMain {
         Path path = options.outputDirectory().resolve("manifest.json");
         try (BufferedWriter writer = writer(path)) {
             writer.write("{\n");
-            writer.write("  \"experiment\": \"ring-adjacent-two-node-crash\",\n");
+            writer.write("  \"experiment\": \"" + experimentName(options) + "\",\n");
             writer.write("  \"generatedAt\": \"" + Instant.now() + "\",\n");
             writer.write("  \"nodeCounts\": \"" + join(options.nodeCounts()) + "\",\n");
             writer.write("  \"neighborCount\": " + options.neighborCount() + ",\n");
+            writer.write("  \"crashCount\": " + options.crashCount() + ",\n");
             writer.write("  \"faultStartSeconds\": 20,\n");
             writer.write("  \"durationSeconds\": 40,\n");
             writer.write("  \"membershipReconfiguration\": false,\n");
@@ -148,6 +153,7 @@ public final class RingAdjacentCrashMain {
 
     private static void writeSummary(Path path, List<NamedResult> results) throws IOException {
         int neighborCount = results.get(0).result().neighborCount();
+        int crashCount = results.get(0).result().crashedTargets().size();
         long completeRuns = results.stream()
                 .filter(named -> named.result().allDetectedDead())
                 .count();
@@ -158,16 +164,17 @@ public final class RingAdjacentCrashMain {
                 .mapToLong(named -> named.result().outcomes().size())
                 .sum();
         try (BufferedWriter writer = writer(path)) {
-            writer.write("# Ring-" + neighborCount + " 인접 2노드 동시 Crash 실험\n\n");
+            writer.write("# Ring-" + neighborCount + " 연속 " + crashCount
+                    + "노드 동시 Crash 실험\n\n");
             writer.write("- 정적 membership view, 재구성 없음\n");
-            writer.write("- 모든 인접 쌍을 한 번씩 회전\n");
-            writer.write("- 두 장애를 모두 DEAD로 탐지한 실행: "
+            writer.write("- 연속된 " + crashCount + "개 장애의 시작점을 한 번씩 회전\n");
+            writer.write("- 모든 장애를 DEAD로 탐지한 실행: "
                     + completeRuns + "/" + results.size() + "\n");
             writer.write("- DEAD로 탐지한 장애 노드: "
                     + detectedTargets + "/" + totalTargets + "\n\n");
             if (completeRuns == results.size()) {
                 writer.write("Ring-" + neighborCount + "에서는 모든 Crash 대상에 "
-                        + "살아 있는 관측자가 하나 이상 남아 두 노드를 모두 탐지했다.\n");
+                        + "살아 있는 관측자가 하나 이상 남아 모든 장애를 탐지했다.\n");
             } else {
                 writer.write("Ring-" + neighborCount + "에서는 일부 Crash 대상의 "
                         + "관측자도 함께 Crash해 해당 노드가 관측되지 않았다.\n");
@@ -195,13 +202,33 @@ public final class RingAdjacentCrashMain {
         return value.replace("\\", "\\\\").replace("\"", "\\\"");
     }
 
+    private static String experimentName(Options options) {
+        return options.crashCount() == 2
+                ? "ring-adjacent-two-node-crash"
+                : "ring-consecutive-node-crash";
+    }
+
+    private static String runId(Options options, int nodeCount, int firstCrash) {
+        String scenario = options.crashCount() == 2
+                ? "adjacent"
+                : "consecutive-" + options.crashCount();
+        return "ring-" + options.neighborCount() + "-" + scenario
+                + "-crash-n" + nodeCount + "-p" + firstCrash;
+    }
+
     private record NamedResult(String runId, RingMultiCrashExperiment.Result result) {
     }
 
-    private record Options(List<Integer> nodeCounts, int neighborCount, Path outputDirectory) {
+    private record Options(
+            List<Integer> nodeCounts,
+            int neighborCount,
+            int crashCount,
+            Path outputDirectory
+    ) {
         private static Options parse(String[] args) {
             List<Integer> nodeCounts = List.of(5, 8);
             int neighborCount = 1;
+            int crashCount = 2;
             Path output = Path.of("results-ring1-adjacent-crash");
             for (int index = 0; index < args.length; index++) {
                 switch (args[index]) {
@@ -210,6 +237,7 @@ public final class RingAdjacentCrashMain {
                             .map(Integer::parseInt)
                             .toList();
                     case "--neighbors" -> neighborCount = Integer.parseInt(args[++index]);
+                    case "--crash-count" -> crashCount = Integer.parseInt(args[++index]);
                     case "--output-dir" -> output = Path.of(args[++index]);
                     default -> throw new IllegalArgumentException("Unknown option: " + args[index]);
                 }
@@ -220,7 +248,18 @@ public final class RingAdjacentCrashMain {
             if (neighborCount < 1) {
                 throw new IllegalArgumentException("neighbors must be positive");
             }
-            return new Options(List.copyOf(nodeCounts), neighborCount, output);
+            boolean exceedsAnyNodeCount = false;
+            for (int nodeCount : nodeCounts) {
+                if (crashCount > nodeCount) {
+                    exceedsAnyNodeCount = true;
+                    break;
+                }
+            }
+            if (crashCount < 2 || exceedsAnyNodeCount) {
+                throw new IllegalArgumentException(
+                        "crash count must be between 2 and every node count");
+            }
+            return new Options(List.copyOf(nodeCounts), neighborCount, crashCount, output);
         }
     }
 }

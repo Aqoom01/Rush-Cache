@@ -80,6 +80,23 @@ class RingMultiCrashExperimentTest {
         }
     }
 
+    @Test
+    void ringTwoMissesLastNodeOfEveryConsecutiveThreeNodeCrash() {
+        for (int nodeCount : List.of(5, 8)) {
+            for (int firstCrash = 0; firstCrash < nodeCount; firstCrash++) {
+                RingMultiCrashExperiment.Result result = experiment.runConsecutiveCrash(
+                        nodeCount, 2, firstCrash, 3);
+
+                assertEquals(2, result.detectedDeadCount(),
+                        "nodeCount=" + nodeCount + ", firstCrash=" + firstCrash);
+                assertFalse(result.allDetectedDead());
+                assertEquals(1, result.outcomes().stream()
+                        .filter(outcome -> outcome.liveObservers().isEmpty())
+                        .count());
+            }
+        }
+    }
+
     private static RingMultiCrashExperiment.TargetOutcome outcome(
             RingMultiCrashExperiment.Result result,
             String target
