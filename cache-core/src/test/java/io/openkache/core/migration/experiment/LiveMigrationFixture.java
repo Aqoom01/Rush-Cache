@@ -162,6 +162,7 @@ public final class LiveMigrationFixture {
         public final PreCopyReceiver receiver = new PreCopyReceiver();
         public boolean holdSnapshotAck;
         public boolean holdFinalAck;
+        public boolean holdLastFinalAck;
         public boolean corruptDelta;
         public TransferBatch lastSnapshot;
         public DeltaBatch lastDelta;
@@ -184,7 +185,8 @@ public final class LiveMigrationFixture {
         }
         @Override public Optional<DeltaBatch.Acknowledgement> deltaAcknowledgement(MigrationJob session, long id) {
             Optional<DeltaBatch.Acknowledgement> ack = receiver.deltaAcknowledgement(session, id);
-            return holdFinalAck && ack.filter(DeltaBatch.Acknowledgement::finalRound).isPresent() ? Optional.empty() : ack;
+            boolean hold = holdFinalAck || (holdLastFinalAck && lastDelta != null && lastDelta.last());
+            return hold && ack.filter(DeltaBatch.Acknowledgement::finalRound).isPresent() ? Optional.empty() : ack;
         }
         @Override public boolean caughtUp(MigrationJob session, long seq) { return receiver.caughtUp(session, seq); }
     }

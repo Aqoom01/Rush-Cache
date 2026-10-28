@@ -1,6 +1,6 @@
 # Pre-Copy / Post-Copy 구현
 
-2026-10-23 기준. 기존 stop-and-copy와 같은 in-process·단일 controller thread 범위다. S1~S5 세 방식 비교 backend는 [비교 실행 안내](migration-comparison/README.md)에 있다. 실제 `KvEngine`·peer 통신, 노드 생성/종료, S6·민감도 비교 suite는 후속이다. 기존 SC1~SC6 결과는 stop-and-copy 단독 결과이며 새 variant의 측정값으로 재사용하지 않는다.
+2026-10-28 기준. 기존 stop-and-copy와 같은 in-process·단일 controller thread 범위다. S1~S5·S3 민감도·S6 취소/장애 비교 backend는 [비교 실행 안내](migration-comparison/README.md)에 있다. 실제 `KvEngine`·peer 통신, 노드 생성/종료는 후속이다. 기존 SC1~SC6 결과는 stop-and-copy 단독 결과이며 새 variant의 측정값으로 재사용하지 않는다.
 
 ## Pre-Copy
 

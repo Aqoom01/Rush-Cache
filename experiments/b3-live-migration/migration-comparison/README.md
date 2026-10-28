@@ -14,7 +14,7 @@ B1~B3는 연구 담당 영역이고 SC·S는 B3 안의 실험 시나리오 ID다
 | SC1~SC6 | stop-and-copy 단독 Baseline 검증(§6.1) | 실행 코드와 기존 130회 Baseline 결과 보관 |
 | S1~S5 | 같은 입력의 stop-and-copy / pre-copy / post-copy 비교 | 비교 backend·finite Zipf·JSON 원본/요약 생성 구현 |
 | S3 민감도 | 종료 임계·라운드 상한 설정 비교 | 별도 sensitivity config·JSON 원본·요약 생성 구현 |
-| S6 | 중단 경계 비교 | 프로토콜 경계 테스트는 있으나 비교 suite는 후속 |
+| S6 | 취소·ACK 대기·부분 정리 실패·post-copy source 장애 | 별도 interruption config·JSON 원본·요약 생성 구현 |
 
 pre-copy·post-copy의 구현과 별도 정합성 테스트는 [프로토콜 구현 안내](../protocols.md)에 있다. Baseline config는 stop-and-copy만 실행하고 아래 comparison config로 세 방식을 비교한다.
 
@@ -56,7 +56,43 @@ S6 취소/장애 비교, S3 임계·라운드 민감도, E/M scaling과 실제 K
 
 JSON은 기존 `b3-comparison-json-1`에 `workloadHash`와 그 의미를 나타내는 `workloadHashKind`를 추가한다. workloadHash는 알고리즘 종료 설정을 제외한 요청 생성 규격 hash로, 같은 rho/seed의 모든 설정·방식에서 동일하다. 기존 inputHash는 종료 설정을 포함한 규격 hash로 유지한다. 둘 다 실제 trace 전체를 직렬화한 hash는 아니다.
 
-원본에는 pre-copy의 `live_delta_rounds`, `stopPhaseReason`과 `phaseEvents`가 기록된다. 요약에는 실제 라운드 범위와 THRESHOLD/ROUND_LIMIT/NOT_SHRINKING별 종료 횟수를 추가한다. 원본 재생성 시 누락·중복·출처·설정·workload hash와 라운드 범위를 검증한다. `--rebuild` 명령은 기존 비교와 같다. dirty generation별 상세 bytes를 기록하는 v2 형식과 S6 비교는 후속이다.
+원본에는 pre-copy의 `live_delta_rounds`, `stopPhaseReason`과 `phaseEvents`가 기록된다. 요약에는 실제 라운드 범위와 THRESHOLD/ROUND_LIMIT/NOT_SHRINKING별 종료 횟수를 추가한다. 원본 재생성 시 누락·중복·출처·설정·workload hash와 라운드 범위를 검증한다. `--rebuild` 명령은 기존 비교와 같다. dirty generation별 상세 bytes를 기록하는 v2 형식은 후속이며 S6는 아래 별도 backend로 실행한다.
+
+## S6 취소·장애 경계 실행
+
+```powershell
+.\gradlew.bat build :experiment-runner:installDist
+.\experiment-runner\build\install\openkache-experiment-runner\bin\openkache-experiment-runner.bat experiments/b3-live-migration/migration-comparison/interruption.properties
+```
+
+`interruption.properties`는 extended-full로 N=10,000, B=64 KiB/tick, rho=0.5, DELETE 30%, 균등 분포, pre-copy 임계 256 KiB·상한 10회로 실행한다. `interruption-quick.properties`는 extended-quick으로 N=1,000, B=4 KiB/tick, 임계 1 KiB로 줄인 재현 검증용이며 전체 묶음을 두 번 실행한다. 두 크기의 결과를 합산하지 않는다. 기존 full/quick은 9경계·135행 원본의 재생성을 위해 유지한다.
+
+| 경계 | 확인할 계약 | 적용 방식 |
+|---|---|---|
+| COPYING_ABORT | 복사 중 취소 후 source 재개·staging 폐기 | stop-and-copy, pre-copy |
+| BEFORE_COMMIT_ABORT | readyToCommit에서 취소 후 소유권 유지 | 세 방식 |
+| FINAL_ACK_WAIT_ABORT | 마지막 ACK 보류 중 commit 금지·취소 | stop-and-copy, pre-copy |
+| AFTER_COMMIT_ABORT | 전환 직후 취소 거부·destination 데이터 보존 | 세 방식 |
+| PARTIAL_CLEANUP_ABORT | source 부분 정리 실패 뒤 취소 거부·정리 재시도 | 세 방식 |
+| CATCHING_UP_ABORT | delta 라운드에서 취소 후 성공한 source 쓰기 보존 | pre-copy |
+| CATCHING_UP_PARTIAL_ABORT | live delta의 마지막이 아닌 batch가 적용·ACK된 후 같은 라운드 도중 취소 | pre-copy |
+| SOURCE_DOWN_RESUME | source 장애 중 미도착 GET은 UNAVAILABLE, 동일 데이터·fence 복구 후 재개 | post-copy |
+| PULL_TIMEOUT_RESUME | 응답 3 tick 누락 후 controller fail, FAILED 3 tick 관찰 후 복구 | post-copy |
+| SOURCE_DOWN_UNRECOVERED | source를 복구하지 않으면 FAILED 유지, 성공 쓰기·소유권·source 보존 | post-copy |
+
+새 설정은 10개 경계 × seed 5개 × 세 방식 = 150개 JSON 행이다. 실행 가능한 90개와 미지원 60개를 구분하며 미지원 원본의 metrics는 빈 객체, 요약 수치는 빈 칸/—로 둔다. 실험의 outcome=completed는 예상 계약의 검증 완료를 뜻하고, protocolOutcome은 ABORTED/DONE/FAILED로 따로 기록한다. 미복구 FAILED를 이동 성공으로 세지 않는다.
+
+부분 delta 취소 조건은 batch 목표를 full 32 KiB·quick 2 KiB로 낮춰 마지막이 아닌 batch의 적용·ACK를 관측할 수 있게 한다. 이 설정은 원본 condition과 modelConfig에 기록하며 경계 inputHash에도 포함한다. 전송한 delta bytes·ACK된 delta record 수, delta 시작과 취소 주입 이벤트를 원본에서 함께 확인해야 검증을 통과한다. 나머지 경계의 batch 목표는 기존 64 KiB다. 추가 조건은 복사 방식의 성능 비교가 아니라 취소 정합성 검증이다.
+
+source-owned 취소에서는 source 전체를, 이동 완료에서는 destination 전체를 성공 요청 oracle과 비교한다. 미복구 FAILED에서는 보존된 source 전체와 destination의 가용 데이터 전체를 각각 비교하고 미도착 조회가 UNAVAILABLE인지 확인한다. 마지막 ACK 대기의 실제 상태는 stop-and-copy에서 COPYING, pre-copy에서 SWITCHING이다. source 장애는 보존된 source의 일시적 접근 불가이며 물리적 영구 삭제·자동 복구 실험이 아니다.
+
+S6는 전용 `b3-s6-json-1` 형식이며 `InterruptionResearchMain`이 JSON을 검증해 CSV·Markdown을 생성한다. condition·candidate·입력 hash·주입 상태와 tick·예상 종결·정합성·미지원 표시·중복·누락·출처 혼합을 검증한다. 원본의 phaseEvents에 주입·소유권 전환·장애·재개·종결 근거를 남긴다.
+
+```powershell
+java -cp "cache-core/build/classes/java/main;cache-core/build/classes/java/test" io.openkache.core.migration.experiment.InterruptionResearchMain --rebuild "<S6 반복 결과 폴더>"
+```
+
+같은 seed의 모든 방식·경계에 초기 데이터와 tick별 요청 시도를 재생하지만 주입 시점과 성공 요청 집합은 다르다. tick은 가상 시간이며 실제 장애 감지 latency나 동일 작업량의 성능 우열로 해석하지 않는다. S1~S5·S3 결과 및 계획된 dirty 라운드 상세 v2와 별도 보관한다.
 
 ## 공통 Runner로 실행
 
@@ -219,7 +255,7 @@ run 폴더의 `results.md`는 seed별 결과가 같으면 조건당 한 행으�
 
 ## S1~S6 비교 (계획)
 
-**상태: S1~S5와 별도 S3 민감도 비교 backend·JSON/요약 생성 구현.** 실행은 위 comparison/sensitivity config를 따른다. S6·v2 상세 rounds 형식은 후속이다. 상세 조건은 [design.md §6.2](../design.md), 전체 v2 계획은 §6.6을 따른다.
+**상태: S1~S5·S3 민감도와 별도 S6 비교 backend·JSON/요약 생성 구현.** 실행은 위 comparison/sensitivity/interruption config를 따른다. v2 상세 rounds 형식은 후속이다. 상세 조건은 [design.md §6.2](../design.md), 전체 v2 계획은 §6.6을 따른다.
 
 같은 조건의 `stop-and-copy`와 `pre-copy`를 비교한다. S 비교에서는 stop-and-copy도 같은 입력으로 새로 실행하며, SC run의 수치를 S 비교 측정값으로 대신 쓰지 않는다.
 
@@ -236,11 +272,13 @@ run 폴더의 `results.md`는 seed별 결과가 같으면 조건당 한 행으�
 
 조건·seed마다 초기 데이터와 tick별 요청 시도를 동일하게 재생하고 fixture는 새로 만든다. 성공·BUSY에 따라 다음 요청열을 바꾸지 않는다. 각 variant의 성공한 SET·DELETE로 자기 정합성 oracle을 갱신하며 두 variant의 최종 map이 같아야 한다고 가정하지 않는다.
 
-쓰기 차단의 시작·재개를 모두 관측한다. commit gate·dirty 관찰·진행도는 test 전용 adapter가 연결한다. 기존 `StopAndCopyBaseline`과 `TickRunner`를 그대로 variant 비교기로 사용하지 않는다. 실험 진입점은 config를 읽는 공통 `experiment-runner`로 하고, test의 `experiment/comparison/MigrationComparison`을 연구 backend로 호출할 계획이다. 현재 Runner는 TCP와 B3 Baseline 연구 backend를 지원한다. S 비교 backend는 아직 없으며, 같은 config 선택·별도 JVM·원본 수집 경로에 추가할 계획이다.
+쓰기 차단은 누락 key DELETE 제어 요청의 BUSY tick으로 관측한다. 기존 `StopAndCopyBaseline`과 `TickRunner`를 그대로 variant 비교기로 사용하지 않는다. 공통 `experiment-runner`가 별도 JVM의 `ComparisonResearchMain`(S1~S5·S3) 또는 `InterruptionResearchMain`(S6)을 config로 선택한다. S6는 실제 protocol·fixture driver를 재사용하고 예상 취소·미복구 실패를 정상 이동 완료와 구별한다.
 
-S6의 CATCHING_UP은 stop-and-copy에서 미지원으로 표시한다. post-copy를 추가할 때는 소유권 선전환·미도착 key·실패 계약을 별도로 검증한 뒤 공통 입력·출력을 재사용한다.
+S6의 CATCHING_UP은 pre-copy 전용으로 표시한다. post-copy는 소유권 선전환·미도착 key·실패 계약을 별도 조건으로 검증하며 source-owned 복사 중 취소나 final ACK 대기와 억지로 짝짓지 않는다.
 
-### 생성할 결과
+### 생성할 결과 (v2 전체 계획)
+
+아래는 v2 전체 산출물 계획이다. 현재 S6가 실제 생성하는 것은 JSON 원본, phaseEvents, summary.csv, results.md, completion.properties이며 공통 Runner가 manifest와 실행 기록을 추가한다. dirty 상세 rounds.csv는 후속이다.
 
 suite 실행마다 이 폴더의 새 `runs/<execution_id>/`에 저장한다. 다른 run 폴더에는 덮어쓰기·append하지 않는다. 원본은 JSON이고 CSV·Markdown은 원본에서 재생성하는 요약이다.
 
