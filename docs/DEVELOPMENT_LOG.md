@@ -71,3 +71,30 @@
 - 첫 시각 보존·slot/owner 대기·urgent barrier의 ACK 대기·TCP 역순·겹친 retry·공정 비교 조건 보완. 인수 계획 V03-13–18 추가; Java에서 아직 미실행.
 - 작업용 작은 반례 시나리오 5개 확인. 실제 quorum/엔진/TCP 테스트·선형성 증명·벤치마크 결과 아님. 이전 320 frame/6,912모형/257회귀와 합산하지 않음.
 - 기존 소스·테스트·설정·빌드 파일을 보존. V03 Java·ionia-fourth 디렉터리 생성·전체 build·성능/SSD/fsync 재현 미실행. commit/push/merge 하지 않음.
+
+
+## 2026-10-28 | V03 Prepare 배치 제어 구현·기능 검증
+
+- 기준 revision: 36920e82fcb55e69e418723a97bee1d381e83267. 시작 시 미커밋 변경 없음. 설계 v1.1의 기능 대조군을 replication/ionia-fourth, package ionia_fourth에 분리 구현.
+- IoniaBatchSettings/PrepareSizer/BatchPlanner 및 O00에서 분리한 FourthEngine, 별도 Node/Main/CLI/포트 17401–17403/데이터 경로 추가. 기존 Client/Config/Log/History/Recovery/DTO/wire/TCP/파일 KV·stable View 재사용.
+- E/B/D 필수 검증·SHA-256 profile, matched+1 연속 chunk·logical Wf1·20ms retry, ACK 기반 전진·동기 barrier·부분/누적 ACK·View/설치/send epoch fencing, 입력 ACK 전 wire/KV 크기 검증·단독 목표 초과 집계 구현.
+- 최초 ordering·peer/index별 최초 전송·마지막 재전송을 구분. 기존 flight 중 urgent도 ACK/retry를 기다리며 D를 전체 완료 상한으로 주장하지 않음. 전송 시도/Future 통계는 NIC/socket 실측이 아님.
+- 실제 Java 21.0.11 전체 build + cache-server:installDist --rerun-tasks 성공. 329 테스트(core 261/server 52/runner 16), 실패·오류·skip 0. V03 연결 72개(원본 회귀 32·기존 이력 검사·공통 worker 연결 포함).
+- 기존 encoder 320 frame, 4 profile×64 seeds×10 완료 CRUD의 유한 이력·timeout completion 확장·오류 대조군, 3/5노드 배치 중간 crash·완료 쓰기 보존, 실제 TCP 32 hot-key, 독립 JVM 3개 crash/restart/CLI, E/B/D 혼용 거절 확인.
+- 기존 보호 168개 파일 hash 동일. 공통 API/외부 의존성/기존 방식의 소스·테스트·설정 변경 없음. 기존 파일 변경은 core Gradle sourceSet과 개발 기록·V03 설계 현재 상태. production JAR 새 클래스 포함/test 제외 확인.
+- 상세: docs/IONIA_V03.md, docs/IONIA_V03_VALIDATION.json. 문헌/설계 당시 기록은 보존하고 현재 진행 상태만 갱신.
+- 공통 데이터셋·성능·실측 heap/SSD/NIC·다중 머신·power-loss·D-PERSIST 및 2013 TCS 최종판 상세 분석은 미완료. commit/push/merge 하지 않음.
+
+
+## 2026-10-28 | V04a 고정 저장 배치의 key 적용 동시성 구현·검증
+
+- 시작 HEAD 36920e82fcb55e69e418723a97bee1d381e83267, 미커밋 V03 변경 존재. v04-baseline 사본·hash로 보존하고 commit/push 없이 진행.
+- 노션 V04의 초기 범위 V04a를 replication/ionia-fifth, package ionia_fifth에 분리. storage shard/파일/worker 수 S를 고정하고 outstanding write key 허가 K만 제어. 실제 worker 수 V04b는 미구현.
+- IoniaApplySettings/ApplyGate와 O00에서 분리한 FifthEngine, 별도 Node/Main/CLI·포트 17501–17503·데이터 keys-4-shards-2 추가. Client/Log/History/Recovery/공통 DTO·wire/TCP·파일 KV/stable View 재사용, V01/V02a/V03 정책과 합치지 않음.
+- 동일 key FIFO, ready key 공정 회전, 실제 저장 completion 뒤 허가 반환, timeout/cancel·close·KV 실패·old apply drain/reset/replay·generation fencing과 불변 진단 구현. K와 실제 thread/I/O concurrency 구분.
+- K/S를 SHA-256 profile에 포함하고 다른 K/S의 기존 디렉터리·wire 혼용, 조립 실제 S 불일치를 KV 열기 전 거절. 원본 어댑터의 key hash→shard 매핑은 유지.
+- IONIA §4.1, Early Scheduling arXiv v1 §4.3–4.4/Appendix A, resource 분석 §V-A–D·hybrid 저자본 §1/5 관련 부분 재대조. 원문 스케줄러·최종판 전체/성능 재현은 아님.
+- 실제 Java 21.0.11 전체 build/installDist --rerun-tasks 성공. 392 테스트(core 318/server 58/runner 16), 실패·오류·skip 0. V04a 연결 63개(원본 회귀 32·기존 이력 검사·공통 worker 포함).
+- K1/2/4/65536×64 seeds×10 CRUD 유한 이력·오류 대조군, 허가/순서/예외/취소/reset 경계, 실제 TCP K1/K4 각각 32 hot-key·S2 파일 배치, 독립 JVM 3개 crash/restart/rejoin/CLI·profile 보호 확인.
+- 기존 보호 194개 파일과 직전 V03 산출물 22개(공유 Gradle/개발 기록 제외) hash 동일. 기존 파일 변경은 core Gradle sourceSet·개발 기록 추가뿐. production JAR 새 클래스 포함/test 제외 확인.
+- 상세: docs/IONIA_V04A.md, docs/IONIA_V04A_VALIDATION.json. V04b·공통 성능 데이터/driver·성능/SSD·power-loss/D-PERSIST·원문 최종판 전체 재현은 미완료. commit/push/merge 미실행.
