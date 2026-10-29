@@ -65,4 +65,18 @@ class UdpWireMessageTest {
         assertEquals(UdpWireMessage.WIRE_BYTES, encoded.length);
         assertEquals(source, UdpWireMessage.decode(encoded, encoded.length));
     }
+
+    @Test
+    void swimSuspicionAndAliveGossipUseTheSameVersionedWireFrame() {
+        for (UdpWireMessage.Type type : java.util.List.of(
+                UdpWireMessage.Type.SUSPECT,
+                UdpWireMessage.Type.ALIVE)) {
+            UdpWireMessage source = new UdpWireMessage(type, 3, 2, 2, 1);
+
+            byte[] encoded = source.encode();
+
+            assertEquals(UdpWireMessage.WIRE_BYTES, encoded.length);
+            assertEquals(source, UdpWireMessage.decode(encoded, encoded.length));
+        }
+    }
 }

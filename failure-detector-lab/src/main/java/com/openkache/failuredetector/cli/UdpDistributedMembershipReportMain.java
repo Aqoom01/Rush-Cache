@@ -66,6 +66,9 @@ public final class UdpDistributedMembershipReportMain {
             properties.load(reader);
         }
         int nodeCount = Integer.parseInt(required(properties, "nodes"));
+        String controlFault = properties.getProperty("control_fault", "none");
+        long controlFaultSeed = Long.parseLong(
+                properties.getProperty("control_fault_seed", "0"));
         Set<Integer> crashed = new LinkedHashSet<>(parseCsvIds(
                 required(properties, "crash_targets")));
         Set<Integer> expectedSurvivors = new LinkedHashSet<>();
@@ -92,14 +95,18 @@ public final class UdpDistributedMembershipReportMain {
             throw new IllegalArgumentException("all node results must be real-udp-observed");
         }
 
-        return summarize(nodeCount, crashed, expectedSurvivors, nodes);
+        return summarize(
+                nodeCount, crashed, expectedSurvivors, nodes,
+                controlFault, controlFaultSeed);
     }
 
     private static ExperimentResult summarize(
             int nodeCount,
             Set<Integer> crashed,
             Set<Integer> expectedSurvivors,
-            List<NodeResult> nodes
+            List<NodeResult> nodes,
+            String controlFault,
+            long controlFaultSeed
     ) {
         boolean converged = nodes.stream().allMatch(node ->
                 node.preFaultDeadEvents() == 0
@@ -133,6 +140,8 @@ public final class UdpDistributedMembershipReportMain {
                 : null;
         return new ExperimentResult(
                 nodeCount,
+                controlFault,
+                controlFaultSeed,
                 Set.copyOf(crashed),
                 Set.copyOf(expectedSurvivors),
                 List.copyOf(nodes),
@@ -141,6 +150,8 @@ public final class UdpDistributedMembershipReportMain {
                 Map.copyOf(firstObserved),
                 lastDead,
                 convergence,
+                nodes.stream().mapToLong(NodeResult::membershipAttemptedFrames).sum(),
+                nodes.stream().mapToLong(NodeResult::membershipDroppedFrames).sum(),
                 nodes.stream().mapToLong(NodeResult::membershipControlFrames).sum(),
                 nodes.stream().mapToLong(NodeResult::sentFrames).sum(),
                 nodes.stream().mapToLong(NodeResult::sentBytes).sum()
@@ -160,6 +171,8 @@ public final class UdpDistributedMembershipReportMain {
                 parseLatencyMap(required(fields, "localDeadLatenciesNanos")),
                 number(fields, "localRemovals"),
                 number(fields, "remoteRemovals"),
+                optionalNumber(fields, "membershipAttemptedFrames"),
+                optionalNumber(fields, "membershipDroppedFrames"),
                 number(fields, "membershipControlFrames"),
                 number(fields, "sentFrames"),
                 number(fields, "sentBytes"),
@@ -170,14 +183,16 @@ public final class UdpDistributedMembershipReportMain {
     private static void writeCsv(Path path, ExperimentResult result) throws IOException {
         try (BufferedWriter writer = Files.newBufferedWriter(path, StandardCharsets.UTF_8)) {
             writer.write("node_id,pre_fault_dead,view_version,final_members,removed_targets,");
-            writer.write("local_removals,remote_removals,membership_control_frames,");
+            writer.write("local_removals,remote_removals,membership_attempted_frames,");
+            writer.write("membership_dropped_frames,membership_control_frames,");
             writer.write("sent_frames,sent_bytes,converged,wire_source\n");
             for (NodeResult node : result.nodes()) {
                 writer.write(String.format(Locale.ROOT,
-                        "%d,%d,%d,\"%s\",\"%s\",%d,%d,%d,%d,%d,%s,\"%s\"%n",
+                        "%d,%d,%d,\"%s\",\"%s\",%d,%d,%d,%d,%d,%d,%d,%s,\"%s\"%n",
                         node.nodeId(), node.preFaultDeadEvents(), node.viewVersion(),
                         joinIds(node.finalMembers()), joinIds(node.removalLatencies().keySet()),
                         node.localRemovals(), node.remoteRemovals(),
+                        node.membershipAttemptedFrames(), node.membershipDroppedFrames(),
                         node.membershipControlFrames(), node.sentFrames(), node.sentBytes(),
                         nodeConverged(node, result), node.wireSource()));
             }
@@ -192,6 +207,8 @@ public final class UdpDistributedMembershipReportMain {
             writer.write("이며, 이 목록은 runner의 fault 주입과 사후 평가에만 사용했다. ");
             writer.write("Membership은 detector가 실제로 발생시킨 DEAD 이벤트만으로 갱신했다.\n\n");
             writer.write("| 결과 | 값 |\n|---|---:|\n");
+            writer.write("| Membership control fault / seed | "
+                    + result.controlFault() + " / " + result.controlFaultSeed() + " |\n");
             writer.write("| 생존 노드 View 수렴 | "
                     + (result.converged() ? "성공" : "실패") + " |\n");
             writer.write("| 마지막 장애 최초 DEAD | " + duration(result.lastDeadNanos()) + " |\n");
@@ -199,6 +216,9 @@ public final class UdpDistributedMembershipReportMain {
                     + duration(result.convergenceNanos()) + " |\n");
             writer.write("| Membership control frame | "
                     + result.membershipControlFrames() + " |\n");
+            writer.write("| Membership attempted / injected drop | "
+                    + result.membershipAttemptedFrames() + " / "
+                    + result.membershipDroppedFrames() + " |\n");
             writer.write("| 생존 노드 송신 frame / byte | "
                     + result.survivorSentFrames() + " / "
                     + result.survivorSentBytes() + " |\n\n");
@@ -235,6 +255,8 @@ public final class UdpDistributedMembershipReportMain {
                 + "  \"generatedAt\": \"" + Instant.now() + "\",\n"
                 + "  \"source\": \"real-udp-observed\",\n"
                 + "  \"nodeCount\": " + result.nodeCount() + ",\n"
+                + "  \"controlFault\": \"" + result.controlFault() + "\",\n"
+                + "  \"controlFaultSeed\": " + result.controlFaultSeed() + ",\n"
                 + "  \"crashTargets\": \"" + joinIds(result.crashed()) + "\",\n"
                 + "  \"survivorResults\": " + result.nodes().size() + ",\n"
                 + "  \"converged\": " + result.converged() + "\n"
@@ -312,6 +334,11 @@ public final class UdpDistributedMembershipReportMain {
         return Long.parseLong(required(fields, name));
     }
 
+    private static long optionalNumber(Map<String, String> fields, String name) {
+        String value = fields.get(name);
+        return value == null || value.equals("null") ? 0 : Long.parseLong(value);
+    }
+
     private static String duration(Long nanos) {
         return nanos == null ? "—" : String.format(
                 Locale.ROOT, "%.3f ms", nanos / 1_000_000.0);
@@ -344,6 +371,8 @@ public final class UdpDistributedMembershipReportMain {
             Map<Integer, Long> localDeadLatencies,
             long localRemovals,
             long remoteRemovals,
+            long membershipAttemptedFrames,
+            long membershipDroppedFrames,
             long membershipControlFrames,
             long sentFrames,
             long sentBytes,
@@ -353,6 +382,8 @@ public final class UdpDistributedMembershipReportMain {
 
     record ExperimentResult(
             int nodeCount,
+            String controlFault,
+            long controlFaultSeed,
             Set<Integer> crashed,
             Set<Integer> expectedSurvivors,
             List<NodeResult> nodes,
@@ -361,6 +392,8 @@ public final class UdpDistributedMembershipReportMain {
             Map<Integer, Long> firstObserved,
             Long lastDeadNanos,
             Long convergenceNanos,
+            long membershipAttemptedFrames,
+            long membershipDroppedFrames,
             long membershipControlFrames,
             long survivorSentFrames,
             long survivorSentBytes

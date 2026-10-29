@@ -4,6 +4,7 @@ import com.openkache.failuredetector.adaptive.AdaptiveDeadlineConfig;
 import com.openkache.failuredetector.adaptive.AdaptiveDeadlineFailureDetector;
 import com.openkache.failuredetector.core.DetectorEvent;
 import com.openkache.failuredetector.core.FailureDetector;
+import com.openkache.failuredetector.core.NodeStatus;
 import com.openkache.failuredetector.deadline.FixedDeadlineConfig;
 import com.openkache.failuredetector.deadline.FixedDeadlineFailureDetector;
 import com.openkache.failuredetector.experiment.DetectorProfile;
@@ -21,10 +22,12 @@ import java.net.SocketException;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -37,6 +40,7 @@ public final class UdpExperimentNodeMain {
     private static final int OBSERVER_ID = 0;
     private static final int TARGET_ID = 1;
     private static final int HELPER_ID = 2;
+    private static final long SWIM_PROTOCOL_WARMUP_MILLIS = 3_000;
 
     private UdpExperimentNodeMain() {
     }
@@ -80,7 +84,11 @@ public final class UdpExperimentNodeMain {
         private final AtomicLong receivedBytes = new AtomicLong();
         private final CountDownLatch finished = new CountDownLatch(1);
         private final Map<Long, Probe> probes = new HashMap<>();
+        private final Map<Long, ConfirmationProbe> confirmationProbes = new HashMap<>();
         private final Map<Long, VerificationRound> verificationRounds = new HashMap<>();
+        private final Map<Integer, Long> knownIncarnations = new HashMap<>();
+        private final Set<SuspicionRound> seenSuspicionRounds = new HashSet<>();
+        private final Set<SuspicionRound> reportedSuspicionRounds = new HashSet<>();
         private final List<DetectorEvent> detectorEvents = new ArrayList<>();
         private final FailureDetector detector;
         private final long startedAtNanos = System.nanoTime();
@@ -91,6 +99,12 @@ public final class UdpExperimentNodeMain {
         private long verificationRoundFailures;
         private long verificationProbeSuccesses;
         private long verificationProbeFailures;
+        private long suspicionGossipFrames;
+        private long aliveGossipFrames;
+        private long independentConfirmations;
+        private long confirmationProbeSuccesses;
+        private long confirmationProbeFailures;
+        private long localIncarnation = 1;
 
         private Node(NodeConfig config) throws SocketException {
             this.config = config;
@@ -124,7 +138,7 @@ public final class UdpExperimentNodeMain {
             state.scheduleAtFixedRate(this::tick, 0, 50, TimeUnit.MILLISECONDS);
             state.scheduleAtFixedRate(
                     this::sendProtocolTraffic,
-                    0,
+                    protocolInitialDelayMillis(config.profile()),
                     HEARTBEAT_INTERVAL_MILLIS,
                     TimeUnit.MILLISECONDS
             );
@@ -179,9 +193,11 @@ public final class UdpExperimentNodeMain {
                         profile.id()
                 );
                 case F2_SWIM_BASE -> new SwimLifeguardDetector(
-                        nodeName(OBSERVER_ID), config.peers().size() + 1, swimConfig(false));
+                        nodeName(OBSERVER_ID), config.peers().size() + 1,
+                        swimConfig(false, config.peers().size() + 1));
                 case F3_SWIM_LIFEGUARD -> new SwimLifeguardDetector(
-                        nodeName(OBSERVER_ID), config.peers().size() + 1, swimConfig(true));
+                        nodeName(OBSERVER_ID), config.peers().size() + 1,
+                        swimConfig(true, config.peers().size() + 1));
                 case F5_FIXED_DEADLINE_RING -> new FixedDeadlineFailureDetector(
                         nodeName(OBSERVER_ID), udpRingConfig(false, 2));
                 case F6_FIXED_DEADLINE_RING_VERIFY -> new FixedDeadlineFailureDetector(
@@ -189,10 +205,14 @@ public final class UdpExperimentNodeMain {
                         udpRingConfig(true, config.failedVerificationRoundsToDead()));
                 case F7A_SWIM_LHA_PROBE -> new SwimLifeguardDetector(
                         nodeName(OBSERVER_ID), config.peers().size() + 1,
-                        udpSwimConfig(SwimLifeguardConfig.lhaProbeOnly()));
+                        udpSwimConfig(
+                                SwimLifeguardConfig.lhaProbeOnly(),
+                                config.peers().size() + 1));
                 case F7B_SWIM_LHA_SUSPICION -> new SwimLifeguardDetector(
                         nodeName(OBSERVER_ID), config.peers().size() + 1,
-                        udpSwimConfig(SwimLifeguardConfig.lhaSuspicionOnly()));
+                        udpSwimConfig(
+                                SwimLifeguardConfig.lhaSuspicionOnly(),
+                                config.peers().size() + 1));
                 case F7C_SWIM_BUDDY -> throw new UnsupportedOperationException(
                         profile.id() + " is currently simulation-only; no UDP adapter is implemented");
             };
@@ -212,36 +232,6 @@ public final class UdpExperimentNodeMain {
                     verify,
                     Duration.ofMillis(PROBE_TIMEOUT_MILLIS),
                     failedVerificationRoundsToDead
-            );
-        }
-
-        private static SwimLifeguardConfig udpSwimConfig(SwimLifeguardConfig source) {
-            return new SwimLifeguardConfig(
-                    Duration.ofMillis(HEARTBEAT_INTERVAL_MILLIS),
-                    Duration.ofMillis(PROBE_TIMEOUT_MILLIS),
-                    1,
-                    source.suspicionMultiplier(),
-                    source.suspicionMaxTimeoutMultiplier(),
-                    1,
-                    source.awarenessMaxMultiplier(),
-                    source.lhaProbeEnabled(),
-                    source.lhaSuspicionEnabled(),
-                    source.suspicionConfirmationsEnabled(),
-                    source.buddySystemEnabled()
-            );
-        }
-
-        private static SwimLifeguardConfig swimConfig(boolean lifeguard) {
-            return new SwimLifeguardConfig(
-                    Duration.ofMillis(HEARTBEAT_INTERVAL_MILLIS),
-                    Duration.ofMillis(PROBE_TIMEOUT_MILLIS),
-                    1,
-                    4,
-                    2,
-                    1,
-                    8,
-                    lifeguard,
-                    lifeguard
             );
         }
 
@@ -270,6 +260,14 @@ public final class UdpExperimentNodeMain {
                 return;
             }
             int target = (config.nodeId() + 1) % (config.peers().size() + 1);
+            if (config.nodeId() == OBSERVER_ID
+                    && detector instanceof SwimLifeguardDetector swim
+                    && (swim.status(nodeName(target)) != NodeStatus.ALIVE
+                    || probes.values().stream().anyMatch(probe ->
+                            probe.stage() == ProbeStage.DIRECT
+                                    || probe.stage() == ProbeStage.INDIRECT))) {
+                return;
+            }
             long probeId = ++sequence;
             if (config.nodeId() == OBSERVER_ID) {
                 probes.put(probeId, new Probe(probeId, ProbeStage.DIRECT));
@@ -319,8 +317,12 @@ public final class UdpExperimentNodeMain {
             probes.remove(probeId);
             SwimLifeguardDetector swim = (SwimLifeguardDetector) detector;
             long now = elapsedNanos();
-            swim.recordProbe(now, nodeName(TARGET_ID), false, 1);
+            long incarnation = knownIncarnation(TARGET_ID);
+            swim.recordProbe(now, nodeName(TARGET_ID), false, incarnation);
             drainEvents();
+            if (confirmationGossipEnabled()) {
+                broadcastSuspect(TARGET_ID, incarnation);
+            }
         }
 
         private void receiveLoop() {
@@ -369,6 +371,8 @@ public final class UdpExperimentNodeMain {
                                 + faultAtNanos + ",\"target\":\"node-1\"}");
                     }
                 }
+                case SUSPECT -> onSuspect(message);
+                case ALIVE -> onAlive(message);
                 case MEMBERSHIP_REMOVE, EXPERIMENT_FINISH, PROCESS_CRASH -> {
                     // Reserved for the distributed-membership UDP harness.
                 }
@@ -392,6 +396,15 @@ public final class UdpExperimentNodeMain {
         }
 
         private void onAck(UdpWireMessage message) {
+            ConfirmationProbe confirmation = confirmationProbes.remove(message.sequence());
+            if (confirmation != null && message.target() == confirmation.targetId()) {
+                confirmationProbeSuccesses++;
+                sendAliveEvidence(
+                        confirmation.reporterId(),
+                        confirmation.targetId(),
+                        confirmation.incarnation());
+                return;
+            }
             if (config.nodeId() != OBSERVER_ID || message.target() != TARGET_ID) {
                 return;
             }
@@ -404,8 +417,170 @@ public final class UdpExperimentNodeMain {
                 return;
             }
             SwimLifeguardDetector swim = (SwimLifeguardDetector) detector;
-            swim.recordProbe(elapsedNanos(), nodeName(TARGET_ID), true, 1);
+            swim.recordProbe(
+                    elapsedNanos(),
+                    nodeName(TARGET_ID),
+                    true,
+                    knownIncarnation(TARGET_ID));
             drainEvents();
+        }
+
+        private void onSuspect(UdpWireMessage message) {
+            if (!confirmationGossipEnabled() || message.sequence() < 1
+                    || message.target() < 0 || message.origin() < 0
+                    || message.origin() == message.target()) {
+                return;
+            }
+            int targetId = message.target();
+            long incarnation = message.sequence();
+            knownIncarnations.merge(targetId, incarnation, Math::max);
+
+            if (targetId == config.nodeId()) {
+                localIncarnation = refutationIncarnation(localIncarnation, incarnation);
+                knownIncarnations.put(targetId, localIncarnation);
+                broadcastAlive(targetId, localIncarnation);
+                return;
+            }
+
+            if (detector instanceof SwimLifeguardDetector swim) {
+                long previousDeadline = swim.suspicionDeadlineNanos(nodeName(targetId));
+                swim.suspect(
+                        elapsedNanos(),
+                        nodeName(targetId),
+                        nodeName(message.origin()),
+                        incarnation);
+                long updatedDeadline = swim.suspicionDeadlineNanos(nodeName(targetId));
+                if (previousDeadline > 0 && updatedDeadline > 0
+                        && updatedDeadline < previousDeadline) {
+                    independentConfirmations++;
+                    System.out.println("EVENT_JSON={\"kind\":\"swim-confirmation\","
+                            + "\"atNanos\":" + elapsedNanos()
+                            + ",\"target\":\"" + nodeName(targetId)
+                            + "\",\"reporter\":\"" + nodeName(message.origin())
+                            + "\",\"oldDeadlineNanos\":" + previousDeadline
+                            + ",\"newDeadlineNanos\":" + updatedDeadline + "}");
+                }
+                drainEvents();
+            }
+
+            SuspicionRound round = new SuspicionRound(targetId, incarnation);
+            if (seenSuspicionRounds.add(round)) {
+                startConfirmationProbe(message.origin(), targetId, incarnation);
+            }
+        }
+
+        private void onAlive(UdpWireMessage message) {
+            if (!confirmationGossipEnabled() || message.sequence() < 1
+                    || message.target() < 0 || message.origin() != message.target()) {
+                return;
+            }
+            int targetId = message.target();
+            long incarnation = message.sequence();
+            knownIncarnations.merge(targetId, incarnation, Math::max);
+            seenSuspicionRounds.removeIf(round -> round.targetId() == targetId
+                    && round.incarnation() <= incarnation);
+            reportedSuspicionRounds.removeIf(round -> round.targetId() == targetId
+                    && round.incarnation() <= incarnation);
+            if (detector instanceof SwimLifeguardDetector swim) {
+                swim.recordProbe(elapsedNanos(), nodeName(targetId), true, incarnation);
+                drainEvents();
+            }
+        }
+
+        private void startConfirmationProbe(
+                int reporterId,
+                int targetId,
+                long incarnation
+        ) {
+            long probeId = ++sequence;
+            confirmationProbes.put(probeId, new ConfirmationProbe(
+                    probeId,
+                    reporterId,
+                    targetId,
+                    incarnation,
+                    ConfirmationProbeStage.DIRECT));
+            send(targetId, new UdpWireMessage(
+                    UdpWireMessage.Type.PING,
+                    probeId,
+                    config.nodeId(),
+                    config.nodeId(),
+                    targetId));
+            state.schedule(
+                    () -> onConfirmationProbeTimeout(probeId),
+                    PROBE_TIMEOUT_MILLIS,
+                    TimeUnit.MILLISECONDS);
+        }
+
+        private void onConfirmationProbeTimeout(long probeId) {
+            ConfirmationProbe probe = confirmationProbes.get(probeId);
+            if (probe == null) {
+                return;
+            }
+            if (probe.stage() == ConfirmationProbeStage.DIRECT) {
+                int helper = indirectHelper(
+                        config.nodeId(), probe.targetId(), config.peers().keySet());
+                if (helper >= 0) {
+                    confirmationProbes.put(probeId, probe.withStage(
+                            ConfirmationProbeStage.INDIRECT));
+                    send(helper, new UdpWireMessage(
+                            UdpWireMessage.Type.PING_REQUEST,
+                            probeId,
+                            config.nodeId(),
+                            config.nodeId(),
+                            probe.targetId()));
+                    state.schedule(
+                            () -> onConfirmationProbeTimeout(probeId),
+                            PROBE_TIMEOUT_MILLIS,
+                            TimeUnit.MILLISECONDS);
+                    return;
+                }
+            }
+            confirmationProbes.remove(probeId);
+            confirmationProbeFailures++;
+            broadcastSuspect(probe.targetId(), probe.incarnation());
+        }
+
+        private void broadcastSuspect(int targetId, long incarnation) {
+            SuspicionRound round = new SuspicionRound(targetId, incarnation);
+            if (!reportedSuspicionRounds.add(round)) {
+                return;
+            }
+            seenSuspicionRounds.add(round);
+            for (int peer : config.peers().keySet()) {
+                suspicionGossipFrames++;
+                send(peer, new UdpWireMessage(
+                        UdpWireMessage.Type.SUSPECT,
+                        incarnation,
+                        config.nodeId(),
+                        config.nodeId(),
+                        targetId));
+            }
+        }
+
+        private void broadcastAlive(int targetId, long incarnation) {
+            for (int peer : config.peers().keySet()) {
+                aliveGossipFrames++;
+                send(peer, new UdpWireMessage(
+                        UdpWireMessage.Type.ALIVE,
+                        incarnation,
+                        config.nodeId(),
+                        targetId,
+                        targetId));
+            }
+        }
+
+        private void sendAliveEvidence(int reporterId, int targetId, long incarnation) {
+            aliveGossipFrames++;
+            send(reporterId, new UdpWireMessage(
+                    UdpWireMessage.Type.ALIVE,
+                    incarnation,
+                    config.nodeId(),
+                    targetId,
+                    targetId));
+        }
+
+        private long knownIncarnation(int targetId) {
+            return knownIncarnations.getOrDefault(targetId, 1L);
         }
 
         private void tick() {
@@ -487,6 +662,16 @@ public final class UdpExperimentNodeMain {
                     || config.profile() == DetectorProfile.F6_FIXED_DEADLINE_RING_VERIFY;
         }
 
+        private boolean confirmationGossipEnabled() {
+            return config.profile() == DetectorProfile.F3_SWIM_LIFEGUARD
+                    || config.profile() == DetectorProfile.F7B_SWIM_LHA_SUSPICION;
+        }
+
+        private int configuredSuspicionMaxConfirmations() {
+            return detector instanceof SwimLifeguardDetector swim
+                    ? swim.config().maxConfirmations() : 0;
+        }
+
         private void drainEvents() {
             if (detector == null) {
                 return;
@@ -546,6 +731,17 @@ public final class UdpExperimentNodeMain {
                     + verificationProbeSuccesses + ","
                     + "\"verificationProbeFailures\":"
                     + verificationProbeFailures + ","
+                    + "\"suspicionGossipFrames\":" + suspicionGossipFrames + ","
+                    + "\"aliveGossipFrames\":" + aliveGossipFrames + ","
+                    + "\"independentConfirmations\":" + independentConfirmations + ","
+                    + "\"confirmationProbeSuccesses\":"
+                    + confirmationProbeSuccesses + ","
+                    + "\"confirmationProbeFailures\":"
+                    + confirmationProbeFailures + ","
+                    + "\"protocolWarmupMillis\":"
+                    + protocolInitialDelayMillis(config.profile()) + ","
+                    + "\"suspicionMaxConfirmations\":"
+                    + configuredSuspicionMaxConfirmations() + ","
                     + "\"timeSource\":\"observer-monotonic\","
                     + "\"wireSource\":\"real-udp-observed\","
                     + "\"faultAtNanos\":" + nullable(faultAtNanos) + ","
@@ -593,6 +789,22 @@ public final class UdpExperimentNodeMain {
         }
     }
 
+    private record ConfirmationProbe(
+            long id,
+            int reporterId,
+            int targetId,
+            long incarnation,
+            ConfirmationProbeStage stage
+    ) {
+        private ConfirmationProbe withStage(ConfirmationProbeStage nextStage) {
+            return new ConfirmationProbe(
+                    id, reporterId, targetId, incarnation, nextStage);
+        }
+    }
+
+    private record SuspicionRound(int targetId, long incarnation) {
+    }
+
     private static final class VerificationRound {
         private final long id;
         private final int expected;
@@ -628,6 +840,11 @@ public final class UdpExperimentNodeMain {
         DIRECT,
         INDIRECT,
         VERIFY
+    }
+
+    private enum ConfirmationProbeStage {
+        DIRECT,
+        INDIRECT
     }
 
     private record NodeConfig(
@@ -685,6 +902,43 @@ public final class UdpExperimentNodeMain {
         }
     }
 
+    static SwimLifeguardConfig udpSwimConfig(
+            SwimLifeguardConfig source,
+            int clusterSize
+    ) {
+        return new SwimLifeguardConfig(
+                Duration.ofMillis(Node.HEARTBEAT_INTERVAL_MILLIS),
+                Duration.ofMillis(Node.PROBE_TIMEOUT_MILLIS),
+                1,
+                source.suspicionMultiplier(),
+                source.suspicionMaxTimeoutMultiplier(),
+                boundedConfirmationCount(clusterSize, source.maxConfirmations()),
+                source.awarenessMaxMultiplier(),
+                source.lhaProbeEnabled(),
+                source.lhaSuspicionEnabled(),
+                source.suspicionConfirmationsEnabled(),
+                source.buddySystemEnabled()
+        );
+    }
+
+    static SwimLifeguardConfig swimConfig(boolean lifeguard, int clusterSize) {
+        return new SwimLifeguardConfig(
+                Duration.ofMillis(Node.HEARTBEAT_INTERVAL_MILLIS),
+                Duration.ofMillis(Node.PROBE_TIMEOUT_MILLIS),
+                1,
+                4,
+                2,
+                lifeguard ? boundedConfirmationCount(clusterSize, 3) : 0,
+                8,
+                lifeguard,
+                lifeguard
+        );
+    }
+
+    static int boundedConfirmationCount(int clusterSize, int requested) {
+        return Math.min(requested, Math.max(0, clusterSize - 2));
+    }
+
     private static String nodeName(int nodeId) {
         return "node-" + nodeId;
     }
@@ -732,6 +986,37 @@ public final class UdpExperimentNodeMain {
             throw new IllegalArgumentException("not enough distinct verification helpers");
         }
         return List.copyOf(helpers.subList(0, helperCount));
+    }
+
+    static int indirectHelper(
+            int observerId,
+            int targetId,
+            Iterable<Integer> peerIds
+    ) {
+        List<Integer> candidates = new ArrayList<>();
+        for (int peerId : peerIds) {
+            if (peerId != observerId && peerId != targetId) {
+                candidates.add(peerId);
+            }
+        }
+        candidates.sort(Comparator.naturalOrder());
+        return candidates.isEmpty() ? -1 : candidates.get(0);
+    }
+
+    static long refutationIncarnation(long current, long suspected) {
+        if (current < 1 || suspected < 1) {
+            throw new IllegalArgumentException("incarnations must be positive");
+        }
+        return suspected >= current ? suspected + 1 : current;
+    }
+
+    static long protocolInitialDelayMillis(DetectorProfile profile) {
+        return switch (profile) {
+            case F2_SWIM_BASE, F3_SWIM_LIFEGUARD,
+                    F7A_SWIM_LHA_PROBE, F7B_SWIM_LHA_SUSPICION ->
+                    SWIM_PROTOCOL_WARMUP_MILLIS;
+            default -> 0;
+        };
     }
 
     private static String nullable(Long value) {

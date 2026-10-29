@@ -12,6 +12,7 @@ parallelism=${3:-2}
 node_count=${4:-5}
 script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 lab_dir=$(CDPATH= cd -- "$script_dir/../.." && pwd)
+root_dir=$(CDPATH= cd -- "$lab_dir/.." && pwd)
 single_runner="$script_dir/run-udp-netem.sh"
 docker_bin=${DOCKER_BIN:-docker}
 
@@ -32,6 +33,7 @@ mkdir -p "$output_dir"
 printf 'methods=ring-verify-h3-q3-r3,swim-lifeguard\nfaults=crash,loss15,loss45\nrepetitions=%s\nparallelism=%s\nnodes=%s\n' \
   "$repetitions" "$parallelism" "$node_count" >"$output_dir/matrix.properties"
 
+"$root_dir/gradlew" -p "$lab_dir" jar
 "$docker_bin" build \
   --file "$lab_dir/docker/Dockerfile.udp" \
   --tag openkache-fd-udp:local \

@@ -13,6 +13,7 @@ node_count=${4:-3}
 netem_seed=${5:-}
 script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 lab_dir=$(CDPATH= cd -- "$script_dir/../.." && pwd)
+root_dir=$(CDPATH= cd -- "$lab_dir/.." && pwd)
 compose_file="$lab_dir/docker/compose.udp.yml"
 docker_bin=${DOCKER_BIN:-docker}
 project="openkache-fd-udp-$$"
@@ -88,6 +89,7 @@ compose() {
 if [ "${FD_UDP_SKIP_BUILD:-0}" = "1" ]; then
   compose up --no-build --detach $services
 else
+  "$root_dir/gradlew" -p "$lab_dir" jar
   compose up --build --detach $services
 fi
 

@@ -1,5 +1,6 @@
 package com.openkache.failuredetector.transport;
 
+import com.openkache.failuredetector.experiment.DetectorProfile;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -38,5 +39,47 @@ class UdpExperimentNodeMainTest {
                 IllegalArgumentException.class,
                 () -> UdpExperimentNodeMain.verificationHelpers(
                         0, 1, java.util.List.of(0, 1, 2), 2));
+    }
+
+    @Test
+    void confirmationProbeUsesADistinctDeterministicIndirectHelper() {
+        assertEquals(
+                2,
+                UdpExperimentNodeMain.indirectHelper(
+                        0, 1, java.util.List.of(4, 1, 3, 2)));
+        assertEquals(
+                -1,
+                UdpExperimentNodeMain.indirectHelper(
+                        0, 1, java.util.List.of(0, 1)));
+    }
+
+    @Test
+    void aliveRefutationAdvancesOnlyCurrentOrNewerSuspicionIncarnation() {
+        assertEquals(2, UdpExperimentNodeMain.refutationIncarnation(1, 1));
+        assertEquals(5, UdpExperimentNodeMain.refutationIncarnation(2, 4));
+        assertEquals(5, UdpExperimentNodeMain.refutationIncarnation(5, 2));
+        assertThrows(IllegalArgumentException.class,
+                () -> UdpExperimentNodeMain.refutationIncarnation(0, 1));
+    }
+
+    @Test
+    void swimTrafficWaitsForPeersWhileRingKeepsItsDetectorWarmupContract() {
+        assertEquals(
+                3_000,
+                UdpExperimentNodeMain.protocolInitialDelayMillis(
+                        DetectorProfile.F3_SWIM_LIFEGUARD));
+        assertEquals(
+                0,
+                UdpExperimentNodeMain.protocolInitialDelayMillis(
+                        DetectorProfile.F6_FIXED_DEADLINE_RING_VERIFY));
+    }
+
+    @Test
+    void fiveNodeLifeguardKeepsOneIndirectProbeAndThreeConfirmations() {
+        var config = UdpExperimentNodeMain.swimConfig(true, 5);
+
+        assertEquals(1, config.indirectChecks());
+        assertEquals(3, config.maxConfirmations());
+        assertEquals(1, UdpExperimentNodeMain.boundedConfirmationCount(3, 3));
     }
 }

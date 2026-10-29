@@ -116,6 +116,8 @@ public final class UdpDistributedMembershipNodeMain {
         private Long faultAtNanos;
         private long localRemovals;
         private long remoteRemovals;
+        private long membershipAttemptedFrames;
+        private long membershipDroppedFrames;
         private long membershipControlFrames;
         private long verificationRoundSuccesses;
         private long verificationRoundFailures;
@@ -231,6 +233,9 @@ public final class UdpDistributedMembershipNodeMain {
                 case FAULT_START -> onFaultStart();
                 case EXPERIMENT_FINISH -> finish();
                 case PROCESS_CRASH -> Runtime.getRuntime().halt(137);
+                case SUSPECT, ALIVE -> {
+                    // Reserved for the SWIM confirmation-gossip UDP harness.
+                }
             }
         }
 
@@ -411,15 +416,42 @@ public final class UdpDistributedMembershipNodeMain {
                 VersionedMembershipView.VersionStamp stamp
         ) {
             for (int peer : config.peers().keySet()) {
-                send(peer, new UdpWireMessage(
-                        UdpWireMessage.Type.MEMBERSHIP_REMOVE,
-                        stamp.logicalTime(),
-                        config.nodeId(),
-                        config.nodeId(),
-                        targetId
-                ));
-                membershipControlFrames++;
+                for (int copy = 0; copy < config.membershipFaultPolicy().copies(); copy++) {
+                    membershipAttemptedFrames++;
+                    if (config.membershipFaultPolicy().drop(
+                            config.nodeId(), peer, targetId, stamp.logicalTime(), copy)) {
+                        membershipDroppedFrames++;
+                        System.out.println("EVENT_JSON={\"kind\":\"membership-fault\","
+                                + "\"action\":\"drop\",\"target\":\""
+                                + nodeName(targetId) + "\",\"receiver\":\""
+                                + nodeName(peer) + "\",\"copy\":" + copy + "}");
+                        continue;
+                    }
+                    UdpWireMessage message = new UdpWireMessage(
+                            UdpWireMessage.Type.MEMBERSHIP_REMOVE,
+                            stamp.logicalTime(),
+                            config.nodeId(),
+                            config.nodeId(),
+                            targetId
+                    );
+                    long delayMillis = config.membershipFaultPolicy()
+                            .delayMillis(targetId, copy);
+                    if (delayMillis == 0) {
+                        sendMembership(peer, message);
+                    } else {
+                        state.schedule(
+                                () -> sendMembership(peer, message),
+                                delayMillis,
+                                TimeUnit.MILLISECONDS
+                        );
+                    }
+                }
             }
+        }
+
+        private void sendMembership(int peer, UdpWireMessage message) {
+            membershipControlFrames++;
+            send(peer, message);
         }
 
         private void syncTargets(long nowNanos, String source) {
@@ -501,6 +533,10 @@ public final class UdpDistributedMembershipNodeMain {
                     + joinLatencies(localDeadLatencies) + "\","
                     + "\"localRemovals\":" + localRemovals + ","
                     + "\"remoteRemovals\":" + remoteRemovals + ","
+                    + "\"membershipAttemptedFrames\":"
+                    + membershipAttemptedFrames + ","
+                    + "\"membershipDroppedFrames\":"
+                    + membershipDroppedFrames + ","
                     + "\"membershipControlFrames\":" + membershipControlFrames + ","
                     + "\"verificationRoundSuccesses\":"
                     + verificationRoundSuccesses + ","
@@ -580,6 +616,7 @@ public final class UdpDistributedMembershipNodeMain {
             int verificationHelperCount,
             int verificationFailureQuorum,
             int failedRoundsToDead,
+            MembershipFaultPolicy membershipFaultPolicy,
             Map<Integer, InetSocketAddress> peers,
             List<String> initialMembers
     ) {
@@ -591,6 +628,13 @@ public final class UdpDistributedMembershipNodeMain {
             int helperCount = optionalInteger("FD_VERIFY_HELPER_COUNT", 3);
             int failureQuorum = optionalInteger("FD_VERIFY_FAILURE_QUORUM", 3);
             int failedRounds = optionalInteger("FD_VERIFY_FAILED_ROUNDS", 3);
+            MembershipFaultPolicy membershipFaultPolicy = new MembershipFaultPolicy(
+                    optionalInteger("FD_MEMBERSHIP_LOSS_PERCENT", 0),
+                    optionalInteger("FD_MEMBERSHIP_DELAY_MILLIS", 0),
+                    optionalInteger("FD_MEMBERSHIP_REORDER_MILLIS", 0),
+                    optionalInteger("FD_MEMBERSHIP_COPIES", 1),
+                    optionalLong("FD_MEMBERSHIP_FAULT_SEED", 1)
+            );
             if (neighborCount < 1 || helperCount < 1 || failureQuorum < 1
                     || failureQuorum > helperCount || failedRounds < 1) {
                 throw new IllegalArgumentException("invalid distributed UDP settings");
@@ -613,7 +657,8 @@ public final class UdpDistributedMembershipNodeMain {
             }
             return new NodeConfig(
                     nodeId, port, duration, neighborCount, helperCount, failureQuorum,
-                    failedRounds, Map.copyOf(peers), List.copyOf(members));
+                    failedRounds, membershipFaultPolicy,
+                    Map.copyOf(peers), List.copyOf(members));
         }
 
         private static int integer(String name) {
@@ -625,12 +670,64 @@ public final class UdpDistributedMembershipNodeMain {
             return value == null || value.isBlank() ? defaultValue : Integer.parseInt(value);
         }
 
+        private static long optionalLong(String name, long defaultValue) {
+            String value = System.getenv(name);
+            return value == null || value.isBlank() ? defaultValue : Long.parseLong(value);
+        }
+
         private static String required(String name) {
             String value = System.getenv(name);
             if (value == null || value.isBlank()) {
                 throw new IllegalArgumentException("missing environment variable " + name);
             }
             return value;
+        }
+    }
+
+    record MembershipFaultPolicy(
+            int lossPercent,
+            int baseDelayMillis,
+            int reorderMillis,
+            int copies,
+            long seed
+    ) {
+        MembershipFaultPolicy {
+            if (lossPercent < 0 || lossPercent > 100 || baseDelayMillis < 0
+                    || reorderMillis < 0 || copies < 1 || seed < 0) {
+                throw new IllegalArgumentException("invalid Membership fault policy");
+            }
+        }
+
+        boolean drop(
+                int sender,
+                int receiver,
+                int target,
+                long logicalTime,
+                int copy
+        ) {
+            if (lossPercent == 0) {
+                return false;
+            }
+            long value = seed;
+            value = mix(value ^ sender);
+            value = mix(value ^ ((long) receiver << 8));
+            value = mix(value ^ ((long) target << 16));
+            value = mix(value ^ (logicalTime << 24));
+            value = mix(value ^ ((long) copy << 32));
+            return Math.floorMod(value, 100) < lossPercent;
+        }
+
+        long delayMillis(int target, int copy) {
+            long reorderDelay = target == 1 ? reorderMillis : 0;
+            return (long) baseDelayMillis + reorderDelay + copy * 5L;
+        }
+
+        private static long mix(long value) {
+            value ^= value >>> 33;
+            value *= 0xff51afd7ed558ccdl;
+            value ^= value >>> 33;
+            value *= 0xc4ceb9fe1a85ec53l;
+            return value ^ (value >>> 33);
         }
     }
 

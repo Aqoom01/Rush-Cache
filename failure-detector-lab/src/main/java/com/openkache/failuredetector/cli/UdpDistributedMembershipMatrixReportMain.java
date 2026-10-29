@@ -68,15 +68,17 @@ public final class UdpDistributedMembershipMatrixReportMain {
             writer.write("repetition,successful,last_dead_nanos,view_convergence_nanos,");
             writer.write("hidden_target_observed_nanos,membership_control_frames,");
             writer.write("survivor_sent_frames,survivor_sent_bytes,pre_fault_dead_events,");
-            writer.write("wire_source\n");
+            writer.write("membership_attempted_frames,membership_dropped_frames,wire_source\n");
             for (Run run : runs) {
                 var result = run.result();
                 writer.write(String.format(Locale.ROOT,
-                        "%d,%s,%s,%s,%s,%d,%d,%d,%d,\"real-udp-observed\"%n",
+                        "%d,%s,%s,%s,%s,%d,%d,%d,%d,%d,%d,\"real-udp-observed\"%n",
                         run.repetition(), run.successful(), nullable(result.lastDeadNanos()),
                         nullable(result.convergenceNanos()), nullable(result.firstObserved().get(3)),
                         result.membershipControlFrames(), result.survivorSentFrames(),
-                        result.survivorSentBytes(), run.preFaultDeadEvents()));
+                        result.survivorSentBytes(), run.preFaultDeadEvents(),
+                        result.membershipAttemptedFrames(),
+                        result.membershipDroppedFrames()));
             }
         }
     }
@@ -92,6 +94,8 @@ public final class UdpDistributedMembershipMatrixReportMain {
             writer.write("모든 값은 `real-udp-observed`다. 각 실행은 8노드에서 ");
             writer.write("node-1·2·3을 한 UDP injection으로 process crash시키고, ");
             writer.write("detector DEAD 이벤트만으로 View를 갱신했다.\n\n");
+            writer.write("Membership control fault: `"
+                    + runs.get(0).result().controlFault() + "`\n\n");
             writer.write("| 측정치 | 결과 |\n|---|---:|\n");
             writer.write("| 전체 View 수렴 | " + successful + "/" + runs.size() + " |\n");
             writer.write("| 성공률 95% Wilson CI | "
@@ -106,6 +110,10 @@ public final class UdpDistributedMembershipMatrixReportMain {
             writer.write(String.format(Locale.ROOT,
                     "| 평균 Membership control frame | %.1f |%n",
                     runs.stream().mapToLong(run -> run.result().membershipControlFrames())
+                            .average().orElse(0)));
+            writer.write(String.format(Locale.ROOT,
+                    "| 평균 Membership injected drop | %.1f |%n",
+                    runs.stream().mapToLong(run -> run.result().membershipDroppedFrames())
                             .average().orElse(0)));
             writer.write(String.format(Locale.ROOT,
                     "| 평균 생존 노드 송신 frame / byte | %.1f / %.1f |%n",
@@ -128,6 +136,8 @@ public final class UdpDistributedMembershipMatrixReportMain {
                 + "  \"experiment\": \"udp-ring2-distributed-membership-matrix\",\n"
                 + "  \"generatedAt\": \"" + Instant.now() + "\",\n"
                 + "  \"source\": \"real-udp-observed\",\n"
+                + "  \"controlFault\": \""
+                + runs.get(0).result().controlFault() + "\",\n"
                 + "  \"runs\": " + runs.size() + ",\n"
                 + "  \"successful\": " + successful + "\n"
                 + "}\n", StandardCharsets.UTF_8);

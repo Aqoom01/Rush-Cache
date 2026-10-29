@@ -98,6 +98,13 @@ public final class UdpComparisonReportMain {
                 number(fields, "verificationRoundFailures"),
                 number(fields, "verificationProbeSuccesses"),
                 number(fields, "verificationProbeFailures"),
+                optionalNumber(fields, "suspicionGossipFrames"),
+                optionalNumber(fields, "aliveGossipFrames"),
+                optionalNumber(fields, "independentConfirmations"),
+                optionalNumber(fields, "confirmationProbeSuccesses"),
+                optionalNumber(fields, "confirmationProbeFailures"),
+                optionalNumber(fields, "protocolWarmupMillis"),
+                optionalNumber(fields, "suspicionMaxConfirmations"),
                 number(fields, "preFaultDeadEvents"),
                 nullableNumber(fields, "suspectLatencyNanos"),
                 nullableNumber(fields, "deadLatencyNanos"),
@@ -132,6 +139,11 @@ public final class UdpComparisonReportMain {
         return Long.parseLong(required(fields, name));
     }
 
+    private static long optionalNumber(Map<String, String> fields, String name) {
+        String value = fields.get(name);
+        return value == null || value.equals("null") ? 0 : Long.parseLong(value);
+    }
+
     private static Long nullableNumber(Map<String, String> fields, String name) {
         String value = fields.get(name);
         return value == null || value.equals("null") ? null : Long.parseLong(value);
@@ -143,6 +155,10 @@ public final class UdpComparisonReportMain {
             writer.write("verification_failure_quorum,failed_rounds_to_dead,");
             writer.write("verification_round_successes,verification_round_failures,");
             writer.write("verification_probe_successes,verification_probe_failures,");
+            writer.write("suspicion_gossip_frames,alive_gossip_frames,");
+            writer.write("independent_confirmations,confirmation_probe_successes,");
+            writer.write("confirmation_probe_failures,protocol_warmup_millis,");
+            writer.write("suspicion_max_confirmations,");
             writer.write("pre_fault_dead_events,suspect_latency_nanos,dead_latency_nanos,");
             writer.write("sent_frames,sent_bytes,received_frames,received_bytes,");
             writer.write("time_source,wire_source,successful\n");
@@ -157,6 +173,13 @@ public final class UdpComparisonReportMain {
                         Long.toString(run.verificationRoundFailures()),
                         Long.toString(run.verificationProbeSuccesses()),
                         Long.toString(run.verificationProbeFailures()),
+                        Long.toString(run.suspicionGossipFrames()),
+                        Long.toString(run.aliveGossipFrames()),
+                        Long.toString(run.independentConfirmations()),
+                        Long.toString(run.confirmationProbeSuccesses()),
+                        Long.toString(run.confirmationProbeFailures()),
+                        Long.toString(run.protocolWarmupMillis()),
+                        Long.toString(run.suspicionMaxConfirmations()),
                         Long.toString(run.preFaultDeadEvents()), nullable(run.suspectLatencyNanos()),
                         nullable(run.deadLatencyNanos()), Long.toString(run.sentFrames()),
                         Long.toString(run.sentBytes()), Long.toString(run.receivedFrames()),
@@ -188,6 +211,19 @@ public final class UdpComparisonReportMain {
                         + run.verificationProbeSuccesses() + ","
                         + "\"verificationProbeFailures\":"
                         + run.verificationProbeFailures() + ","
+                        + "\"suspicionGossipFrames\":"
+                        + run.suspicionGossipFrames() + ","
+                        + "\"aliveGossipFrames\":" + run.aliveGossipFrames() + ","
+                        + "\"independentConfirmations\":"
+                        + run.independentConfirmations() + ","
+                        + "\"confirmationProbeSuccesses\":"
+                        + run.confirmationProbeSuccesses() + ","
+                        + "\"confirmationProbeFailures\":"
+                        + run.confirmationProbeFailures() + ","
+                        + "\"protocolWarmupMillis\":"
+                        + run.protocolWarmupMillis() + ","
+                        + "\"suspicionMaxConfirmations\":"
+                        + run.suspicionMaxConfirmations() + ","
                         + "\"preFaultDeadEvents\":" + run.preFaultDeadEvents() + ","
                         + "\"suspectLatencyNanos\":" + nullable(run.suspectLatencyNanos()) + ","
                         + "\"deadLatencyNanos\":" + nullable(run.deadLatencyNanos()) + ","
@@ -238,6 +274,8 @@ public final class UdpComparisonReportMain {
             }
             writer.write("\nCrash 성공은 fault 이후 DEAD가 있고 사전 DEAD가 없는 실행이다. ");
             writer.write("Loss 성공은 사전·사후 DEAD가 모두 없는 실행이다.\n");
+            writer.write("SWIM confirmation Gossip frame과 독립 confirmation은 runs.csv와 ");
+            writer.write("runs.jsonl에 별도 실측 필드로 기록한다.\n");
             writePairedSummary(writer, runs);
         }
     }
@@ -353,6 +391,13 @@ public final class UdpComparisonReportMain {
             long verificationRoundFailures,
             long verificationProbeSuccesses,
             long verificationProbeFailures,
+            long suspicionGossipFrames,
+            long aliveGossipFrames,
+            long independentConfirmations,
+            long confirmationProbeSuccesses,
+            long confirmationProbeFailures,
+            long protocolWarmupMillis,
+            long suspicionMaxConfirmations,
             long preFaultDeadEvents,
             Long suspectLatencyNanos,
             Long deadLatencyNanos,

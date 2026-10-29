@@ -56,7 +56,9 @@ public record UdpWireMessage(
         FAULT_START(5),
         MEMBERSHIP_REMOVE(6),
         EXPERIMENT_FINISH(7),
-        PROCESS_CRASH(8);
+        PROCESS_CRASH(8),
+        SUSPECT(9),
+        ALIVE(10);
 
         private final byte code;
 
