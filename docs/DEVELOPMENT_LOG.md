@@ -150,3 +150,17 @@
 - 기존 보호 237개 파일 hash 동일. 기존 파일 수정은 core Gradle 새sourceSet·개발기록·V05현재상태뿐. 공통API/기존방식 소스·테스트·설정·의존성 보존. production JAR 새class포함/test제외 확인.
 - 직전 전체 실행의 기존 V03 ProcessTest leader crash후 CLI GET TIMEOUT1회는 기존 코드 변경 없이 분리 재실행·최종 전체 재실행 통과. 원인 미확정으로 기록하며 V03 안정성 해결로 표시하지 않음. V05 자체 검사는 해당 실행도 통과.
 - docs/IONIA_V05.md, IONIA_V05_VALIDATION.json, experiments/ionia-seventh/README.md. V05b 서버/실시간lag 계측·V06·공통 데이터셋/성능·최적값/SSD/멀티호스트/power-loss/D-PERSIST는 미완료. C3/Tars 전체 재현·전체 interleaving 증명 아님.
+
+
+## 2026-10-29 | V06 MetaQuery 배치 전송 구현·기능 검증
+
+- 시작 HEADc077217ff2625cdf7fc94d5d71afaf62f363d09b·clean. commit/push/merge 미실행.
+- replication/ionia-eighth(package ionia_eighth)에 Settings/BatchTransport/Coalescer/Client wrapper, server.ionia_eighth에 codec/TCP·Node 조립부·Main/CLI,17801–17803 예제 분리.
+- IONIA §4.2/§6 관련 절 대조. batching은 원문 future work, E/B/D/P/W·wire는 자체 설계. 원본 Client/Engine·Log/History/Recovery/wire/일반TCP/파일KV/ViewStore 직접 재사용. 공통API/의존성/이전방식 변경 없음.
+- 개별 fresh Meta·occurrence token·View/leader FIFO·개별deadline·상한·raw terminal permit·cancel/timeout/close·전체 응답 검증·no cache. 동기 completion trampoline·callback lock 밖.
+- wire64item/1MiB 입력·60MiB reply budget·초과 item UNAVAILABLE·별도 protocol/stable View ID와 client tuning hash 분리. RAM durability/stable View/선택적 KV force 구별.
+- Java21 전체 build/installDist 498(core392/server90/runner16)·V06 연결41(core34/server7), 실패·오류·skip0. 기본병렬·포트 사전진단 유지. build/ionia-validation/20261029-091346-00a8dc25.
+- 3/5×E1/E4×64seeds×10=2560 finite CRUD history·timeout/View retry·bad controls; actual TCP32hot writes/32GET→4Meta·혼합deadline·S2·wire/config; JVM3 leader/follower crash/restart/rejoin·CLI CRUD.
+- 기존 보호262파일 hash동일(기존파일 수정은 core Gradle4줄·개발기록). JAR 새class포함/test제외·dependency 검사 통과.
+- 첫 전체 V06 TCP UNAVAILABLE1회·후속 전체 통과·추가 반복은 docs/IONIA_V06.md/IONIA_V06_VALIDATION.json에 보존. 당시 RPC 부재로 소급 원인 확정 없음. 기존 V03 단발timeout도 해결 주장 없음.
+- 현재범위 O00+파생7개 기능fixture 구현/검증. 공통데이터셋/장기client·동일조건 성능·최적값/SSD/NIC/multi-host/power-loss·V05서버lag 미완료. batch HOL/공동 실패·메시지별TCP 제약 유지.
