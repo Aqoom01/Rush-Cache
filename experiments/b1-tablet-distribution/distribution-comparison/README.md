@@ -23,7 +23,7 @@ variant마다 잘게 자르는 손잡이가 다르다. 같은 조건으로 비�
 | `hash-range-tablet` | 노드당 Tablet 수 T | T = G / 8 |
 | `ring-vnode` | 노드당 토큰 수 V (무작위 토큰) | V = G / 8 |
 | `ring-vnode-alloc` | 노드당 토큰 수 V (노드별 소유량이 고르도록 계산한 토큰) | V = G / 8 |
-| `prefix-hash-tablet` | 노드당 Tablet 수 T (표는 hash-range-tablet과 같고 key → 해시만 hash tag) | T = G / 8 |
+| `hash-tag-tablet` | 노드당 Tablet 수 T (표는 hash-range-tablet과 같고 key → 해시만 hash tag) | T = G / 8 |
 
 그 밖의 입력은 variant와 무관하게 같다: key(seed별 16바이트 난수 → `KeyHash`), 노드 ID 1..n, 노드 추가·제거 순서, Zipf 요청열(seed별). 지표는 전부 `RoutingTable`의 공개 연산(`lookup`, `ownedBy`, `tablets`)으로만 계산하므로 variant 코드가 지표에 끼어들지 않는다. S7만 실제 key 바이트열(`{g<묶음>}:<번호>`)을 만들어 variant의 `keyHash`로 해시한다. tag를 보는 variant와 key 전체를 보는 variant가 여기서 갈린다.
 
@@ -48,11 +48,11 @@ variant마다 잘게 자르는 손잡이가 다르다. 같은 조건으로 비�
 | S3 | 노드 1대 제거 | S2와 같음. `ideal_ratio` = 1/n |
 | S4 | 1대씩 16대까지 늘리고 8대로 줄임 | `cumulative_moved_*_ratio` 누적 이동, `ideal_cumulative_ratio` Σ 1/n, `worst_unit_max_mean` 전 단계 중 최악, `final_key_max_mean` |
 | S5 | Zipf 요청 쏠림 | `request_max_mean` 그대로 뒀을 때, `greedy_bound` 단위를 통째로 옮겨 도달 가능한 최선(LPT), `hottest_unit_share`, `hottest_key_share` |
-| S7 | 접두사 묶음. key 100만 개를 tag 묶음 P개에 담고 Zipf θ=0.99 요청 | `key_max_mean`, `largest_group_share` 가장 큰 묶음의 key 비율, `groups_split_ratio` key가 두 노드 이상에 흩어진 묶음 비율, `same_node_pair_ratio` 같은 묶음 두 key가 같은 노드에 있을 확률, `request_max_mean`, `greedy_bound`, `hottest_unit_share`, `moved_key_ratio_add` 노드 1대 추가 시 이동 비율 |
+| S7 | 태그 묶음. key 100만 개를 tag 묶음 P개에 담고 Zipf θ=0.99 요청 | `key_max_mean`, `largest_group_share` 가장 큰 묶음의 key 비율, `groups_split_ratio` key가 두 노드 이상에 흩어진 묶음 비율, `same_node_pair_ratio` 같은 묶음 두 key가 같은 노드에 있을 확률, `request_max_mean`, `greedy_bound`, `hottest_unit_share`, `moved_key_ratio_add` 노드 1대 추가 시 이동 비율 |
 | AUX | 표 크기·조회 | `metadata_bytes_initial`, `metadata_bytes_after_add`, `lookup_ns_min_of_3` |
 
-- `greedy_bound`: 단위별 요청 수를 큰 것부터 가장 한가한 노드에 넣었을 때의 max/mean. 표는 바꾸지 않는다. "어떤 재배치 정책도 이 아래로는 못 간다"는 한계다. `supportsMove()`가 false인 variant는 `NA`.
-- `hottest_key_share` × 노드 수가 `greedy_bound`의 하한이다. key 하나는 어떤 분배로도 나눌 수 없다.
+- `greedy_bound`: 단위별 요청 수를 큰 것부터 가장 한가한 노드에 넣었을 때(LPT)의 max/mean. 표는 바꾸지 않는다. **단위를 통째로 옮기는 재배치로 내릴 수 있는 값**이지 하한이 아니다(LPT는 최적의 4/3 이내이고 보통 최적과 같다). 진짜 하한은 `hottest_unit_share` × 노드 수(단위 하나는 못 나눔)이며, 두 값이 같으면 LPT가 최적에 닿은 것이다. `supportsMove()`가 false인 variant는 `NA`.
+- `hottest_key_share` × 노드 수는 split까지 해도 못 내려가는 하한이다. key 하나는 어떤 분배로도 나눌 수 없다.
 - `lookup_ns`: 워밍업 1회 후 100만 회 평균, 3회 중 최소. JMH가 아니므로 자릿수만 믿는다.
 - `groups_split_ratio`: key가 2개 이상인 묶음만 센다. `same_node_pair_ratio`: 묶음 크기로 가중한 순서쌍 기준. multi-key 요청이 한 노드에서 끝날 확률이다. key 전체를 해시하면 노드 8대에서 약 0.125, tag를 해시하면 1.0.
 
