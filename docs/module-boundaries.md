@@ -39,7 +39,7 @@ experiment-runner  ──►──────┘
 | `kv` | 로컬 KV | `KvEngine`(단일 노드 인메모리 GET/SET/DELETE) 구현. TTL·eviction·영속화는 미구현 |
 | `replication` | A1 Active-Passive, A2 Active-Active | 미구현 |
 | `failure` | A3 FailureDetector, membership | 미구현 |
-| `tablet` | B1 routing, ownership | fixed-slot·hash-range-tablet·ring-vnode·prefix-hash-tablet·표 전파·소유권 판정(in-process) 구현, wire 인코딩 미구현 |
+| `tablet` | B1 routing, ownership | fixed-slot·hash-range-tablet·ring-vnode·hash-tag-tablet·표 전파·소유권 판정(in-process) 구현, wire 인코딩 미구현 |
 | `balance` | B2 배치 계획, split/merge | 미구현 |
 | `migration` | B3 snapshot, delta, cutover | 미구현 |
 

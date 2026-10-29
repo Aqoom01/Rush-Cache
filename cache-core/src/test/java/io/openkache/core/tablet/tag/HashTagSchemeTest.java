@@ -1,4 +1,4 @@
-package io.openkache.core.tablet.prefix;
+package io.openkache.core.tablet.tag;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
@@ -15,28 +15,28 @@ import io.openkache.core.tablet.Tablet;
 import io.openkache.core.tablet.range.HashRangeScheme;
 import org.junit.jupiter.api.Test;
 
-class PrefixHashSchemeTest extends DistributionSchemeContract {
+class HashTagSchemeTest extends DistributionSchemeContract {
 
     private static final int T = 8;
 
     @Override
     protected DistributionScheme scheme() {
-        return new PrefixHashScheme(T);
+        return new HashTagScheme(T);
     }
 
     @Test
     void tagIsTheFirstBracePairWhenNotEmpty() {
-        assertEquals(Bytes.utf8("user1"), PrefixHashScheme.tagOf(Bytes.utf8("{user1}:profile")));
-        assertEquals(Bytes.utf8("user1"), PrefixHashScheme.tagOf(Bytes.utf8("{user1}:{x}")));
-        assertEquals(Bytes.utf8("{user1"), PrefixHashScheme.tagOf(Bytes.utf8("{{user1}}")));
-        assertEquals(Bytes.utf8("user1"), PrefixHashScheme.tagOf(Bytes.utf8("a:{user1}")));
-        assertEquals(Bytes.utf8("u"), PrefixHashScheme.tagOf(Bytes.utf8("{u}")));
+        assertEquals(Bytes.utf8("user1"), HashTagScheme.tagOf(Bytes.utf8("{user1}:profile")));
+        assertEquals(Bytes.utf8("user1"), HashTagScheme.tagOf(Bytes.utf8("{user1}:{x}")));
+        assertEquals(Bytes.utf8("{user1"), HashTagScheme.tagOf(Bytes.utf8("{{user1}}")));
+        assertEquals(Bytes.utf8("user1"), HashTagScheme.tagOf(Bytes.utf8("a:{user1}")));
+        assertEquals(Bytes.utf8("u"), HashTagScheme.tagOf(Bytes.utf8("{u}")));
     }
 
     @Test
     void wholeKeyWhenThereIsNoUsableTag() {
         for (String key : new String[] {"user1", "{}user1", "{user1", "user1}", "}{", "", "{}", "{"}) {
-            assertEquals(Bytes.utf8(key), PrefixHashScheme.tagOf(Bytes.utf8(key)), key);
+            assertEquals(Bytes.utf8(key), HashTagScheme.tagOf(Bytes.utf8(key)), key);
         }
     }
 
@@ -89,8 +89,8 @@ class PrefixHashSchemeTest extends DistributionSchemeContract {
 
     @Test
     void nameAndTabletsPerNode() {
-        assertEquals("prefix-hash-tablet", scheme().name());
-        assertEquals(T, new PrefixHashScheme(T).tabletsPerNode());
-        assertEquals(HashRangeScheme.DEFAULT_TABLETS_PER_NODE, new PrefixHashScheme().tabletsPerNode());
+        assertEquals("hash-tag-tablet", scheme().name());
+        assertEquals(T, new HashTagScheme(T).tabletsPerNode());
+        assertEquals(HashRangeScheme.DEFAULT_TABLETS_PER_NODE, new HashTagScheme().tabletsPerNode());
     }
 }

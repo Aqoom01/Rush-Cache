@@ -84,9 +84,9 @@ class MetricsTest {
     }
 
     @Test
-    void prefixedKeysAreGroupedAndReproducible() {
-        Workload.Prefixed a = Workload.prefixedKeys(10, 1000, 0.0, 5);
-        Workload.Prefixed b = Workload.prefixedKeys(10, 1000, 0.0, 5);
+    void taggedKeysAreGroupedAndReproducible() {
+        Workload.Tagged a = Workload.taggedKeys(10, 1000, 0.0, 5);
+        Workload.Tagged b = Workload.taggedKeys(10, 1000, 0.0, 5);
 
         assertEquals(1000, a.keys().length);
         assertArrayEquals(a.groupOf(), b.groupOf());
@@ -96,7 +96,7 @@ class MetricsTest {
             assertTrue(key.startsWith("{g" + a.groupOf()[i] + "}:"), key);
         }
         assertEquals(0.1, Metrics.largestGroupShare(a.groupOf(), 10), 0.05);
-        assertTrue(Metrics.largestGroupShare(Workload.prefixedKeys(10, 1000, 0.99, 5).groupOf(), 10) > 0.25);
+        assertTrue(Metrics.largestGroupShare(Workload.taggedKeys(10, 1000, 0.99, 5).groupOf(), 10) > 0.25);
     }
 
     @Test

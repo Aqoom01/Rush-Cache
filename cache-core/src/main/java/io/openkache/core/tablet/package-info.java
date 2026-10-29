@@ -10,7 +10,7 @@
  * 무관하게 {@code RoutingTable}이 맡고, variant는 표를 처음 만드는 규칙과 노드 증감 시 이동 계획만 정한다.
  *
  * <p>상태: 공통 타입과 인터페이스, variant {@code slot}(fixed-slot)·{@code range}(hash-range-tablet)·{@code ring}(ring-vnode)·
- * {@code prefix}(prefix-hash-tablet), 표 전파·소유권 판정({@code routing}, in-process)까지 구현. wire 인코딩은 미구현. 설계는
+ * {@code tag}(hash-tag-tablet), 표 전파·소유권 판정({@code routing}, in-process)까지 구현. wire 인코딩은 미구현. 설계는
  * {@code experiments/b1-tablet-distribution/design.md}를 따른다.
  */
 package io.openkache.core.tablet;

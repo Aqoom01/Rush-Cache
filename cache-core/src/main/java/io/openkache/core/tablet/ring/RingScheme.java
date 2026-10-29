@@ -50,7 +50,8 @@ import java.util.TreeMap;
  *
  * <p><b>표의 경계가 곧 토큰이다.</b> 노드가 나가면 그 토큰을 지우지 않고 시계 방향 다음 토큰의 노드가 <b>물려받는다</b>
  * (Dynamo §6.2 Strategy 3의 "떠난 노드의 토큰을 남은 노드에 재분배"). 나가는 순간의 조회 결과는 토큰을 지운 링과 같고, 다음에 노드가
- * 들어올 때는 물려받은 토큰도 경계로 작동한다. 토큰을 지운 링이 필요하면(같은 주인의 이웃 토큰은 조회에 영향이 없다) 이동이 끝난 뒤
+ * 들어올 때는 물려받은 토큰도 경계로 작동한다. 새 토큰이 이미 있는 경계와 같으면(같은 NodeId가 다시 들어오는 경우) 그 경계에서 끝나는
+ * Tablet을 통째로 되찾는다. 토큰을 지운 링이 필요하면(같은 주인의 이웃 토큰은 조회에 영향이 없다) 이동이 끝난 뒤
  * {@link #compact(RoutingTable)}로 합친다. 표에 토큰 생사를 따로 적지 않기 위한 선택이다.
  */
 public final class RingScheme implements DistributionScheme {
@@ -66,8 +67,8 @@ public final class RingScheme implements DistributionScheme {
     /** 기본 노드당 토큰 수. Cassandra 4.0 기본값(배치 알고리즘과 함께)이다. 무작위 배치면 256 이상이 필요하다. */
     public static final int DEFAULT_TOKENS_PER_NODE = 16;
 
-    /** 토큰 한 개의 직렬화 크기: 토큰 8B + NodeId 4B. 노드끼리 공유하는 것은 표가 아니라 토큰 목록이다. */
-    static final int BYTES_PER_TOKEN = 12;
+    /** 토큰 한 개의 직렬화 크기: 토큰 8B + NodeId 8B(다른 variant와 같은 크기). 노드끼리 공유하는 것은 표가 아니라 토큰 목록이다. */
+    static final int BYTES_PER_TOKEN = 16;
 
     private final int tokensPerNode;
     private final Placement placement;
@@ -158,27 +159,30 @@ public final class RingScheme implements DistributionScheme {
                 weight.put(cut.from(), weight.get(cut.from()) - cut.weight());
                 mine += cut.weight();
             }
-            while (true) {
-                Tablet hit = prepared.lookup(t);
-                if (t != hit.range().start()) {
-                    TabletId right = new TabletId(prepared.nextTabletId());
-                    boolean wasFirst = hit.range().start() == 0;
-                    TabletId last = prepared.tablets().get(prepared.size() - 1).id();
-                    prepared = prepared.withSplit(hit.id(), t);
-                    if (destined.contains(hit.id())) {
-                        destined.add(right);
-                    } else {
-                        destined.add(hit.id());
-                        if (wasFirst) {
-                            // 새 토큰이 링에서 가장 작은 토큰이 됐다. 이음새 Tablet [t_last, 2^64)는 첫 토큰의 것이므로 함께 새 노드로 간다
-                            destined.add(last);
-                        }
-                    }
-                    break;
+            Tablet hit = prepared.lookup(t);
+            TabletId last = prepared.tablets().get(prepared.size() - 1).id();
+            if (t == hit.range().start()) {
+                // 경계가 이미 있다: 떠난 노드가 남긴(물려준) 토큰이거나(같은 NodeId 재합류면 V개 전부) 드문 해시 충돌이다.
+                // 토큰을 되찾는 것이므로 그 경계에서 끝나는 Tablet [a, t)를 통째로 새 노드가 맡는다. 한 칸 밀어 쪼개면 폭 1짜리
+                // Tablet만 받게 되므로 그렇게 하지 않는다. t >= 1이라 [a, t)는 항상 있다
+                Tablet reclaimed = prepared.lookup(t - 1);
+                destined.add(reclaimed.id());
+                if (reclaimed.range().start() == 0) {
+                    // t가 링에서 가장 작은 토큰이 됐다. 이음새 Tablet [t_last, 2^64)는 첫 토큰의 것이므로 함께 새 노드로 간다
+                    destined.add(last);
                 }
-                t += 1; // 이미 있는 경계와 겹치면 한 칸 민다(결정적)
-                if (t == 0) {
-                    t = 1;
+                continue;
+            }
+            TabletId right = new TabletId(prepared.nextTabletId());
+            boolean wasFirst = hit.range().start() == 0;
+            prepared = prepared.withSplit(hit.id(), t);
+            if (destined.contains(hit.id())) {
+                destined.add(right);
+            } else {
+                destined.add(hit.id());
+                if (wasFirst) {
+                    // 새 토큰이 링에서 가장 작은 토큰이 됐다. 이음새 Tablet [t_last, 2^64)는 첫 토큰의 것이므로 함께 새 노드로 간다
+                    destined.add(last);
                 }
             }
         }

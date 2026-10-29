@@ -10,10 +10,12 @@ import io.openkache.core.spi.PeerMessage;
 import io.openkache.core.spi.Transport;
 import io.openkache.core.tablet.RoutingTable;
 import io.openkache.core.tablet.Tablet;
+import io.openkache.core.tablet.TabletRange;
 import io.openkache.core.tablet.routing.OwnershipCheck.Decision;
 import io.openkache.core.tablet.routing.TableMessage.GetTable;
 import io.openkache.core.tablet.routing.TableMessage.TablePush;
 import io.openkache.core.tablet.routing.TableMessage.TableReply;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
@@ -36,7 +38,8 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 public final class LocalRouting {
 
-    private record Refusal(OwnershipEpoch epoch, Optional<NodeId> destination) {}
+    /** 거절을 건 순간의 epoch·범위. 범위는 그 뒤 Tablet이 split돼 id가 늘어나도 거절을 승계하기 위해 둔다. */
+    private record Refusal(OwnershipEpoch epoch, TabletRange range, Optional<NodeId> destination) {}
 
     private final NodeId self;
     private final Transport transport;
@@ -63,12 +66,24 @@ public final class LocalRouting {
         return table.version();
     }
 
-    /** {@code candidate}가 내 표보다 새 버전이면 교체하고 {@code true}. 주인이나 epoch가 바뀐 Tablet의 거절 플래그는 푼다. */
+    /**
+     * {@code candidate}가 내 표보다 새 버전이면 교체하고 {@code true}. 주인이나 epoch가 바뀐 Tablet의 거절 플래그는 푼다.
+     * 거절 중인 Tablet이 split됐으면(같은 주인·같은 epoch로 범위만 나뉨) 새 id의 조각에도 거절을 승계한다. 그래야 cutover 중에
+     * B2가 split해도 옛 주인이 오른쪽 조각의 쓰기를 받지 않는다.
+     */
     public synchronized boolean accept(RoutingTable candidate) {
         if (!candidate.version().isNewerThan(table.version())) {
             return false;
         }
-        // 표를 먼저 바꾸고 플래그를 나중에 지운다. check()는 플래그를 읽은 뒤 표가 바뀌었는지 재확인하므로 이 순서에 의존한다
+        // 승계할 플래그는 표를 바꾸기 전에 넣는다(옛 표에는 없는 id라 판정에 영향이 없다). 지우는 것은 표를 바꾼 뒤에 한다.
+        // check()는 플래그를 읽은 뒤 표가 바뀌었는지 재확인하므로 이 순서에 의존한다
+        for (Refusal r : List.copyOf(refusing.values())) {
+            for (Tablet t : candidate.tablets()) {
+                if (t.owner().equals(self) && t.epoch().equals(r.epoch()) && within(t.range(), r.range())) {
+                    refusing.putIfAbsent(t.id(), new Refusal(r.epoch(), t.range(), r.destination()));
+                }
+            }
+        }
         table = candidate;
         staleHint = false;
         refusing.entrySet().removeIf(e -> {
@@ -82,6 +97,15 @@ public final class LocalRouting {
         return true;
     }
 
+    /** {@code inner}가 {@code outer} 안에 들어가는가. end 0은 2^64. */
+    private static boolean within(TabletRange inner, TabletRange outer) {
+        if (!outer.contains(inner.start())) {
+            return false;
+        }
+        long innerEnd = inner.end() == 0 ? -1L : inner.end() - 1; // 마지막 해시 지점
+        return outer.contains(innerEnd);
+    }
+
     /**
      * 내가 주인인 Tablet {@code id}의 요청을 지금부터 {@code MOVED}로 거절한다. {@code destination}을 주면 redirect 힌트로 쓴다
      * (새 주인이 아직 표를 못 받았으면 되돌아올 수 있으므로 클라이언트는 표도 함께 갱신한다).
@@ -93,7 +117,7 @@ public final class LocalRouting {
         if (!t.owner().equals(self)) {
             throw new IllegalArgumentException(id + " is owned by " + t.owner() + ", not " + self);
         }
-        refusing.put(id, new Refusal(t.epoch(), Objects.requireNonNull(destination, "destination")));
+        refusing.put(id, new Refusal(t.epoch(), t.range(), Objects.requireNonNull(destination, "destination")));
     }
 
     /** 이동이 취소됐을 때 거절을 푼다. */

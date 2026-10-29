@@ -35,7 +35,7 @@ public final class DistributionComparison {
     static final int NODES = Variants.BASE_NODES;
     static final int REQUESTS = 1_000_000;
     static final int MAX_NODES_S4 = 16;
-    /** S7 접두사 묶음 수. 묶음당 평균 key 수는 100만 / 묶음 수. */
+    /** S7 태그 묶음 수. 묶음당 평균 key 수는 100만 / 묶음 수. */
     static final int[] GROUP_COUNTS = {100, 1_000, 10_000, 100_000};
     /** S7 묶음 크기의 쏠림. 0이면 묶음 크기가 거의 같고, 0.99면 큰 묶음 몇 개가 key의 상당 부분을 차지한다. */
     static final double[] GROUP_THETAS = {0.0, 0.99};
@@ -64,7 +64,7 @@ public final class DistributionComparison {
                 run.s2s3AddRemove(v);
                 run.s4Churn(v);
                 run.s5Skew(v);
-                run.s7PrefixGroups(v);
+                run.s7TagGroups(v);
                 run.aux(v);
                 System.err.printf(Locale.ROOT, "%s done in %.1fs%n", v.name(), (System.nanoTime() - t0) / 1e9);
             }
@@ -195,15 +195,15 @@ public final class DistributionComparison {
         }
     }
 
-    // ---- S7: 접두사 묶음. 같은 tag의 key를 한 노드에 모으는 대가로 균형과 쏠림 한계가 얼마나 나빠지는가 ----
+    // ---- S7: 태그 묶음. 같은 tag의 key를 한 노드에 모으는 대가로 균형과 쏠림 한계가 얼마나 나빠지는가 ----
 
-    void s7PrefixGroups(Variants.Variant v) {
+    void s7TagGroups(Variants.Variant v) {
         int g = 4096;
         int keys = 1_000_000;
         for (int groups : GROUP_COUNTS) {
             for (double thetaG : GROUP_THETAS) {
                 for (int seed = 1; seed <= SEEDS; seed++) {
-                    Workload.Prefixed w = Workload.prefixedKeys(groups, keys, thetaG, seed);
+                    Workload.Tagged w = Workload.taggedKeys(groups, keys, thetaG, seed);
                     int[] requests = Workload.zipfRequests(keys, REQUESTS, S7_REQUEST_THETA, seed);
                     DistributionScheme s = v.forGranularity().apply(g);
                     long[] hashes = Workload.hashesOf(s, w.keys());

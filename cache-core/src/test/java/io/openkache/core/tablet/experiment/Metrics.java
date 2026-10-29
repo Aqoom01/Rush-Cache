@@ -142,7 +142,7 @@ final class Metrics {
     }
 
     /**
-     * key가 두 노드 이상에 흩어진 묶음의 비율. key가 하나뿐인 묶음은 흩어질 수 없으므로 분모에서 뺀다. 접두사 variant는 0이어야 하고,
+     * key가 두 노드 이상에 흩어진 묶음의 비율. key가 하나뿐인 묶음은 흩어질 수 없으므로 분모에서 뺀다. 해시 태그 variant는 0이어야 하고,
      * key 전체를 해시하는 variant는 묶음 크기가 노드 수보다 크면 거의 1이다.
      */
     static double groupsSplitRatio(RoutingTable table, long[] hashes, int[] groupOf, int groups) {
@@ -172,7 +172,7 @@ final class Metrics {
 
     /**
      * 같은 묶음의 서로 다른 두 key가 같은 노드에 있을 확률(묶음 크기로 가중한 순서쌍 기준). multi-key 요청이 한 노드에서 끝날 확률이다.
-     * 접두사 variant는 1.0, key 전체를 해시하면 노드 수 n에 대해 약 1/n.
+     * 해시 태그 variant는 1.0, key 전체를 해시하면 노드 수 n에 대해 약 1/n.
      */
     static double sameNodePairRatio(RoutingTable table, long[] hashes, int[] groupOf, int groups) {
         long[] counts = groupNodeCounts(table, hashes, groupOf, groups);
@@ -191,7 +191,7 @@ final class Metrics {
         return pairs == 0 ? 0 : samePairs / pairs;
     }
 
-    /** 가장 큰 묶음의 key 비율. 접두사 variant에서는 이 값 × 노드 수가 key 균형의 하한이다. */
+    /** 가장 큰 묶음의 key 비율. 해시 태그 variant에서는 이 값 × 노드 수가 key 균형의 하한이다. */
     static double largestGroupShare(int[] groupOf, int groups) {
         long[] size = new long[groups];
         for (int g : groupOf) {

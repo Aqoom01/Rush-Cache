@@ -14,6 +14,7 @@ import io.openkache.core.spi.PeerEnvelope;
 import io.openkache.core.spi.PeerMessage;
 import io.openkache.core.tablet.Change;
 import io.openkache.core.tablet.RoutingTable;
+import io.openkache.core.tablet.TabletRange;
 import io.openkache.core.tablet.routing.TableMessage.GetTable;
 import io.openkache.core.tablet.routing.TableMessage.TablePush;
 import io.openkache.core.tablet.routing.TableMessage.TableReply;
@@ -62,6 +63,29 @@ class LocalRoutingAndControllerTest {
         r.accept(moved);
         assertFalse(r.isRefusing(SLOT3));
         assertEquals(ResultStatus.MOVED, r.check(HASH_SLOT3, moved.version(), OwnershipEpoch.ZERO).status(), "now N1 owns it");
+    }
+
+    @Test
+    void refusalIsInheritedBySplitPiecesAndReleasedPerPiece() {
+        LocalRouting r = new LocalRouting(N2, T1, new FakeTransport());
+        r.stopServing(SLOT3, Optional.of(N1));
+        TabletRange range = T1.get(SLOT3).range();
+        long mid = range.start() + ((range.end() - range.start()) >>> 1);
+        TabletId right = new TabletId(T1.nextTabletId());
+
+        // cutover 중에 B2가 거절 중인 Tablet을 split하면 오른쪽 조각(새 id)도 거절해야 한다
+        RoutingTable split = T1.withSplit(SLOT3, mid);
+        r.accept(split);
+        assertTrue(r.isRefusing(SLOT3));
+        assertTrue(r.isRefusing(right));
+        assertEquals(ResultStatus.MOVED, r.check(mid, split.version(), OwnershipEpoch.ZERO).status());
+        assertEquals(Optional.of(N1), r.check(mid, split.version(), OwnershipEpoch.ZERO).redirect());
+
+        // 오른쪽 조각의 주인이 바뀌면 그 조각만 풀린다
+        RoutingTable moved = split.apply(new Change(right, N2, N1));
+        r.accept(moved);
+        assertFalse(r.isRefusing(right));
+        assertTrue(r.isRefusing(SLOT3));
     }
 
     @Test

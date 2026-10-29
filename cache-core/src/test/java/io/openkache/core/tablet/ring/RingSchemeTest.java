@@ -111,6 +111,27 @@ class RingSchemeTest extends DistributionSchemeContract {
     }
 
     @Test
+    void rejoiningNodeReclaimsItsOwnTokensExactly() {
+        List<NodeId> four = nodes(4);
+        RoutingTable t0 = scheme().initial(four);
+        NodeId n3 = new NodeId(3);
+        RoutingTable t1 = scheme().onNodeRemoved(t0, n3).applyAll();
+
+        // 같은 NodeId가 다시 들어오면 토큰 V개가 전부 "이미 있는 경계"와 겹친다. 그 경계에서 끝나는 Tablet을 통째로 되찾아야
+        // 떠나기 전과 같은 링이 된다(폭 1짜리 Tablet만 받는 퇴화 금지)
+        Plan plan = scheme().onNodeAdded(t1, n3);
+        RoutingTable t2 = plan.applyAll();
+
+        assertEquals(t1.size(), plan.prepared().size(), "no boundary is added: the tokens already exist");
+        // 토큰마다 Tablet 하나. 되찾은 토큰이 링에서 가장 작으면 이음새 Tablet도 따라온다(= 떠나기 전 보유 수)
+        assertEquals(t0.ownedBy(n3).size(), plan.moves().size(), "one tablet per reclaimed token (+ seam if smallest)");
+        for (Tablet t : t0.tablets()) {
+            assertEquals(t.owner(), t2.lookup(t.range().start()).owner(), "ownership returns to the pre-removal ring at " + t);
+        }
+        assertRingLookup(ringOf(four), t2, new Random(11), 20_000);
+    }
+
+    @Test
     void compactMergesBoundariesLeftByARemovedNode() {
         RoutingTable t0 = scheme().initial(nodes(4));
         RoutingTable t1 = scheme().onNodeRemoved(t0, new NodeId(2)).applyAll();

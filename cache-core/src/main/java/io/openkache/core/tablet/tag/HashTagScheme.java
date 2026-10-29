@@ -1,4 +1,4 @@
-package io.openkache.core.tablet.prefix;
+package io.openkache.core.tablet.tag;
 
 import io.openkache.core.model.Bytes;
 import io.openkache.core.model.NodeId;
@@ -10,7 +10,7 @@ import io.openkache.core.tablet.range.HashRangeScheme;
 import java.util.List;
 
 /**
- * 접두사 해시 Tablet({@code prefix-hash-tablet}): key 전체가 아니라 key 안의 hash tag(중괄호로 감싼 부분)만 해시한다. 같은 tag의
+ * 해시 태그 Tablet({@code hash-tag-tablet}): key 전체가 아니라 key 안의 hash tag(중괄호로 감싼 부분)만 해시한다. 같은 tag의
  * key는 해시값이 같으므로 언제나 같은 Tablet, 같은 노드에 있다. Redis Cluster의 hash tag, DynamoDB·Cassandra의 partition key 계열.
  *
  * <p>표·조회·노드 증감·split은 {@link HashRangeScheme}과 완전히 같다. 다른 것은 {@link #keyHash}뿐이다. 그래서 tag가 없는 key만 있으면
@@ -23,18 +23,18 @@ import java.util.List;
  *
  * <p>정리는 {@code experiments/b1-tablet-distribution/references/hash-tag-partition-key.md}, 결정은 {@code design.md} §4.5.
  */
-public final class PrefixHashScheme implements DistributionScheme {
+public final class HashTagScheme implements DistributionScheme {
 
     private static final byte TAG_OPEN = '{';
     private static final byte TAG_CLOSE = '}';
 
     private final HashRangeScheme delegate;
 
-    public PrefixHashScheme(int tabletsPerNode) {
+    public HashTagScheme(int tabletsPerNode) {
         this.delegate = new HashRangeScheme(tabletsPerNode);
     }
 
-    public PrefixHashScheme() {
+    public HashTagScheme() {
         this(HashRangeScheme.DEFAULT_TABLETS_PER_NODE);
     }
 
@@ -44,7 +44,7 @@ public final class PrefixHashScheme implements DistributionScheme {
 
     @Override
     public String name() {
-        return "prefix-hash-tablet";
+        return "hash-tag-tablet";
     }
 
     /** tag가 있으면 tag만, 없으면 key 전체의 {@link KeyHash}. */
