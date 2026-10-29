@@ -1,6 +1,6 @@
 # 분배 방식 비교 실험 — 결과
 
-1차(2026-10-20)는 `fixed-slot`만 돌렸고, 2차(2026-10-28)에 `hash-range-tablet`·`ring-vnode`·`ring-vnode-alloc`, 3차에 `hash-tag-tablet`, 5차(2026-10-29)에 `resizable-slot`을 같은 틀로 추가했다. 1차 본문은 그대로 두고 차수별 절을 아래에 이어 적는다.
+1차(2026-10-20)는 `fixed-slot`만 돌렸고, 2차(2026-10-28)에 `hash-range-tablet`·`ring-vnode`·`ring-vnode-alloc`, 3차에 `hash-tag-tablet`, 5차(2026-10-29)에 `resizable-slot`, 6차에 `key-order-tablet`을 같은 틀로 추가했다. 1차 본문은 그대로 두고 차수별 절을 아래에 이어 적는다.
 
 ## 1차 결과 (fixed-slot)
 
@@ -287,7 +287,40 @@
 - 단위 균형(`unit_max_mean`)은 링에서 뜻이 없어 S9에 `worst_key_max_mean`을 추가했다.
 - 실행 시간: S9가 추가되어 전체 약 20분. `ring-vnode-alloc`의 S4·S9가 각 5분.
 
+## 6차. key-order-tablet 추가, S8 순차 key (2026-10-29)
+
+실행: variant 7개, seed 1~5, 전체 약 25분. `key-order-tablet`은 `hash-range-tablet`에 key → 점 변환만 **순서 보존**(앞 8바이트 big-endian)으로 바꾼 것이다(design.md §4.7). S1~S5·S9는 난수 key의 해시열을 그대로 쓰므로 `hash-range-tablet`과 자리수까지 같다. 차이는 실제 key 바이트열을 쓰는 S7과 새 시나리오 S8에서 난다. S8은 순차 key 100만 개(앞 8바이트 번호 + 난수 꼬리)의 앞 절반을 기존 데이터, 뒤 절반을 순서대로 삽입하는 것으로 보고, (1) 기본 표, (2) 기존 데이터로 pre-split한 표(key-order만), (3) 삽입 앞 절반을 보고 가장 뜨거운 Tablet을 중앙값에서 64회 쪼갠 표(split 되는 variant만)에서 hot spot과 균형을 잰다. 범위 조회는 "이어진 key 100개가 거치는 Tablet·노드 수"로 쟀다.
+
+### 요약
+
+1. **순차 key는 기본 표에서 전부 한 Tablet에 들어간다.** key-order의 기존·삽입 key 모두 가장 뜨거운 Tablet 비중 1.000, 노드 균형 8.0(한 노드가 전부). 해시 variant는 0.0003(≈ 1/4096)과 1.004~1.006. 순서 공간을 균등 분할하면 순차 key 100만 개는 2^64 중 폭 100만짜리 띠라 어느 한 구간에 통째로 들어간다.
+2. **pre-split은 기존 데이터만 고친다.** 기존 50만 개로 경계를 잡으면 기존 데이터의 노드 균형은 1.000(4096 Tablet이 표본을 정확히 같은 수씩)이지만, 삽입 50만 개는 표본 밖(더 큰 key)이라 다시 마지막 Tablet 100%. 전체 균형 4.5(= 한 노드가 1/8 + 1/2).
+3. **split은 "이미 들어온" 데이터만 고친다.** 가장 뜨거운 Tablet을 64회 쪼개면 그 데이터의 가장 뜨거운 Tablet 비중이 1/64(0.0156)까지 내려가고 그리디 한계 1.000으로 해시 variant와 같아진다. 그러나 **다음 삽입은 다시 마지막 Tablet 100%**다. split 뒤에도 "끝 Tablet"은 늘 하나이고 순차 key는 늘 그 끝에 붙는다. Bigtable·HBase가 key 설계(salting·역순 timestamp)로 피하라고 하는 그 현상이다.
+4. **그 대가로 범위 조회는 1 Tablet·1 노드다.** 이어진 key 100개를 읽을 때 key-order는 1.000 Tablet·1.000 노드, 해시 variant는 98.8 Tablet·8.0 노드(4096 Tablet에 100개를 뿌리면 거의 전부 다른 Tablet). 이것이 순서를 보존하는 유일한 이유이고, 캐시 KV에 범위 조회가 없다면 얻는 것이 없다.
+5. **문자열 key에는 앞 8바이트 변환이 안 통한다.** S7의 `{g<i>}:<j>`는 앞 8바이트가 거의 같아(`{g` 접두사) 점이 한 구간에 몰려 key 균형 8.0, 같은 묶음 확률 1.0(전부 한 노드라서). 64비트 점으로 순서를 담는 타협의 한계이며, Bigtable처럼 경계를 실제 key로 두면 생기지 않는다. 응용이 구분력을 앞 8바이트에 두도록 key를 설계해야 한다.
+
+### S8. 순차 key (K = 100만, G = 4096, 노드 8대)
+
+| 지표 | 해시 variant 5종 (fixed = hash-range = resizable; ring은 괄호) | key-order 기본 표 | key-order pre-split | key-order split 64회 |
+|---|---|---|---|---|
+| 전체 key 균형 | 1.004 (ring 1.065) | **8.000** | 4.500 | - |
+| 기존 key 가장 뜨거운 Tablet 비중 | 0.0003 (ring 0.0022) | 1.000 | 1/4096 | - |
+| 삽입 key 가장 뜨거운 Tablet 비중 | 0.0003 | 1.000 | 1.000 | 앞 절반 0.0156 → 다음 삽입 **1.000** |
+| 삽입 key 노드 균형 | 1.006 (ring 1.066) | 8.000 | 8.000 | 그리디 한계 1.000 (앞 절반) |
+| 이어진 key 100개가 거치는 Tablet / 노드 | 98.8 / 8.0 | **1.0 / 1.0** | 1.0 / 1.0 | - |
+
+- hash-range의 split 64회도 기록했는데 쪼개기 전후가 같다(0.0003 → 0.0003). 해시 variant에는 순차 key hot spot이 없으므로 쪼갤 것이 없다.
+- hash-tag의 S8 값이 hash-range와 미세하게 다르고(0.0004, split 8~64회) 일부 seed에서 split이 일찍 멈춘 것은, 순차 번호의 바이트에 우연히 `{`(0x7B)와 `}`(0x7D)가 함께 나타나 tag로 읽힌 key들이 한 점에 겹치기 때문이다. 바이너리 key에 Redis 문법을 그대로 적용할 때의 부작용이며, 실제 운영이면 tag 문법을 응용 key 형식에 맞춰야 한다.
+- key-order의 표 크기·조회 비용은 hash-range와 같다(32 B/Tablet, 35~65 ns).
+
+### 6차에서 결정하거나 확인한 것
+
+- **key-order-tablet의 비교 역할**: "해시 대신 순서"가 사는 것은 범위 조회(100개 → 1 Tablet) 하나이고, 대가는 순차 key에서 pre-split·split로도 못 막는 끝 Tablet hot spot이다. 캐시 KV는 범위 조회가 선택 사항이므로 10-19의 "실용 가치가 낮다"는 판단은 수치로 확인됐다. 보고서에는 "왜 해시 범위를 택했나"의 근거로 쓴다.
+- **B2의 순차 쓰기 시나리오는 이 variant 위에서만 성립한다.** `KeyRange`(key 바이트 범위)와 `SEQUENTIAL_WRITES` 보류 규칙이 뜻을 갖는 유일한 variant다. S8의 "split 뒤에도 다음 삽입은 끝 Tablet"이 B2가 다뤄야 할 입력이다.
+- 앞 8바이트 변환의 한계(S7 8.0)를 문서·테스트에 남겼다. 64비트 `RoutingTable`을 바꾸지 않기 위한 타협이다.
+- 계약 테스트의 "tag 없는 key는 `KeyHash`와 같다" 검사는 해시 variant에만 적용하도록 `usesCommonKeyHash()`로 뺐다. tablet 테스트 192 → 209개.
+
 ## 다음
 
 - S6 split 시나리오: `hash-range-tablet`(과 `hash-tag-tablet`)만 대상. B2의 split 정책을 받아 "split까지 하면 θ=0.99·1.2 한계가 얼마나 더 내려가나"를 잰다. G가 작을 때(256) 효과가 보인다. 해시 태그 방식은 묶음 안을 못 쪼개므로 P ≤ 1천에서 split의 한계가 드러난다. `resizable-slot`은 개별 split이 없으므로 "전체 2배"로 같은 질문에 답할 수 있는지 함께 본다.
-- 표 계열 variant 추가: key 순서 범위(Bigtable 계열, B1-F). 계산식 해시 계열은 B2·B3가 끼어들 자리가 없어 넣지 않기로 했다(2026-10-28).
+- 표 계열 variant는 B1-F(key 순서)까지 6개로 마감(2026-10-29). 계산식 해시 계열은 B2·B3가 끼어들 자리가 없어 넣지 않기로 했다(2026-10-28). 남은 것은 S6 split과 실측(experiment-runner 연동).

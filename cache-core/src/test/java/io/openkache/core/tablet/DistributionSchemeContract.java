@@ -156,9 +156,16 @@ public abstract class DistributionSchemeContract {
         assertEquals(h, scheme().keyHash(Bytes.copyOf(key.toByteArray())));
         RoutingTable t = scheme().initial(nodes(3));
         assertEquals(t.lookup(h), t.lookup(scheme().keyHash(key)));
-        // tag 없는 key는 모든 variant가 key 전체의 KeyHash를 써야 한다(비교 실험 S1~S5가 같은 해시열을 쓴다는 전제)
-        Bytes plain = Bytes.utf8("user:42");
-        assertEquals(KeyHash.of(plain), scheme().keyHash(plain));
+        // 해시 기반 variant는 tag 없는 key에 key 전체의 KeyHash를 써야 한다(비교 실험 S1~S5가 같은 해시열을 쓴다는 전제)
+        if (usesCommonKeyHash()) {
+            Bytes plain = Bytes.utf8("user:42");
+            assertEquals(KeyHash.of(plain), scheme().keyHash(plain));
+        }
+    }
+
+    /** tag 없는 key를 공통 {@link KeyHash}로 바꾸는 variant인가. 순서 보존 변환을 쓰는 key-order variant만 {@code false}다. */
+    protected boolean usesCommonKeyHash() {
+        return true;
     }
 
     /** {@code prepared}는 경계만 바뀔 수 있고 주인·epoch는 못 바꾼다: 모든 해시 지점의 주인과 epoch가 같아야 한다. */
