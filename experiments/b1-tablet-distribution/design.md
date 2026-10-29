@@ -1,6 +1,6 @@
 # B1 설계
 
-상태: 공통 타입·인터페이스·`fixed-slot`·`hash-range-tablet`·`ring-vnode`·`hash-tag-tablet`·표 전파·소유권 판정(in-process)까지 구현(§7). wire 인코딩, §6 실험의 split 시나리오(S6)는 미구현. 2026-10-28부터 표 계열 variant를 늘려 비교하는 방향(§8).
+상태: 공통 타입·인터페이스·`fixed-slot`·`hash-range-tablet`·`ring-vnode`·`hash-tag-tablet`·`resizable-slot`·표 전파·소유권 판정(in-process)까지 구현(§7). wire 인코딩, §6 실험의 split 시나리오(S6)는 미구현. 2026-10-28부터 표 계열 variant를 늘려 비교하는 방향(§8).
 
 ## 1. 목표와 범위
 
@@ -140,6 +140,24 @@ variant와 무관하게 하나다. 세 참여자(Controller, 노드, 클라이�
 | 묶음과 split | 묶음은 해시값이 하나라 split으로도 나눌 수 없다 | 묶음 하나가 크거나 뜨거우면 그 노드의 불균형은 어떤 재배치로도 못 푼다. DynamoDB의 hot partition 지침과 같은 한계. 응용이 tag 설계를 책임진다 |
 | 비교 실험 | S7 태그 묶음(§6). S1~S5는 tag 없는 key라 `hash-range-tablet`과 같은 값이어야 한다 | 묶음 크기 쏠림에 따른 key 균형 손실 vs 같은 묶음 두 key가 한 노드에 있을 확률(1.0 vs 약 1/n) |
 
+### 4.6 `resizable-slot`의 결정 (5단계, 표 계열 확장 2)
+
+참고 자료: [ScyllaDB tablet resize](references/scylla-tablet-resize.md). `fixed-slot`처럼 균등 슬롯이되 슬롯 수를 운영 중에 **전체 2배 / 절반**으로만 바꾼다. 슬롯 하나만 쪼개는 `hash-range-tablet`과 슬롯 수가 영원히 고정인 `fixed-slot`의 중간이다. ScyllaDB는 평균 tablet 크기로 결정하지만 우리는 데이터 크기를 모르므로 **노드당 슬롯 수**로 바꿨다.
+
+| 파라미터 | 기본값 | 근거 |
+|---|---|---|
+| 슬롯 수 | 2의 거듭제곱. 처음은 노드 수 × T 이상인 가장 작은 2의 거듭제곱, T = 512(비교 실험은 T = G / 8, 노드 8대면 S = G) | ScyllaDB tablet 수가 2의 거듭제곱(쌍으로 split/merge). 노드 8대에서 fixed-slot과 같은 표가 되어 S1·S5·S7이 비교 가능 |
+| 2배 조건 | 노드당 슬롯 수 S/n < T/2 | ScyllaDB "평균 크기 > 목표의 2배"의 개수판. 2배 직후 S/n ≥ T |
+| 절반 조건 | S/n > 2T (그리고 S/2 ≥ n) | "평균 크기 < 목표의 절반"의 개수판. 절반 직후 S/n ≤ T. 상한이 하한의 2배 이상이라 2배↔절반이 진동하지 않는다 |
+| 2배 연산 | `doubled(table)`: 모든 슬롯을 한가운데서 쪼갬. 왼쪽은 id 유지, 오른쪽은 `nextTabletId`부터 새 id. 주인·epoch 유지, 버전 +1 | `RoutingTable.withSplit`과 같은 id 규칙이라 B2·B3가 들고 있는 `TabletId`가 유효하다(왼쪽 조각). 데이터 이동 없음 |
+| 2배 시점 | 노드 추가 계획의 `prepared`에서 자동 | 주인이 안 바뀌는 변경이므로 `Plan.prepared`의 뜻에 맞다. 노드 추가 직후 S/(n+1)이 하한 아래로 떨어지는 때가 곧 2배가 필요한 때 |
+| 절반 연산 | 두 단계. `halving(table)` = 이웃한 쌍(표의 2k, 2k+1번째)의 주인이 다르면 "지금 쌍이 적은 노드"로 모으는 이동(쌍마다 1건) + 노드 간 쌍 수 차이가 1을 넘으면 쌍 단위 이동. 이동이 끝나면 `merged(table)` = 메타데이터만 합침(왼쪽 id, 큰 epoch, 버전 +1) | ScyllaDB도 sibling을 같은 복제 집합에 모은 뒤 합친다. 노드 제거 계획 안에서 하지 않는 이유: 계획의 이동은 모두 떠나는 노드에서 나가야 한다(불변식 6). 호출자(Controller·실험)가 `decide(table)`를 보고 따로 한다 |
+| 노드 추가 | 2배(필요 시) 뒤 "가장 많이 가진 노드의 마지막 슬롯"을 새 노드가 그 노드와 같아지기 직전까지 | hash-range의 길이 규칙을 개수로 옮긴 것. fixed-slot의 "정확히 S/(n+1)개"와 달리 2배 직후 차이 2인 표에서도 결과가 차이 1 이하가 된다(2배 전 차이 1 → 2배 후 2) |
+| 노드 제거 | 떠나는 노드의 슬롯을 가장 적게 가진 노드에 하나씩. 동률이면 그 슬롯의 쌍을 가진 노드 우선, 그다음 작은 NodeId | 뒤따르는 절반의 이동을 줄인다. 균형이 먼저이므로 동률일 때만 |
+| split / move | `supportsSplit() = false`, `supportsMove() = true` | 슬롯 하나만 쪼개면 균등 분할이 깨진다. B2는 이 variant에서 개별 split 대신 전체 resize를 쓴다 |
+| `metadataBytes` | 24 + 구간 수 × 20 (fixed-slot 압축 + 슬롯 수·resize 이력 8 B) | 경계는 균등이라 보낼 필요가 없고, id는 resize 규칙(왼쪽 유지·오른쪽 새 번호)이 정해져 있어 위치에서 복원된다 |
+| 비교 실험 | S4에 `size_max`·`metadata_bytes_max` 추가, 새 시나리오 S9(16 → 2 → 16)에서 절반·2배 횟수와 그 이동량 | "슬롯 수를 조절해서 얻는 것(노드당 슬롯 수 유지)"과 "절반에 드는 이동"을 한 번에 본다 |
+
 ## 5. 불변식
 
 variant 구현은 모두 아래를 지켜야 하며, 단위 테스트로 검증한다.
@@ -163,6 +181,7 @@ variant 구현은 모두 아래를 지켜야 하며, 단위 테스트로 검증�
 3. 요청이 쏠릴 때, 단위를 통째로 옮기는 것만으로 도달할 수 있는 균형의 한계는 G에 따라 어떻게 달라지는가? (split이 필요한 영역과 분배로는 못 푸는 영역을 가른다)
 4. (variant가 늘면) 표를 두는 방식(fixed-slot, hash-range)과 두지 않는 방식(ring-vnode)의 균형·이동량·표 크기 차이는?
 5. key 대신 태그 묶음을 분배 단위로 삼으면(hash-tag-tablet) 묶음 크기 쏠림에 따라 key 균형과 쏠림 한계가 얼마나 나빠지고, 그 대가로 같은 묶음 두 key가 한 노드에 있을 확률은 얼마나 오르는가?
+6. 슬롯 수를 전체 2배/절반으로 조절하면(resizable-slot) 노드 수가 움직일 때 노드당 슬롯 수와 표 크기가 어떻게 유지되고, 절반(merge)에 드는 이동은 노드 증감 자체의 이동에 비해 얼마나 되는가?
 
 ### 동일 조건
 
@@ -178,7 +197,10 @@ variant마다 잘게 자르는 손잡이가 다르므로(fixed-slot은 전체 S,
 | S4 연속 증감 | 1 → 16대 한 대씩, 다시 16 → 8 | G = 4096 | 누적 이동 비율 vs Σ 1/n, 매 단계 균형 | 누적 = 이론(여분 churn 0), 매 단계 max−min ≤ 1 |
 | S5 쏠림 한계 | 노드 8대, Zipf θ ∈ {0.9, 0.99, 1.2} 요청 100만 | G 4종 | 그대로 max/mean, 단위 이동 그리디 한계, 가장 뜨거운 단위·key 비중 | 그대로 ~1.7(θ=0.99, 실험 2: 1.73). 한계는 G 클수록 1.0에 접근, θ=1.2는 hot key 하나 때문에 ~1.5 바닥(실험 2: 1.516) |
 | S7 태그 묶음 | 노드 8대, key 100만 개를 tag 묶음 P개에 나눠 담음(`{g<i>}:<j>`), 요청 Zipf θ=0.99 | P ∈ {100, 1천, 1만, 10만} × 묶음 크기 Zipf θ_g ∈ {0, 0.99}, G = 4096 | key 균형, 가장 큰 묶음 비율, 흩어진 묶음 비율, 같은 묶음 두 key 같은 노드 확률, 요청 max/mean·그리디 한계, 노드 추가 이동 비율 | hash-tag만 흩어진 묶음 0·같은 노드 확률 1.0. key 균형은 θ_g=0.99·P=100에서 가장 큰 묶음(≈19%) × 8 ≈ 1.5 이상, P ≥ 1만이면 표 방식과 비슷. 나머지 variant는 같은 노드 확률 ≈ 1/8 |
+| S9 크기 조절 | 노드 16 → 2대 한 대씩 줄이고 다시 16대로. resizable-slot은 매 단계 뒤 `decide`가 절반이면 `halving` 이동 + `merged`, 추가 시 2배는 계획 안에서 | G = 4096 (T = 512) | 누적 이동 비율(절반 이동 포함)·절반 이동만의 비율 vs Σ 1/n, 절반·2배 횟수, 슬롯 수 최소·최대, 표 크기 최대, 최악 단위·key 균형 | resizable-slot은 절반 2회(7대·3대)·2배 1회(9대). 절반 이동은 "섞인 쌍 비율 / 2"(쌍마다 슬롯 하나). 나머지 variant는 슬롯 수 불변(ring은 split로 늘기만). 결과: 절반 1회 0.24, 누적 4.25 vs 이론 3.76 (results.md 5차) |
 | 보조 | 표 크기(초기 / 추가 후), `lookup` ns | G 4종 | | 표 크기는 구간 수 × 20B, ns는 log G |
+
+S4에는 2026-10-29부터 `size_max`·`size_final`·`metadata_bytes_max`를 함께 기록한다(resizable-slot이 1 → 16대 동안 언제 2배 하는지 보기 위해. 다른 variant는 값이 상수거나 ring처럼 split 누적).
 
 "가설"은 실행 전에 적은 것이고 결과가 다르면 그대로 기록한다.
 
@@ -193,7 +215,7 @@ variant마다 잘게 자르는 손잡이가 다르므로(fixed-slot은 전체 S,
 
 ### 실행 환경
 
-- in-process. 서버·네트워크·실제 시계 없음. seed 5개 × 시나리오. variant 5개 전체 약 10분(`ring-vnode-alloc`의 S4가 5분)
+- in-process. 서버·네트워크·실제 시계 없음. seed 5개 × 시나리오. variant 6개 전체 약 20분(`ring-vnode-alloc`의 S4·S9가 각 5분)
 - 코드: `cache-core/src/test/java/io/openkache/core/tablet/experiment/` (`main`이 있는 러너 + 틀 검증 `MetricsTest`). `./gradlew test`에서는 돌지 않는다
 - 결과: `distribution-comparison/summary.csv` (long 형식: `variant, scenario, G, nodes, keys, theta, groups, seed, metric, value`)
 - 표 전파 시간, `MOVED` 재시도율, Controller 장애 시 실패 수는 2단계(실제 노드·클라이언트)에서 측정한다
@@ -222,6 +244,8 @@ cache-core/src/main/java/io/openkache/core/tablet/
 │   └── RingScheme.java            ring-vnode (토큰 사이 구간, 배치 RANDOM / BALANCED, compact)
 ├── tag/
 │   └── HashTagScheme.java      hash-tag-tablet (hash-range에 위임, keyHash만 hash tag)
+├── resize/
+│   └── ResizableSlotScheme.java   resizable-slot (균등 슬롯, 전체 2배 doubled / 절반 halving+merged, decide)
 └── routing/                       표 전파·소유권 판정 (variant 무관, §4.3)
     ├── TableMessage.java          TablePush / GetTable / TableReply (PeerMessage)
     ├── OwnershipCheck.java        순수 판정: OK / MOVED(redirect) / STALE_EPOCH, 피기백 버전
@@ -238,6 +262,7 @@ cache-core/src/test/java/io/openkache/core/tablet/
 ├── range/                              계약 상속 + 길이 기준 균형, 무작위 split/merge/증감
 ├── ring/                               계약 상속 + 링 오라클(토큰 → 시계 방향)과 lookup 일치, 무작위 증감
 ├── tag/                             계약 상속 + tag 규칙, 같은 tag는 한 Tablet, 표·계획이 hash-range와 동일
+├── resize/                          계약 상속 + 2배/절반 규칙(id·주인·epoch 유지, 쌍 모으기, 차이 1 복원), 무작위 증감 + 자동 resize
 ├── routing/                            판정·클라이언트·Controller 단위 + PropagationScenarioTest(Controller 1 + 노드 3 + 클라이언트, FakeTransport)
 └── experiment/                         §6 실험 러너(DistributionComparison, main), Workload, Metrics, Variants, MetricsTest
 
@@ -250,7 +275,7 @@ experiments/b1-tablet-distribution/
 
 규칙:
 
-- **패키지는 variant별로 나눈다** (`slot`, `range`, `ring`, `tag`). B2가 기능별로 나누는 것과 다른데, B1은 "같은 기능의 다른 구현"이 아니라 "분배 방식 자체"가 비교 대상이기 때문이다. 공통 타입은 `tablet` 바로 아래에 둔다.
+- **패키지는 variant별로 나눈다** (`slot`, `range`, `ring`, `tag`, `resize`). B2가 기능별로 나누는 것과 다른데, B1은 "같은 기능의 다른 구현"이 아니라 "분배 방식 자체"가 비교 대상이기 때문이다. 공통 타입은 `tablet` 바로 아래에 둔다.
 - **variant 하나는 클래스 하나**가 된다. 클래스 Javadoc에 참고 문헌을 적고, `references/`의 정리 문서와 이름을 맞춘다.
 - **B2·B3가 쓰는 공통 타입(`Tablet`, `TabletRange`, `RoutingTable`, `Change`)은 영향받는 담당자 리뷰를 받는다.** `core.model`에는 올리지 않고 `core.tablet`에 둔다. `model`에 올릴 필요가 생기면 그때 팀 확인.
 - **실험 폴더는 비교하는 질문 기준으로 만든다.** `distribution-comparison/`은 모든 variant를 같은 시나리오로 비교한다.
@@ -285,3 +310,4 @@ experiments/b1-tablet-distribution/
 | `ring-vnode` 토큰 되찾기 | 새 토큰이 이미 있는 경계와 같으면(떠났던 NodeId 재합류) 한 칸 밀어 쪼개지 않고 그 경계에서 끝나는 Tablet을 통째로 새 노드가 맡는다. 밀면 폭 1짜리 Tablet만 받는 퇴화가 있었다(4차 리뷰에서 발견, 2026-10-28) | §4.4 |
 | 표 크기의 NodeId 크기 | 모든 variant가 NodeId를 8 B로 센다. `ring-vnode`만 4 B로 세어 토큰당 12 B였던 것을 16 B로 통일 (2026-10-28) | §4.4, §6 |
 | 그리디 한계의 뜻 | LPT로 도달 가능한 값(상한)이지 "어떤 재배치도 못 내려가는" 하한이 아니다. 하한은 가장 뜨거운 단위 비중 × 노드 수. 문서 문구를 고쳤고 지표 이름(`greedy_bound`)은 유지 (2026-10-28) | §6 |
+| `resizable-slot` 절반은 계획 밖에서 | 2배는 노드 추가 계획의 `prepared`로 자동이지만, 절반은 쌍을 모으는 이동이 필요해 `onNodeRemoved` 안에 넣으면 불변식 6(이동은 모두 떠나는 노드에서)이 깨진다. `decide` → `halving` → `merged`를 호출자가 한다. ScyllaDB의 "크기" 기준은 "노드당 슬롯 수"로 바꿈 (2026-10-29) | §4.6 |

@@ -19,11 +19,13 @@ variant 하나는 참고 문헌 하나에 대응한다. 실험 결과의 `varian
 | `hash-range-tablet` | 가변 해시 구간 | 가능 | 가능 | [Google Slicer와 ScyllaDB Tablets](references/slicer-scylla-tablets.md) | 구현 |
 | `ring-vnode` | 링 위 토큰 구간 | 불가 | 불가 | [Dynamo와 Cassandra vnode](references/dynamo-cassandra-vnode.md) | 구현 (배치 규칙 `ring-vnode` / `ring-vnode-alloc`) |
 | `hash-tag-tablet` | 가변 해시 구간, 단위는 key가 아니라 hash tag 묶음 | 가능 (묶음 안은 불가) | 가능 | [Hash tag와 partition key](references/hash-tag-partition-key.md) | 구현 |
+| `resizable-slot` | 균등 슬롯, 슬롯 수를 전체 2배/절반으로 조절 | 개별 불가 (전체 2배/절반만) | 가능 | [ScyllaDB tablet resize](references/scylla-tablet-resize.md) | 구현 |
 
 - `fixed-slot`은 가장 단순한 Tablet이다. 공통 인터페이스와 라우팅 표를 이것으로 먼저 검증한다.
 - `hash-range-tablet`은 명세의 "Tablet" 본안이다. split/merge가 되는 variant라 B2 실험의 본 무대다.
 - `ring-vnode`는 표 없이 계산으로 분배하는 기준선이다. "표를 두는 것이 실제로 이득인가"를 수치로 답하기 위해 둔다.
 - `hash-tag-tablet`은 `hash-range-tablet`에 key → 해시 규칙만 바꾼 것이다. "같은 태그를 한 노드에 모으는 대가"를 재기 위해 둔다.
+- `resizable-slot`은 `fixed-slot`과 `hash-range-tablet`의 중간이다. 균등 슬롯을 유지하면서 슬롯 수만 노드 수에 맞춰 2배/절반으로 바꾼다. "전체를 한꺼번에 바꾸는 것으로 개별 split의 효과를 얼마나 얻고 절반에 얼마가 드는가"를 재기 위해 둔다.
 
 2026-10-28부터는 처음 세 가지 위에 **표를 두는 variant를 더 넣어 비교 폭을 넓힌다**(해시 태그 → 크기 조절 슬롯 → key 순서 범위). 계산식 해시(jump, rendezvous 등)는 B2·B3가 끼어들 자리가 없어 넣지 않는다.
 

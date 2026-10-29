@@ -5,6 +5,7 @@ import io.openkache.core.tablet.Change;
 import io.openkache.core.tablet.DistributionScheme;
 import io.openkache.core.tablet.Plan;
 import io.openkache.core.tablet.RoutingTable;
+import io.openkache.core.tablet.resize.ResizableSlotScheme;
 import java.io.IOException;
 import java.io.PrintWriter;
 import java.nio.file.Files;
@@ -35,6 +36,8 @@ public final class DistributionComparison {
     static final int NODES = Variants.BASE_NODES;
     static final int REQUESTS = 1_000_000;
     static final int MAX_NODES_S4 = 16;
+    /** S9에서 줄이는 바닥. 16 → 2 → 16. */
+    static final int MIN_NODES_S9 = 2;
     /** S7 태그 묶음 수. 묶음당 평균 key 수는 100만 / 묶음 수. */
     static final int[] GROUP_COUNTS = {100, 1_000, 10_000, 100_000};
     /** S7 묶음 크기의 쏠림. 0이면 묶음 크기가 거의 같고, 0.99면 큰 묶음 몇 개가 key의 상당 부분을 차지한다. */
@@ -65,6 +68,7 @@ public final class DistributionComparison {
                 run.s4Churn(v);
                 run.s5Skew(v);
                 run.s7TagGroups(v);
+                run.s9Resize(v);
                 run.aux(v);
                 System.err.printf(Locale.ROOT, "%s done in %.1fs%n", v.name(), (System.nanoTime() - t0) / 1e9);
             }
@@ -139,6 +143,8 @@ public final class DistributionComparison {
             double ideal = 0;
             double worstImbalance = 1.0;
             int steps = 0;
+            int sizeMax = t.size();
+            int bytesMax = s.metadataBytes(t);
             for (int n = 2; n <= MAX_NODES_S4; n++) {
                 NodeId node = new NodeId(n);
                 Plan p = s.onNodeAdded(t, node);
@@ -149,6 +155,8 @@ public final class DistributionComparison {
                 members.add(node);
                 t = next;
                 worstImbalance = Math.max(worstImbalance, Metrics.unitMaxMean(t, members));
+                sizeMax = Math.max(sizeMax, t.size());
+                bytesMax = Math.max(bytesMax, s.metadataBytes(t));
                 steps++;
             }
             for (int n = MAX_NODES_S4; n > NODES; n--) {
@@ -161,6 +169,8 @@ public final class DistributionComparison {
                 members.remove(node);
                 t = next;
                 worstImbalance = Math.max(worstImbalance, Metrics.unitMaxMean(t, members));
+                sizeMax = Math.max(sizeMax, t.size());
+                bytesMax = Math.max(bytesMax, s.metadataBytes(t));
                 steps++;
             }
             Row row = new Row(v.name(), "S4", g, NODES, keys, Double.NaN, seed);
@@ -170,6 +180,85 @@ public final class DistributionComparison {
             write(row, "ideal_cumulative_ratio", ideal);
             write(row, "worst_unit_max_mean", worstImbalance);
             write(row, "final_key_max_mean", Metrics.keyMaxMean(t, hashes, members));
+            write(row, "size_max", sizeMax);
+            write(row, "size_final", t.size());
+            write(row, "metadata_bytes_max", bytesMax);
+        }
+    }
+
+    // ---- S9: 16 → 2 → 16 으로 크게 줄였다 늘린다. 슬롯 수를 바꾸는 variant(resizable-slot)가 절반·2배를 하면서 얼마나 더 움직이는가 ----
+
+    void s9Resize(Variants.Variant v) {
+        int g = 4096;
+        int keys = 1_000_000;
+        for (int seed = 1; seed <= SEEDS; seed++) {
+            long[] hashes = Workload.keyHashes(keys, seed);
+            DistributionScheme s = v.forGranularity().apply(g);
+            List<NodeId> members = new ArrayList<>(nodes(MAX_NODES_S4));
+            RoutingTable t = s.initial(members);
+            double cumulativeKeys = 0;
+            double resizeKeys = 0;
+            double ideal = 0;
+            double worstImbalance = 1.0;
+            double worstKeyImbalance = 1.0; // 링은 단위 수로 균형을 못 재므로(구간 길이가 제각각) key 기준도 매 단계 잰다
+            int sizeMin = t.size();
+            int sizeMax = t.size();
+            int bytesMax = s.metadataBytes(t);
+            int halves = 0;
+            int doubles = 0;
+            int steps = 0;
+            for (int n = MAX_NODES_S4; n > MIN_NODES_S9; n--) {
+                NodeId node = new NodeId(n);
+                RoutingTable next = s.onNodeRemoved(t, node).applyAll();
+                cumulativeKeys += Metrics.movedRatio(t, next, hashes);
+                ideal += 1.0 / n;
+                members.remove(node);
+                t = next;
+                steps++;
+                // 노드 제거 계획은 떠나는 노드의 이동만 담으므로(불변식 6) 절반은 계획 밖에서 한다. 그 이동도 누적에 넣는다
+                while (s instanceof ResizableSlotScheme r && r.decide(t) == ResizableSlotScheme.Resize.HALVE) {
+                    RoutingTable colocated = r.halving(t).applyAll();
+                    double moved = Metrics.movedRatio(t, colocated, hashes);
+                    cumulativeKeys += moved;
+                    resizeKeys += moved;
+                    t = r.merged(colocated);
+                    halves++;
+                }
+                worstImbalance = Math.max(worstImbalance, Metrics.unitMaxMean(t, members));
+                worstKeyImbalance = Math.max(worstKeyImbalance, Metrics.keyMaxMean(t, hashes, members));
+                sizeMin = Math.min(sizeMin, t.size());
+                bytesMax = Math.max(bytesMax, s.metadataBytes(t));
+            }
+            for (int n = MIN_NODES_S9 + 1; n <= MAX_NODES_S4; n++) {
+                NodeId node = new NodeId(n);
+                Plan p = s.onNodeAdded(t, node);
+                if (s instanceof ResizableSlotScheme && p.prepared().size() > t.size()) {
+                    doubles++;
+                }
+                RoutingTable next = p.applyAll();
+                cumulativeKeys += Metrics.movedRatio(t, next, hashes);
+                ideal += 1.0 / n;
+                members.add(node);
+                t = next;
+                steps++;
+                worstImbalance = Math.max(worstImbalance, Metrics.unitMaxMean(t, members));
+                worstKeyImbalance = Math.max(worstKeyImbalance, Metrics.keyMaxMean(t, hashes, members));
+                sizeMax = Math.max(sizeMax, t.size());
+                bytesMax = Math.max(bytesMax, s.metadataBytes(t));
+            }
+            Row row = new Row(v.name(), "S9", g, MAX_NODES_S4, keys, Double.NaN, seed);
+            write(row, "steps", steps);
+            write(row, "cumulative_moved_key_ratio", cumulativeKeys);
+            write(row, "resize_moved_key_ratio", resizeKeys);
+            write(row, "ideal_cumulative_ratio", ideal);
+            write(row, "halves", halves);
+            write(row, "doubles", doubles);
+            write(row, "worst_unit_max_mean", worstImbalance);
+            write(row, "worst_key_max_mean", worstKeyImbalance);
+            write(row, "final_key_max_mean", Metrics.keyMaxMean(t, hashes, members));
+            write(row, "size_min", sizeMin);
+            write(row, "size_max", sizeMax);
+            write(row, "metadata_bytes_max", bytesMax);
         }
     }
 
