@@ -1,6 +1,7 @@
 package io.openkache.core.tablet.experiment;
 
 import io.openkache.core.tablet.DistributionScheme;
+import io.openkache.core.tablet.order.KeyOrderScheme;
 import io.openkache.core.tablet.tag.HashTagScheme;
 import io.openkache.core.tablet.range.HashRangeScheme;
 import io.openkache.core.tablet.resize.ResizableSlotScheme;
@@ -22,6 +23,7 @@ import java.util.function.IntFunction;
  * ring-vnode-alloc    V = G / BASE_NODES   (가장 많이 맡은 노드에서 공정 몫만큼 잘라 오는 토큰)
  * hash-tag-tablet     T = G / BASE_NODES   (표는 hash-range-tablet과 같고 keyHash만 hash tag)
  * resizable-slot      T = G / BASE_NODES   (노드당 목표 슬롯 수. 노드 8대면 S = 8T = G, 노드 수에 따라 2배/절반)
+ * key-order-tablet    T = G / BASE_NODES   (표는 hash-range-tablet과 같고 keyHash만 순서 보존: 앞 8바이트)
  * </pre>
  *
  * <p>ring 둘은 {@code supportsMove() = false}라 S5의 그리디 한계는 참고값이고, 표 크기는 토큰 목록 크기다. hash-tag-tablet은
@@ -42,7 +44,8 @@ final class Variants {
             new Variant("ring-vnode-alloc",
                     g -> new RingScheme(Math.max(1, g / BASE_NODES), RingScheme.Placement.BALANCED)),
             new Variant("hash-tag-tablet", g -> new HashTagScheme(Math.max(1, g / BASE_NODES))),
-            new Variant("resizable-slot", g -> new ResizableSlotScheme(Math.max(1, g / BASE_NODES))));
+            new Variant("resizable-slot", g -> new ResizableSlotScheme(Math.max(1, g / BASE_NODES))),
+            new Variant("key-order-tablet", g -> new KeyOrderScheme(Math.max(1, g / BASE_NODES))));
 
     private Variants() {}
 }

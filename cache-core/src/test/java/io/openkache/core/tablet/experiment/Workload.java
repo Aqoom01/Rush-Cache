@@ -95,6 +95,29 @@ final class Workload {
         return new Tagged(keys, groupOf, groups);
     }
 
+    /**
+     * 순차 key {@code count}개. 앞 8바이트는 big-endian 번호(seed로 정한 시작값부터 1씩 증가), 뒤 8바이트는 0~63 범위의 난수(중괄호가 안
+     * 들어가므로 hash tag로 오인되지 않는다). 시간·자동 증가 ID처럼 "들어오는 순서대로 커지는" key다. 배열 순서가 곧 key 순서다.
+     */
+    static Bytes[] sequentialKeys(int count, long seed) {
+        SplittableRandom rnd = new SplittableRandom(seed);
+        long from = rnd.nextLong() >>> 2; // 끝까지 더해도 넘치지 않게
+        Bytes[] keys = new Bytes[count];
+        for (int i = 0; i < count; i++) {
+            byte[] k = new byte[16];
+            long v = from + i;
+            for (int b = 7; b >= 0; b--) {
+                k[b] = (byte) v;
+                v >>>= 8;
+            }
+            for (int b = 8; b < 16; b++) {
+                k[b] = (byte) rnd.nextInt(64);
+            }
+            keys[i] = Bytes.copyOf(k);
+        }
+        return keys;
+    }
+
     /** variant의 {@link DistributionScheme#keyHash}로 구한 해시값. tag를 보는 variant와 key 전체를 보는 variant가 여기서 갈린다. */
     static long[] hashesOf(DistributionScheme scheme, Bytes[] keys) {
         long[] hashes = new long[keys.length];
