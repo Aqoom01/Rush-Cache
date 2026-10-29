@@ -1,4 +1,49 @@
-# V05a — 클라이언트 관측 기반 Follower 선택 설계 v1.0
+# V05 — 클라이언트 관측 기반 Follower 선택 구현·설계
+
+## 현재 구현·검증 상태 — V05
+
+2026-10-28. **V05 기능 구현과 선택한 인수 fixture 검증을 완료했다.** 시작 HEAD `74e2599582751c646c425815cf876a1b0a42c89d`는 clean이었다. 기존 구현/테스트/설정은 보존했고 commit/push/merge는 실행하지 않았다.
+
+- `replication/ionia-seventh/`의 독립 main/test roots, package `ionia_seventh`에 Settings/ReplicaSelector/IoniaAdaptiveReadClient를 구현했다. 관측 Transport는 client의 private inner class다. 새 Engine/Node 사본은 없다.
+- 원본 Client.readAtFollower·Engine·Node·Log/History/Recovery·wire/TCP·파일 KV/stable View를 직접 재사용한다. O00 서버와 client 정책 hash를 분리한다. server CLI만 새 client Main을 제공한다.
+- RR/ADAPTIVE·EWMA1/8·TTL/탐색/cooldown·L/P·실제 raw completion·same-ID/timeout/cancel·generation/dispatch seq fencing·불변 진단을 구현했다. private delegate/public future 분리와 deferred publication으로 사용자 callback을 제어 lock 밖에서 완료한다.
+- CLI는 같은 logical ID/10초 총 deadline으로 발견/재시도를 수행하며 UNAVAILABLE/NOT_PRIMARY/BUSY를 그 안에서만 재시도한다. 라이브러리 내부 read retry/hedging은 추가하지 않았다. 단발 CLI는 학습 성능 측정용이 아니다.
+- diagnostics.outcomes는 거절 또는 private delegate의 완료 결과를 집계한다. public cancel 뒤 원본 요청이 OK로 끝날 수도 있으므로 publicCancels와 구분하고, 이를 사용자에게 전달된 성공 수나 goodput으로 바로 해석하지 않는다. 모드/설정은 불변 Settings와 실행 metadata에 함께 기록한다.
+- Java21.0.11 최종 전체 build/installDist 성공. **457개(core358/server83/runner16), 실패·오류·skip0**, 신규 V05 연결 **41개(core37/server4)**다. 기존 checker/fixture 재사용을 포함하며 새 정리41개를 증명한 숫자가 아니다.
+- 기존 보호 **237개 파일 SHA-256 동일**(공유 core Gradle sourceSet·개발 기록·이 문서 상태 갱신 제외). 새 production JAR 포함/test 제외·core 외부 production 의존성 없음도 확인했다.
+
+### 실제 인수 증거
+
+| ID | 실행한 fixture |
+| --- | --- |
+| V05-01 | settings/모든 leader 회전·3/5 구성·실제 View failover |
+| V05-02 | RR/ADAPTIVE 결정적 tie/초기점·실제 TCP 두 모드 |
+| V05-03 | Meta DATA가 raw sample이 아님·raw failure와 delayed TCP READ 관측 |
+| V05-04 | 설정·TTL 경계·EWMA·0/지연 sample clamp·saturating score |
+| V05-05 | virtual-thread 32 caller L/P·동일 ID token·BUSY시 새 RPC 없음 |
+| V05-06 | 탐색 E1/2/16·cooldown 만료/회복·실제 delayed reply 제거 후 재탐색 |
+| V05-07 | throw/null stage/exception/cancel/BUSY/UNAVAILABLE/TIMEOUT·잘못된 node/view/client/op |
+| V05-08 | public cancel·delegate timeout·Meta DATA 완료 뒤 raw P 보존/회수 |
+| V05-09 | 빠른 stale value/MISS·실제 엔진의 오래된 응답과 나중 trimmed Meta |
+| V05-10 | a<i/a=i/a>i, pending DATA·DELETE MISS·응답 역순·forged Meta |
+| V05-11 | old generation callback·동일 View 학습 보존·old refresh rollback 거절·refresh 중 close |
+| V05-12 | 같은 View 역순 sample·sequence exhaustion fail-closed |
+| V05-13 | Meta/probe 인증 실패·3/5 원본 엔진 isolated old leader |
+| V05-14 | 원본 fast SET/DELETE/시간초과 View retry·timer/close·public callback lock 경계/동기 재진입 |
+| V05-15 | 3/5 replicas×RR/ADAPTIVE×64 seeds×10 CRUD=2560 유한 완료 이력·timeout completion 확장·기존 checker 대조군 |
+| V05-16 | 실제 TCP 두 모드 각각32 hot-key/S2·80ms controlled response delay 회피/회복 탐색 |
+| V05-17 | O00 JVM3개 leader crash/restart 및 follower 단독 crash/restart/rejoin·CLI CRUD |
+| V05-18 | 전체 Java build/installDist·core 의존성 검사·JAR/기존 파일 hash·실제 policy profile/진단 |
+
+3/5×두 모드×64 seeds×10=2560 완료 CRUD의 유한 이력과 결과 불명확 write의 completion 확장을 검사했다. 실제 TCP는 두 모드 각각32 hot-key와 별도80ms 응답 전달 지연 fixture를 사용했다. 후자는 SSD 지연/성능 측정이 아니다. 독립 JVM3개의 leader 및 follower 각각의 crash/restart/rejoin, 새 CLI CRUD를 확인했다.
+
+검증 요약·클래스별 수·소스/산출물/보호 hash는 `IONIA_V05_VALIDATION.json`, 실행 방법은 `../experiments/ionia-seventh/README.md`에 있다. 아래1–9는 설계 당시 기록을 보존한 것이다. 그중 '이번 단계 Java 미실행'과 인수 '계획'은 당시 상태이며 현재 실행 증거는 이 절/VALIDATION을 따른다.
+
+직전 전체 실행의 기존 V03 IoniaFourthProcessTest에서 leader crash 직후 CLI GET이1회 TIMEOUT을 반환했다. V05 검사는 그 실행에서도 모두 통과했다. 기존 소스를 변경하지 않은 분리 재실행과 최종 전체 재실행은 통과했으며 원인은 확정하지 않았다. V03의 시간 관련 안정성을 해결한 것으로 표시하지 않는다.
+
+성능/최적값·실시간 lag/서버 계측 후속·V06은 미완료다. 모든 후보가 cooldown/full이면 정상 leader가 있어도 BUSY를 반환한다. L/P는 raw READ stage/논리 GET만 제어하며 전체 socket/쓰기/Meta/probe·RAM 상한이 아니다. 기존 메시지별 TCP 연결·64MiB 상태 전송/32MiB KV payload 제약을 유지한다. Replica RAM Durability Log·stable View·선택적 KV force를 구별하며 per-request stable WAL/fsync를 추가하지 않았다. 이번은 유한 기능·장애 fixture 검증이며 모든 interleaving이나 성능의 증명이 아니다.
+
+---
 
 2026-10-28. 분류 **D(자체 가설)**. 이번 산출물은 문헌 근거·상세 설계·유한 사전모형이다. **Java V05 구현·통합 테스트·성능 검증은 아직 실행하지 않았다.** 직전 Java 기준은 TCP 감사 후 416개×2회 통과이며 이번 모형 수와 합산하지 않는다. 시작 HEAD `3998af206d7b2363f9d130b0c185b5f99b0c4d3e` 및 미커밋 V04b/TCP 감사 변경을 보존했다. commit/push/merge 미실행.
 

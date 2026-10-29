@@ -136,3 +136,17 @@
 - 기존 보호 241개 파일 hash 동일(개발 기록 추가 제외). Java/Gradle/기존 설정 변경 없음. 직전416개×2회 회귀 결과와 이번 모형을 합산하거나 재실행으로 표시하지 않음.
 - docs/IONIA_V05.md, IONIA_V05_REVIEW.json, docs/models/v05_selector_model.py. Java V05 구현·공통 성능 비교·lag/서버 계측·V06·최적값/실측SSD/multi-host/power-loss/D-PERSIST는 미완료.
 - 노션03-7 상세 설계와 문헌 P080/P081 추가. DB 전체84행=고유81편+DUP3, ID충돌0·핵심절12/서지초록69/전체상세분석·재현0 직접 확인. local admission은 정상 leader가 있어도 모든 후보 cooldown/full이면 BUSY이므로 동일 읽기 가용성 보장으로 표시하지 않음.
+
+
+## 2026-10-28 | V05 Follower 선택 Java 구현·기능 검증
+
+- 시작 HEAD74e2599582751c646c425815cf876a1b0a42c89d, 작업 트리 clean 확인. commit/push/merge 미실행.
+- replication/ionia-seventh(package ionia_seventh)의 독립 main/test roots에 Settings/Selector/AdaptiveReadClient·private 관측 Transport 구현. server.ionia_seventh에는 client CLI만 추가. 원본 Client.readAtFollower/Engine/Node/Log/History/Recovery/wire/TCP/파일KV/ViewStore를 직접 재사용, 새 Engine/Node 없음.
+- RR/ADAPTIVE·실제 raw RTT와 local outstanding·TTL/EWMA/탐색/cooldown·L/P·timeout/cancel/MetaDATA의 비대칭 completion·View/seq fencing·불변 진단 구현. 정책 hash는 client metadata이며 O00 wire/stable View와 분리.
+- 제어 lock 안에서 비차단 dispatch만 진행, private delegate 결과를 deferred publication해 사용자 callback은 lock 밖에서 완료. 동일ID token 덮어쓰기와 raw 허가 조기 회수를 방지. 전체 socket/쓰기/Meta/probe/서버·RAM 상한으로 주장하지 않음.
+- 새 CLI의 초기3회 조기 종료를 같은ID/10초 총deadline 발견·재시도로 보완. UNAVAILABLE/NOT_PRIMARY/BUSY를 한도 안에서만 재시도. 단발 CLI는 학습 성능 비교용 아님.
+- Java21.0.11 최종 전체 build/installDist 성공. 457개(core358/server83/runner16), 실패·오류·skip0. V05 연결41개(core37/server4), 기존 checker/fixture 재사용 포함.
+- 3/5×두 모드×64seeds×10CRUD=2560 유한 완료 이력/timeout completion 확장·잘못된 이력 대조군, 실제 엔진 stale value/MISS+나중trim Meta·pendingDATA·isolated oldleader, 실제TCP 두모드 각각32hotkey/S2 및80ms 전달 지연 회피/탐색, 독립JVM3개 leader/follower 각각crash/restart/rejoin·CLI 확인.
+- 기존 보호 237개 파일 hash 동일. 기존 파일 수정은 core Gradle 새sourceSet·개발기록·V05현재상태뿐. 공통API/기존방식 소스·테스트·설정·의존성 보존. production JAR 새class포함/test제외 확인.
+- 직전 전체 실행의 기존 V03 ProcessTest leader crash후 CLI GET TIMEOUT1회는 기존 코드 변경 없이 분리 재실행·최종 전체 재실행 통과. 원인 미확정으로 기록하며 V03 안정성 해결로 표시하지 않음. V05 자체 검사는 해당 실행도 통과.
+- docs/IONIA_V05.md, IONIA_V05_VALIDATION.json, experiments/ionia-seventh/README.md. V05b 서버/실시간lag 계측·V06·공통 데이터셋/성능·최적값/SSD/멀티호스트/power-loss/D-PERSIST는 미완료. C3/Tars 전체 재현·전체 interleaving 증명 아님.
