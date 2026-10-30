@@ -164,3 +164,35 @@
 - 기존 보호262파일 hash동일(기존파일 수정은 core Gradle4줄·개발기록). JAR 새class포함/test제외·dependency 검사 통과.
 - 첫 전체 V06 TCP UNAVAILABLE1회·후속 전체 통과·추가 반복은 docs/IONIA_V06.md/IONIA_V06_VALIDATION.json에 보존. 당시 RPC 부재로 소급 원인 확정 없음. 기존 V03 단발timeout도 해결 주장 없음.
 - 현재범위 O00+파생7개 기능fixture 구현/검증. 공통데이터셋/장기client·동일조건 성능·최적값/SSD/NIC/multi-host/power-loss·V05서버lag 미완료. batch HOL/공동 실패·메시지별TCP 제약 유지.
+
+## 2026-10-30 | 공통 벤치마크 시나리오·계측 명세 v1
+
+- experiments/replication-benchmark-v1에 독립 문서·JSON 카탈로그·Draft-07 manifest/result schema·실행 불가 draft template·NOT_RUN 결과 형식 예시를 추가. 27개 시나리오/36개 지표군, 3/5노드, 동일 trace/paired seed, 정상·정확성·장애·장기·변형별 민감도 절차와 판정 정의.
+- goodput/전체 completion, logical op/attempt/message, client 종단/예정 지연, 전수 histogram·표본수, phase/cohort/clock·ACK audit·복구 시각·null 사유를 구분. 요청수/시간/데이터 크기는 pilot 이전 후보값.
+- 기존 단일 대상 Runner의 실패 포함 throughput·8192 reservoir·연결 이후 지연·warm-up seed 재생 등과의 차이 및 후속 B1–B8 구현 순서를 기록. 분산 driver/collector/checker의 새 계약 구현은 후속이며 Hermes/B01 비교도 별도 adapter 계약 필요.
+- PowerShell7 로컬 명세 검사31개 통과. 합성 schema fixture는 .invalid 주소로 메모리에서만 검사; benchmark/correctness/Java 테스트 실행0. source preservation 결과는 신규 디렉터리 source-preservation.json 참조.
+- 사용자 요청에 따라 EC2 접속·사전진단·원격 실행은 보류. 실제 성능/SSD/멀티호스트 수치 없음. 기존 생산 코드·공통 API·테스트·설정·Gradle 변경 없음. commit/push/merge 미실행.
+
+
+## 2026-10-30 | 공통 벤치마크 단계1 — 논리 데이터·요청열 생성기
+
+- experiment-runner의 별도 benchmark/benchmarkTest sourceSet에 논리 trace 생성기를 추가. 기존 Command/Bytes 재사용, 기존 WorkloadGenerator/Main/공통 API/알고리즘/테스트/의존성 보존. Gradle은 새 sourceSet·검사·생성 task 연결만 추가하며 application JAR에 benchmark 클래스가 들어가지 않음 확인.
+- LOAD/WARMUP/MEASURE 별도 namespace, indexed PRNG·UNIFORM/FIXED_HOT, 전역 index 재생성·고정 stream 분할·runtime request ID 계약, injective key/seed+client+sequence+key+CRC32C value, canonical binary SHA256/hash-only/export 구현. 확률적 mix이며 작은 trace exact quota 아님. Zipf/moving-hot과 실제 attempt/outcome은 후속.
+- Java21.0.11 최종 전체 build/installDist 529개(core392/server90/기존runner16/새benchmark31) 통과, 실패·오류·skip0. 로컬 포트 사전진단·기존 병렬/인수 조건 유지. 최종 증거 build/ionia-validation/20261030-121153-013f5350.
+- 최초 전체 회귀는 기존 V07 IoniaMetaBatchTcpTest에서 UNAVAILABLE/leader PROBE·BATCH Connection refused1건. 분리2검사와 최종 전체는 통과. 기존 코드·timeout 변경 없이 첫 실패 XML/log를 보존하며 원인/안정성 해결은 주장하지 않음. 원본 증거 build/ionia-validation/20261030-120748-ba60ddda, 분리 build/benchmark-b1-target-df50cbc5. 즉시 분리 시도는 포트 예산 초과로 실행되지 않았고, 뒤의 정상 포트 조회·gate 이후 실행함.
+- 100만 key round-trip·stream 전역 순번 중복/누락·동시 재생성·비율·초기 적재·phase ID 분리·손상/설정 오류·overwrite 방지·binary/버전 hash/IO 실패 검증. key64/워밍업256/측정10000 작은 생성 예제를 -Xmx64m에서 hash-only/파일 두 번 실행해 SHA256/byte/count 일치. Gradle CLI도 같은 hash, 실행시 Task.project 경고 제거 후 확인.
+- 기존 src214개 SHA256 동일, 새 Java13파일. experiments/replication-benchmark-v1/TRACE_GENERATOR.md, trace-small.properties, B1_VALIDATION.json, B1_SOURCE_PRESERVATION.json 참조. 원래31개 명세 형식 검사와 새31개 Java 생성기 검사는 별개임.
+- 새 생성기를 통한 서버 부하 전송·공통 성능 측정·EC2 접속/사전진단·commit/push/merge 미실행. 기존 회귀에는 로컬 TCP/JVM 기능 검사가 포함됨. 단계1(logical generator) 완료이며 전체 B1의 attempt/outcome 및 B2 이후 분산 driver·계측·checker 완료 아님. 다음은 O00 장기 client adapter와 실제 결과 계수.
+
+
+## 2026-10-30 | 공통 벤치마크 단계2 — O00 장기 client·실제 결과 집계
+
+- experiment-runner benchmark 영역에 BenchmarkClient/ClientOutcome/ClientAccounting, cache-server 별도 benchmark 영역에 O00BenchmarkClient/ObservedRpc/O00TcpClients와 검사 추가. 원본 IoniaClient/인증/fast ACK/DELETE executed 경로/TCP/파일KV 그대로 재사용. common benchmark JAR만 server 실험 영역에 연결하며 기존 production 의존성·API·wire·application JAR 보존.
+- stream/phase별 장기 client/View, runtime ID와 별도 wire ClientId base/OperationId 매핑, 같은 command·ID·총deadline의 bounded retry 구현. 초기 발견/재발견과 실제 client execute attempt·연산별 성공/오류/미응답·재시도 logical 수를 분리. 수명 전체 계수이며 phase별 성능 cohort/export는 후속.
+- 전체 deadline은 submit 진입부터 발견·lock/client 준비·retry·publication 대기까지 포함. 관찰/전달 시각 구분·늦은 전달의 성공 금지·취소/close·외부 future copy 보호·중복/역순/overflow 거절. 완료ID 전수보관 없이 client별 high-water와 bounded active/publication/raw-stage 상태 유지.
+- raw RPC permit은 실제 delegate stage terminal 때만 반환. logical 취소/timeout/close로 원격 abort·socket 종료·전체 RAM 상한을 주장하지 않음. 기존 RPC별 새 socket 정책을 유지하며 이번 장기 client가 TCP pooling 구현이라는 뜻 아님. wireClientBase의 run/slot 간 배타 예약은 후속 coordinator 책임.
+- Java21.0.11 전체 build/installDist562개(core392/server90/기존runner16/runner benchmark33/server benchmark31)·추가33개 통과, 실패·오류·skip0. 증거 build/ionia-validation/20261030-124619-249372b2. 새 server TCP fixture만 기존 회귀 뒤에 배치하고 기존 회귀 병렬/timeout/포트 gate 유지.
+- 제어 응답에서 View 변경 retry·영구/일시 오류·발견/실행 deadline·late completion·close·backpressure·publication 지연 음성 대조·cancel/response16회 유한 경합. 로컬TCP3/5노드 각각29logical·장기client6개·생성 적재/쓰기·인증 follower GET 값 대조·DELETE OK/MISS·재삽입. 무응답loopback에서 raw socket timeout5초보다 짧은 logical300ms deadline 관찰. 성능/정시 보장·전체 선형성 증명 아님.
+- 기존 src227파일 SHA256 동일, 새 Java11파일. 기존 Runner/Server application JAR의 benchmark class0 확인. 과거 B1 V07 TCP 간헐 Connection refused는 해결 주장 없이 보존하며 이번 전체 회귀에서는 실패 없음.
+- experiments/replication-benchmark-v1/ADAPTER_O00.md, B2_VALIDATION.json, B2_SOURCE_PRESERVATION.json 및 README/구현차이 문서 반영. 실제 EC2·공통 성능·commit/push/merge 미실행, template draft/disabled 유지. 다음은 phase coordinator·apply/drain·부하 scheduler·histogram/result export. 변형/Hermes adapter와 분산 checker/장애 controller는 후속.
+

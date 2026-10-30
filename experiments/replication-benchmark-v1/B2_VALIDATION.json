@@ -1,0 +1,180 @@
+{
+  "schema_version": "benchmark-b2-validation-v1",
+  "date": "2026-10-30",
+  "scope": "O00_long_lived_client_adapter_and_local_accounting",
+  "status": "passed",
+  "java": "Microsoft OpenJDK 21.0.11+10-LTS",
+  "gradle": "9.8.0",
+  "new_tests": 33,
+  "prior_tests": 529,
+  "total_tests": 562,
+  "failures": 0,
+  "errors": 0,
+  "skipped": 0,
+  "final_build": {
+    "command": ".\\experiments\\ionia-validation\\Run-Validation.ps1 -Mode Full -Repeat 1 -PortWaitSeconds 60",
+    "evidence": "build/ionia-validation/20261030-124619-249372b2",
+    "manifest": {
+      "mode": "Full",
+      "repeat": 1,
+      "javaHome": "C:\\Users\\SSAFY\\.jdks\\ms-21.0.11",
+      "windowsPortGate": true,
+      "maxObservedPortFraction": 0.1,
+      "gradleArgs": [
+        "build",
+        ":cache-server:installDist",
+        "--rerun-tasks",
+        "--console=plain"
+      ],
+      "status": "passed",
+      "completedRuns": 1
+    },
+    "results": {
+      "cache-core": {
+        "tests": 392,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "suites": []
+      },
+      "cache-server": {
+        "tests": 90,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "suites": []
+      },
+      "experiment-runner": {
+        "tests": 16,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "suites": []
+      },
+      "experiment-runner-benchmark": {
+        "tests": 33,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "suites": [
+          {
+            "name": "io.openkache.runner.benchmark.client.ClientAccountingTest",
+            "tests": 2
+          },
+          {
+            "name": "io.openkache.runner.benchmark.KeyValueCodecTest",
+            "tests": 6
+          },
+          {
+            "name": "io.openkache.runner.benchmark.TraceGeneratorTest",
+            "tests": 15
+          },
+          {
+            "name": "io.openkache.runner.benchmark.TraceToolTest",
+            "tests": 5
+          },
+          {
+            "name": "io.openkache.runner.benchmark.TraceWriterTest",
+            "tests": 5
+          }
+        ]
+      },
+      "cache-server-benchmark": {
+        "tests": 31,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "suites": [
+          {
+            "name": "io.openkache.server.benchmark.ionia.O00BenchmarkClientTest",
+            "tests": 25
+          },
+          {
+            "name": "io.openkache.server.benchmark.ionia.O00BenchmarkTcpTest",
+            "tests": 3
+          },
+          {
+            "name": "io.openkache.server.benchmark.ionia.ObservedRpcTest",
+            "tests": 3
+          }
+        ]
+      }
+    }
+  },
+  "preliminary_commands": [
+    ".\\gradlew.bat :cache-server:compileBenchmarkJava --offline --console=plain --warning-mode=all",
+    ".\\gradlew.bat :experiment-runner:benchmarkTest :cache-server:benchmarkTest --tests '*ClientAccountingTest' --tests '*O00BenchmarkClientTest' --tests '*ObservedRpcTest' --offline --console=plain",
+    ".\\gradlew.bat :experiment-runner:benchmarkTest :cache-server:benchmarkTest --offline --console=plain"
+  ],
+  "checks": [
+    "Retained per-stream/phase IoniaClient sessions; initial discovery reuse",
+    "Retry preserves command, client/op IDs and one deadline; changes destination on fresh View",
+    "Retryable/permanent Result status distinction; bounded discovery/execute rounds",
+    "logical admitted=success+errorResponse+noResponse+pending; GET/SET/DELETE dimensions",
+    "client attempts, retried logical ops, discovery rounds and raw protocol calls are separate",
+    "Timeout during discovery/execute, late outcome/cancel/close do not become success",
+    "Raw permits remain occupied after logical timeout/cancel/close until delegate stage completion",
+    "Readonly future copies, active duplicate requests and illegal ID reuse/order/overflow",
+    "Logical admission backpressure does not consume rejected sequences",
+    "User callbacks run outside internal locks/control timer",
+    "Publication queue delay included in latency and deadline; late publication negative control",
+    "16 finite cancel/response races conserve exactly one terminal logical outcome",
+    "SET fast ACK is one logical attempt and 3/5 record RPCs; DELETE preserves executed result path",
+    "GET payload/MISS semantics; unsupported/malformed outcomes never counted as success"
+  ],
+  "local_tcp_fixtures": [
+    {
+      "node_count": 3,
+      "logical_requests": 29,
+      "retained_client_sessions": 6,
+      "semantic_successes": 29,
+      "operation_successes": {
+        "set": 21,
+        "get": 6,
+        "delete": 2
+      },
+      "description": "Generated LOAD4/WARMUP4/MEASURE12 writes, sequential GET/value/CRC audit, DELETE OK/MISS, reinsertion; certified follower reads."
+    },
+    {
+      "node_count": 5,
+      "logical_requests": 29,
+      "retained_client_sessions": 6,
+      "semantic_successes": 29,
+      "operation_successes": {
+        "set": 21,
+        "get": 6,
+        "delete": 2
+      },
+      "description": "Same local fixture with 5 independent IoniaNode objects and separate file directories."
+    },
+    {
+      "description": "Non-responding loopback endpoints: raw probe socket timeout 5s; logical total deadline300ms terminates with NO_RESPONSE/DEADLINE while raw stages remain outstanding. No realtime recovery bound claimed."
+    }
+  ],
+  "main_jars_and_benchmark_class_entries": {
+    "cache-server/build/libs/cache-server-0.1.0-SNAPSHOT.jar": 0,
+    "experiment-runner/build/libs/experiment-runner-0.1.0-SNAPSHOT.jar": 0,
+    "experiment-runner/build/libs/experiment-runner-0.1.0-SNAPSHOT-benchmark.jar": 27
+  },
+  "existing_source_files_checked": 227,
+  "existing_source_changes": 0,
+  "new_source_files": 11,
+  "preservation_artifact": "B2_SOURCE_PRESERVATION.json",
+  "remote_actions": 0,
+  "ec2_diagnostics": 0,
+  "common_performance_runs": 0,
+  "commits": 0,
+  "pushes": 0,
+  "limitations": [
+    "Long-lived IoniaClient is not persistent socket pooling; original TCP opens a socket per RPC.",
+    "Only O00 adapter is integrated; V01-V07/Hermes adapters are pending.",
+    "wireClientBase range must be coordinated uniquely across runs/load slots; cross-JVM reservation not implemented.",
+    "ERROR_RESPONSE describes a client API Result, not proof of receiving an error wire frame.",
+    "Counters are lifetime per-operation counts, not phase-specific benchmark cohorts or exported result.schema.json results.",
+    "Raw outstanding limits count unfinished delegate stage occurrences, not all physical sockets/bytes/process memory.",
+    "Close/cancel cannot prove remote abort or application rollback; raw completions may outlive logical completion.",
+    "phase scheduler/open-loop, histogram, apply/drain barrier, manifest/result export and node metrics remain pending.",
+    "Finite local fixtures are not full linearizability/model checking, SSD performance or EC2 fault/recovery qualification.",
+    "Earlier B1 V07 TCP intermittent Connection refused remains recorded, not claimed fixed; no failure in this final full run."
+  ]
+}

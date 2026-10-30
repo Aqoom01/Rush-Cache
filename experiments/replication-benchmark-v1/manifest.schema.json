@@ -1,0 +1,1460 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "OpenKache replication benchmark run manifest v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "plan_id",
+    "readiness",
+    "execution_enabled",
+    "unresolved",
+    "scenario_id",
+    "variant_id",
+    "node_count",
+    "seed",
+    "repeat_index",
+    "source",
+    "environment",
+    "dataset",
+    "workload",
+    "timing",
+    "persistence",
+    "fault",
+    "qualification",
+    "required_metrics",
+    "metric_policy"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "replication-run-v1"
+    },
+    "plan_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "readiness": {
+      "enum": [
+        "draft",
+        "ready"
+      ]
+    },
+    "execution_enabled": {
+      "type": "boolean"
+    },
+    "unresolved": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "uniqueItems": true
+    },
+    "scenario_id": {
+      "enum": [
+        "ENV-01",
+        "FUN-01",
+        "COR-01",
+        "COR-02",
+        "COR-03",
+        "COR-04",
+        "COR-05",
+        "PERF-01",
+        "PERF-02",
+        "PERF-03",
+        "PERF-04",
+        "PERF-05",
+        "PERF-06",
+        "SENS-01",
+        "SENS-02",
+        "FAULT-01",
+        "FAULT-02",
+        "FAULT-03",
+        "FAULT-04",
+        "LONG-01",
+        "VAR-01",
+        "VAR-02",
+        "VAR-03",
+        "VAR-04",
+        "VAR-05",
+        "VAR-06",
+        "VAR-07"
+      ]
+    },
+    "variant_id": {
+      "enum": [
+        "O00",
+        "V01",
+        "V02",
+        "V03",
+        "V04",
+        "V05",
+        "V06",
+        "V07",
+        "HERMES",
+        "UNREPLICATED"
+      ]
+    },
+    "node_count": {
+      "enum": [
+        3,
+        5
+      ]
+    },
+    "seed": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "repeat_index": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 5
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "commit",
+        "dirty",
+        "source_hash",
+        "adapter_id",
+        "capability_evidence"
+      ],
+      "properties": {
+        "commit": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1
+        },
+        "dirty": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "source_hash": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[a-fA-F0-9]{64}$"
+        },
+        "adapter_id": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1
+        },
+        "capability_evidence": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1
+        }
+      }
+    },
+    "environment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "inventory_id",
+        "replica_hosts",
+        "load_hosts",
+        "control_host",
+        "java",
+        "transport",
+        "storage_engine",
+        "config_hash",
+        "resource_budget_hash"
+      ],
+      "properties": {
+        "inventory_id": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1
+        },
+        "replica_hosts": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "slot",
+              "address",
+              "instance_type",
+              "az",
+              "vcpu",
+              "ram_bytes",
+              "storage_kind",
+              "data_path"
+            ],
+            "properties": {
+              "slot": {
+                "type": "string",
+                "minLength": 1
+              },
+              "address": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "minLength": 1
+              },
+              "instance_type": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "minLength": 1
+              },
+              "az": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "minLength": 1
+              },
+              "vcpu": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 1
+              },
+              "ram_bytes": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 1
+              },
+              "storage_kind": {
+                "enum": [
+                  "ebs",
+                  "instance_store",
+                  "ram",
+                  "unknown"
+                ]
+              },
+              "data_path": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "minLength": 1
+              }
+            }
+          }
+        },
+        "load_hosts": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "slot",
+              "address",
+              "instance_type",
+              "az",
+              "vcpu",
+              "ram_bytes",
+              "storage_kind",
+              "data_path"
+            ],
+            "properties": {
+              "slot": {
+                "type": "string",
+                "minLength": 1
+              },
+              "address": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "minLength": 1
+              },
+              "instance_type": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "minLength": 1
+              },
+              "az": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "minLength": 1
+              },
+              "vcpu": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 1
+              },
+              "ram_bytes": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 1
+              },
+              "storage_kind": {
+                "enum": [
+                  "ebs",
+                  "instance_store",
+                  "ram",
+                  "unknown"
+                ]
+              },
+              "data_path": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "minLength": 1
+              }
+            }
+          },
+          "maxItems": 2
+        },
+        "control_host": {
+          "anyOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "slot",
+                "address",
+                "instance_type",
+                "az",
+                "vcpu",
+                "ram_bytes",
+                "storage_kind",
+                "data_path"
+              ],
+              "properties": {
+                "slot": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "address": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "minLength": 1
+                },
+                "instance_type": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "minLength": 1
+                },
+                "az": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "minLength": 1
+                },
+                "vcpu": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
+                  "minimum": 1
+                },
+                "ram_bytes": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
+                  "minimum": 1
+                },
+                "storage_kind": {
+                  "enum": [
+                    "ebs",
+                    "instance_store",
+                    "ram",
+                    "unknown"
+                  ]
+                },
+                "data_path": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "minLength": 1
+                }
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "java": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1
+        },
+        "transport": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1
+        },
+        "storage_engine": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1
+        },
+        "config_hash": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[a-fA-F0-9]{64}$"
+        },
+        "resource_budget_hash": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[a-fA-F0-9]{64}$"
+        }
+      }
+    },
+    "dataset": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile",
+        "initial_keys",
+        "key_bytes",
+        "value_bytes",
+        "cache_regime",
+        "memory_budget_bytes",
+        "load_trace_sha256",
+        "run_trace_sha256",
+        "value_encoding"
+      ],
+      "properties": {
+        "profile": {
+          "type": "string",
+          "minLength": 1
+        },
+        "initial_keys": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "key_bytes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "value_bytes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "cache_regime": {
+          "enum": [
+            "memory_resident",
+            "storage_active",
+            "unknown"
+          ]
+        },
+        "memory_budget_bytes": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1
+        },
+        "load_trace_sha256": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[a-fA-F0-9]{64}$"
+        },
+        "run_trace_sha256": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[a-fA-F0-9]{64}$"
+        },
+        "value_encoding": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "workload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mix",
+        "set_mode",
+        "distribution",
+        "zipf_theta",
+        "hot_probability",
+        "load_mode",
+        "concurrency_total",
+        "offered_ops_per_second",
+        "max_inflight",
+        "retry_policy",
+        "variant_parameters"
+      ],
+      "properties": {
+        "mix": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "get",
+            "set",
+            "delete"
+          ],
+          "properties": {
+            "get": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 100
+            },
+            "set": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 100
+            },
+            "delete": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 100
+            }
+          }
+        },
+        "set_mode": {
+          "enum": [
+            "overwrite",
+            "insert",
+            "mixed"
+          ]
+        },
+        "distribution": {
+          "enum": [
+            "uniform",
+            "zipf",
+            "fixed_hot",
+            "moving_hot"
+          ]
+        },
+        "zipf_theta": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "hot_probability": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 1
+        },
+        "load_mode": {
+          "enum": [
+            "closed_loop",
+            "open_loop"
+          ]
+        },
+        "concurrency_total": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1
+        },
+        "offered_ops_per_second": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "exclusiveMinimum": 0
+        },
+        "max_inflight": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1
+        },
+        "retry_policy": {
+          "enum": [
+            "none",
+            "same_id_bounded"
+          ]
+        },
+        "variant_parameters": {
+          "type": "object"
+        }
+      }
+    },
+    "timing": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "termination",
+        "measured_requests",
+        "measure_seconds",
+        "minimum_measure_seconds",
+        "warmup_minimum_seconds",
+        "request_deadline_ms",
+        "drain_limit_seconds",
+        "run_hard_limit_seconds",
+        "window_ms",
+        "slo_p99_ms",
+        "slo_failure_fraction"
+      ],
+      "properties": {
+        "termination": {
+          "enum": [
+            "fixed_requests",
+            "fixed_duration"
+          ]
+        },
+        "measured_requests": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1
+        },
+        "measure_seconds": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1
+        },
+        "minimum_measure_seconds": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "warmup_minimum_seconds": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "request_deadline_ms": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1
+        },
+        "drain_limit_seconds": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1
+        },
+        "run_hard_limit_seconds": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1
+        },
+        "window_ms": {
+          "const": 1000
+        },
+        "slo_p99_ms": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "exclusiveMinimum": 0
+        },
+        "slo_failure_fraction": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 1
+        }
+      }
+    },
+    "persistence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "replica_log",
+        "kv_force",
+        "stable_view_force",
+        "failure_model"
+      ],
+      "properties": {
+        "replica_log": {
+          "const": "replicated_ram"
+        },
+        "kv_force": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "stable_view_force": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "failure_model": {
+          "enum": [
+            "independent_replica_process_failures",
+            "unqualified"
+          ]
+        }
+      }
+    },
+    "fault": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "target_slots",
+            "at_seconds",
+            "duration_seconds",
+            "heal",
+            "isolation_verified"
+          ],
+          "properties": {
+            "kind": {
+              "enum": [
+                "process_crash",
+                "delay",
+                "partition"
+              ]
+            },
+            "target_slots": {
+              "type": "array",
+              "minItems": 1,
+              "uniqueItems": true,
+              "items": {
+                "type": "string"
+              }
+            },
+            "at_seconds": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "duration_seconds": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "heal": {
+              "type": "boolean"
+            },
+            "isolation_verified": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "qualification": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "pilot_qualified",
+        "history_checker_qualified",
+        "instrumentation_qualified",
+        "driver_capabilities"
+      ],
+      "properties": {
+        "pilot_qualified": {
+          "type": "boolean"
+        },
+        "history_checker_qualified": {
+          "type": "boolean"
+        },
+        "instrumentation_qualified": {
+          "type": "boolean"
+        },
+        "driver_capabilities": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "uniqueItems": true
+        }
+      }
+    },
+    "required_metrics": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "M01",
+          "M02",
+          "M03",
+          "M04",
+          "M05",
+          "M06",
+          "M07",
+          "M08",
+          "M09",
+          "M10",
+          "M11",
+          "M12",
+          "M13",
+          "M14",
+          "M15",
+          "M16",
+          "M17",
+          "M18",
+          "M19",
+          "M20",
+          "M21",
+          "M22",
+          "M23",
+          "M24",
+          "M25",
+          "M26",
+          "M27",
+          "M28",
+          "M29",
+          "M30",
+          "M31",
+          "M32",
+          "M33",
+          "M34",
+          "M35",
+          "M36"
+        ]
+      }
+    },
+    "metric_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "latency_histogram",
+        "tail_eligibility_count",
+        "missing_value",
+        "clock_method"
+      ],
+      "properties": {
+        "latency_histogram": {
+          "const": "integer_geometric_upper_1pct_v1"
+        },
+        "tail_eligibility_count": {
+          "const": 100000
+        },
+        "missing_value": {
+          "const": "null_with_reason"
+        },
+        "clock_method": {
+          "enum": [
+            "single_observer_monotonic",
+            "offset_bounded",
+            "unqualified"
+          ]
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "execution_enabled": {
+            "const": true
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "readiness": {
+            "const": "ready"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "readiness": {
+            "const": "draft"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "execution_enabled": {
+            "const": false
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "readiness": {
+            "const": "ready"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "unresolved": {
+            "maxItems": 0
+          },
+          "source": {
+            "properties": {
+              "commit": {
+                "type": "string",
+                "minLength": 7
+              },
+              "dirty": {
+                "type": "boolean"
+              },
+              "source_hash": {
+                "type": "string",
+                "pattern": "^[a-fA-F0-9]{64}$"
+              },
+              "adapter_id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "capability_evidence": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          },
+          "environment": {
+            "properties": {
+              "inventory_id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "replica_hosts": {
+                "minItems": 3,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "slot",
+                    "address",
+                    "instance_type",
+                    "az",
+                    "vcpu",
+                    "ram_bytes",
+                    "storage_kind",
+                    "data_path"
+                  ],
+                  "properties": {
+                    "slot": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "address": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "instance_type": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "az": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "vcpu": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "ram_bytes": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "storage_kind": {
+                      "enum": [
+                        "ebs",
+                        "instance_store",
+                        "ram"
+                      ]
+                    },
+                    "data_path": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  }
+                }
+              },
+              "load_hosts": {
+                "minItems": 1,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "slot",
+                    "address",
+                    "instance_type",
+                    "az",
+                    "vcpu",
+                    "ram_bytes",
+                    "storage_kind",
+                    "data_path"
+                  ],
+                  "properties": {
+                    "slot": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "address": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "instance_type": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "az": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "vcpu": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "ram_bytes": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "storage_kind": {
+                      "enum": [
+                        "ebs",
+                        "instance_store",
+                        "ram"
+                      ]
+                    },
+                    "data_path": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  }
+                }
+              },
+              "control_host": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "slot",
+                  "address",
+                  "instance_type",
+                  "az",
+                  "vcpu",
+                  "ram_bytes",
+                  "storage_kind",
+                  "data_path"
+                ],
+                "properties": {
+                  "slot": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "address": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "instance_type": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "az": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "vcpu": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "ram_bytes": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "storage_kind": {
+                    "enum": [
+                      "ebs",
+                      "instance_store",
+                      "ram"
+                    ]
+                  },
+                  "data_path": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                }
+              },
+              "java": {
+                "type": "string",
+                "minLength": 1
+              },
+              "transport": {
+                "type": "string",
+                "minLength": 1
+              },
+              "storage_engine": {
+                "type": "string",
+                "minLength": 1
+              },
+              "config_hash": {
+                "type": "string",
+                "pattern": "^[a-fA-F0-9]{64}$"
+              },
+              "resource_budget_hash": {
+                "type": "string",
+                "pattern": "^[a-fA-F0-9]{64}$"
+              }
+            }
+          },
+          "dataset": {
+            "properties": {
+              "memory_budget_bytes": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "load_trace_sha256": {
+                "type": "string",
+                "pattern": "^[a-fA-F0-9]{64}$"
+              },
+              "run_trace_sha256": {
+                "type": "string",
+                "pattern": "^[a-fA-F0-9]{64}$"
+              }
+            }
+          },
+          "timing": {
+            "properties": {
+              "request_deadline_ms": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "drain_limit_seconds": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "run_hard_limit_seconds": {
+                "type": "integer",
+                "minimum": 1
+              }
+            }
+          },
+          "persistence": {
+            "properties": {
+              "kv_force": {
+                "type": "boolean"
+              },
+              "stable_view_force": {
+                "const": true
+              },
+              "failure_model": {
+                "const": "independent_replica_process_failures"
+              }
+            }
+          },
+          "qualification": {
+            "properties": {
+              "pilot_qualified": {
+                "const": true
+              },
+              "history_checker_qualified": {
+                "const": true
+              },
+              "instrumentation_qualified": {
+                "const": true
+              },
+              "driver_capabilities": {
+                "minItems": 1
+              }
+            }
+          },
+          "metric_policy": {
+            "properties": {
+              "clock_method": {
+                "enum": [
+                  "single_observer_monotonic",
+                  "offset_bounded"
+                ]
+              }
+            }
+          },
+          "variant_id": {
+            "enum": [
+              "O00",
+              "V01",
+              "V02",
+              "V03",
+              "V04",
+              "V05",
+              "V06",
+              "V07"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "node_count": {
+            "const": 3
+          },
+          "readiness": {
+            "const": "ready"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "environment": {
+            "properties": {
+              "replica_hosts": {
+                "minItems": 3,
+                "maxItems": 3
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "node_count": {
+            "const": 5
+          },
+          "readiness": {
+            "const": "ready"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "environment": {
+            "properties": {
+              "replica_hosts": {
+                "minItems": 5,
+                "maxItems": 5
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "readiness": {
+            "const": "ready"
+          },
+          "workload": {
+            "properties": {
+              "load_mode": {
+                "const": "open_loop"
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "workload": {
+            "properties": {
+              "offered_ops_per_second": {
+                "type": "number",
+                "exclusiveMinimum": 0
+              },
+              "max_inflight": {
+                "type": "integer",
+                "minimum": 1
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "readiness": {
+            "const": "ready"
+          },
+          "workload": {
+            "properties": {
+              "load_mode": {
+                "const": "closed_loop"
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "workload": {
+            "properties": {
+              "concurrency_total": {
+                "type": "integer",
+                "minimum": 1
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "readiness": {
+            "const": "ready"
+          },
+          "timing": {
+            "properties": {
+              "termination": {
+                "const": "fixed_requests"
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "timing": {
+            "properties": {
+              "measured_requests": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "measure_seconds": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "readiness": {
+            "const": "ready"
+          },
+          "timing": {
+            "properties": {
+              "termination": {
+                "const": "fixed_duration"
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "timing": {
+            "properties": {
+              "measure_seconds": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "measured_requests": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "scenario_id": {
+            "pattern": "^FAULT-"
+          },
+          "readiness": {
+            "const": "ready"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "fault": {
+            "type": "object",
+            "properties": {
+              "isolation_verified": {
+                "const": true
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "scenario_id": {
+            "const": "PERF-06"
+          },
+          "readiness": {
+            "const": "ready"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "timing": {
+            "properties": {
+              "slo_p99_ms": {
+                "type": "number",
+                "exclusiveMinimum": 0
+              },
+              "slo_failure_fraction": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "description": "v1 ready execution covers IONIA O00/V01-V07 only; HERMES and UNREPLICATED are reserved draft identifiers and require a future qualified protocol profile."
+}

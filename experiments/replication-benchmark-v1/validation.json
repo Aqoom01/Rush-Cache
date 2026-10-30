@@ -1,0 +1,146 @@
+{
+  "schema_version": "replication-spec-validation-v1",
+  "validated_at_utc": "2026-10-30T02:09:14.2928651Z",
+  "scope": "specification_only",
+  "checks": [
+    {
+      "name": "27 unique scenario IDs",
+      "passed": true
+    },
+    {
+      "name": "36 unique metric IDs",
+      "passed": true
+    },
+    {
+      "name": "All cases are NOT_RUN",
+      "passed": true
+    },
+    {
+      "name": "Scenario schema/catalog IDs agree",
+      "passed": true
+    },
+    {
+      "name": "Manifest metric schema/catalog IDs agree",
+      "passed": true
+    },
+    {
+      "name": "Result metric schema/catalog IDs agree",
+      "passed": true
+    },
+    {
+      "name": "Every case metric reference exists",
+      "passed": true
+    },
+    {
+      "name": "Scenario documentation covers every card",
+      "passed": true
+    },
+    {
+      "name": "Metric documentation covers every card",
+      "passed": true
+    },
+    {
+      "name": "Draft template passes schema and semantic checks",
+      "passed": true
+    },
+    {
+      "name": "Template remains draft and disabled",
+      "passed": true
+    },
+    {
+      "name": "NOT_RUN result example contains no measurements",
+      "passed": true
+    },
+    {
+      "name": "Synthetic IONIA ready fixture accepted (no execution)",
+      "passed": true
+    },
+    {
+      "name": "Reject draft enabled",
+      "passed": true
+    },
+    {
+      "name": "Reject ready without source evidence hash",
+      "passed": true
+    },
+    {
+      "name": "Reject replica count mismatch",
+      "passed": true
+    },
+    {
+      "name": "Reject unknown metric ID",
+      "passed": true
+    },
+    {
+      "name": "Reject missing case metrics",
+      "passed": true
+    },
+    {
+      "name": "Reject mix sum 101",
+      "passed": true
+    },
+    {
+      "name": "Reject role host overlap",
+      "passed": true
+    },
+    {
+      "name": "Reject open loop missing rate and bound",
+      "passed": true
+    },
+    {
+      "name": "Reject unqualified KV force",
+      "passed": true
+    },
+    {
+      "name": "Reject reserved Hermes ready profile",
+      "passed": true
+    },
+    {
+      "name": "Reject reserved unreplicated ready profile",
+      "passed": true
+    },
+    {
+      "name": "Reject nonpositive drain limit",
+      "passed": true
+    },
+    {
+      "name": "Reject invented NOT_RUN measurement",
+      "passed": true
+    },
+    {
+      "name": "Synthetic completed result shape accepted",
+      "passed": true
+    },
+    {
+      "name": "Reject broken cohort conservation",
+      "passed": true
+    },
+    {
+      "name": "Reject completed valid result without artifact references",
+      "passed": true
+    },
+    {
+      "name": "Reject unsupported metric carrying a value",
+      "passed": true
+    },
+    {
+      "name": "Reject invalid result without a reason",
+      "passed": true
+    }
+  ],
+  "checks_total": 31,
+  "passed": 31,
+  "failed": 0,
+  "scenario_count": 27,
+  "metric_family_count": 36,
+  "template_readiness": "draft",
+  "example_execution_status": "not_run",
+  "remote_actions": 0,
+  "benchmark_runs": 0,
+  "source_code_tests_run": 0,
+  "limitations": [
+    "Schema fixtures are synthetic and never executed.",
+    "No environment, driver, correctness or performance qualification.",
+    "Evidence strings/hashes do not prove truth or readiness."
+  ]
+}
