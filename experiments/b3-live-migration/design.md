@@ -1,6 +1,6 @@
 # B3 설계
 
-**최신 구현 현황(2026-10-28):** 아래 단계 계획 중 pre-copy와 post-copy 프로토콜·수신기·정합성 테스트를 구현했다. 상세와 확정된 post-copy 실패/조회 계약은 [protocols.md](protocols.md)에 있다. pre-copy의 라운드·seq는 공통 `MigrationJob` 필드를 변경하지 않고 protocol의 `rounds()`·`acknowledgedSequence()`로 제공하며 `DeltaBatch`로 전달한다. source-owned `JobState.CATCHING_UP`을 추가했고 post-copy는 별도 `PostCopyState`를 사용한다. S1~S5 세 방식 비교 backend와 b3-comparison-json-1 원본/요약 생성을 구현했다. S3 민감도와 별도 S6 취소·장애 비교도 구현하고 실험했다. E/M, schema v2 dirty 상세 보고서와 실제 KV/peer 연계는 후속이다. 아래 1단계·후속 구분과 초안 설명은 원래 구현 순서이며 최신 완료 여부는 이 문단과 구현 안내를 기준으로 한다.
+**최신 구현 현황(2026-11-02):** 아래 단계 계획 중 pre-copy와 post-copy 프로토콜·수신기·정합성 테스트를 구현했다. 상세와 확정된 post-copy 실패/조회 계약은 [protocols.md](protocols.md)에 있다. pre-copy의 라운드·seq는 공통 `MigrationJob` 필드를 변경하지 않고 protocol의 `rounds()`·`acknowledgedSequence()`로 제공하며 `DeltaBatch`로 전달한다. source-owned `JobState.CATCHING_UP`을 추가했고 post-copy는 별도 `PostCopyState`를 사용한다. S1~S5 세 방식 비교 backend와 b3-comparison-json-1 원본/요약 생성을 구현했다. S3 민감도와 별도 S6 취소·장애 비교도 구현하고 실험했다. 자체 노드 증감 비교 구현·설정·결과는 제거했다. 선행 메커니즘 8개의 연구 prototype과 가상 비교 backend를 구현했다. 원 논문 제품·실제 노드 실행의 재현은 아니다. [변경점과 실행 범위](scaling-decision/README.md), [결과](scaling-decision/results.md)를 따른다. M scheduler, schema v2 dirty 상세 보고서와 실제 KV/peer 연계는 후속이다. 아래 1단계·후속 구분과 초안 설명은 원래 구현 순서이며 최신 완료 여부는 이 문단과 구현 안내를 기준으로 한다.
 
 Baseline 실행: 공통 Runner 연계와 §6.1 SC1~SC6 결과 보관까지 구현했다. S1~S5 variant 비교 backend도 구현했다. S3 민감도와 별도 S6 취소·장애 비교 backend도 구현했다. 실제 KV/peer 연계·scaling과 v2 dirty 라운드 상세는 후속이다. 실행 방법은 [migration-comparison/README.md](migration-comparison/README.md), 보관된 실행은 [Baseline 보고서](migration-comparison/runs/run-2026-10-22T04-48-53.944252700Z-a4354ce4/repeat-001/results.md)와 [조건별 요약](migration-comparison/runs/run-2026-10-22T04-48-53.944252700Z-a4354ce4/repeat-001/summary.csv)을 따른다. S1~S5는 2026-10-23 generator v2 full 240회를 참조 run으로 선정했고 migration-comparison/results.md와 B3 통합 results.md에 정리했다. SC 수치는 별도 Baseline으로 보존한다.
 
@@ -14,7 +14,7 @@ Baseline 실행: 공통 Runner 연계와 §6.1 SC1~SC6 결과 보관까지 구�
 |---|---|---|---|
 | **1단계: Stop-and-Copy Baseline** | job 상태 기계, freeze, snapshot batch 전송·ACK, 조건부 commit, cleanup, 되돌리기 | in-process, 논리 tick | 없음 (지금) |
 | Pre-Copy 비교 | dirty generation, delta·`seq`, `CATCHING_UP`, 수렴 종료 조건 구현. 비교 backend는 후속 | in-process | 1단계의 commit·fencing 계약 |
-| 후속: 노드 증감 판단 | `ElasticScalingPolicy`, fake provisioner·membership | in-process | 1단계 |
+| 후속: 노드 증감 판단 | 선행 알고리즘 재현 대상·입출력·평가 환경 선정 | 미구현 | 원문 전제와 B1/B2 실행 계약 확인 |
 | 후속: 이동 Scaling | `MigrationScheduler`, 여러 job의 동시성·전송 예산 | in-process | 1단계 |
 | 후속: 실제 노드 연계 | 노드 간 migration 메시지, multi-node Runner, `MOVED` 재시도 client, lease, 실제 p99 측정, source 지연 삭제 | 실제 노드 | B1 소유권 판정·표 전파, A1 scan·hook API |
 | Post-Copy 확장 | destination-owned `post-copy`, pull 경로, `PostCopyState` 구현. 비교 backend·실제 연계는 후속 | in-process → 실제 노드 | 별도 실패·요청 계약 |
@@ -44,6 +44,7 @@ Scale-out/in은 두 단계로 나눈다. 먼저 B3가 metric에서 `KEEP`, `SCAL
 
 | 자료 | 채택하는 근거 | 프로젝트에서 직접 정할 부분 |
 |---|---|---|
+| [선행 알고리즘](references/elastic-scaling-algorithms.md) | 실제 시스템별 관측·계산·행동·평가 절차 | OpenKache 재현 대상·생략·변경 범위의 별도 결정 |
 | [Elastic Scaling Policy](references/elastic-scaling-policy.md) | desired node count 비율식, tolerance, scale-in stabilization, 새 노드 warm-up, scale-out/in 비대칭 | metric 선택, threshold, window·cooldown 값, scale-in candidate |
 | [VM Live Migration](references/vm-live-migration.md) | stop/pre-copy 구조, dirty 반복 전송, downtime·총 이동 시간, 256 KiB 종료 기준 | KV tombstone·적용 순서·고정 전송률에서의 추가 종료 조건 |
 | [MongoDB Chunk Migration](references/mongodb-chunk-migration.md) | source-owned 요청 처리, copy → catch-up → metadata commit → cleanup, 참여 shard당 동시 이동 제한 | freeze 중 요청 응답, coordinator의 원자적 commit 방법 |
@@ -174,24 +175,24 @@ abort()                          → JobState   commit 전이면 되돌리고 AB
 
 **dirty generation 규칙.** 라운드가 시작되면 `collecting` 참조를 새 빈 집합으로 교체하고 이전 집합을 `sending`으로 고정한다. 전송 중 같은 key에 write가 오면 새 `collecting`에 다시 들어가므로, `sending`에서 key를 제거하거나 라운드를 끝내도 변경을 잃지 않는다. `sending`의 key는 읽는 순간의 최신 value 또는 tombstone으로 직렬화하고 그때 `seq`를 부여한다.
 
-### 4.3 `ElasticScalingPolicy` (후속: 노드 증감 판단)
+### 4.3 노드 증감·재배치 — 선행 메커니즘 prototype과 후속 통합
 
-정책은 [Elastic Scaling Policy](references/elastic-scaling-policy.md)의 target tracking을 baseline으로 사용한다.
+현재 8개 선행 메커니즘의 핵심 계산을 Python 연구 backend에 구현했다. [선행 시스템별 알고리즘](references/elastic-scaling-algorithms.md)과 [실험 안내](scaling-decision/README.md)에 원문과의 변경점·실행 모형·비교군을 명시한다. production 노드 증감 controller는 없으며 문서 아래 Java scaling 클래스 이름은 계획이다.
 
-`desiredNodes = ceil(currentNodes × currentMetric / targetMetric)`
-
-metric은 노드 수가 늘면 노드당 값이 감소하는 평균 처리량 또는 사용률이어야 한다. 결과는 `[minNodes, maxNodes]`로 제한한다. 여러 metric을 사용하면 각 metric의 desired node 수를 계산하고, scale-out은 최댓값을 채택한다. scale-in은 모든 metric이 scale-in을 허용할 때만 가능하다.
-
-| 항목 | 후속 구현 규칙(초안) | 이유 |
+| 선행 시스템 | 검토할 알고리즘 | 필요한 전제 |
 |---|---|---|
-| tolerance | `abs(currentMetric / targetMetric - 1)`이 tolerance 이하면 `KEEP` | target 주변의 작은 흔들림으로 인한 flapping 방지 |
-| scale-out | 상한 초과가 `scaleOutConsecutiveWindows`번 이어지면 비율식으로 `desiredNodes` 계산 | 짧은 noise는 거르고 지속 부하에는 빠르게 반응 |
-| scale-in | 하한 미만이 `scaleInStabilizationWindows` 동안 유지되면 한 번에 1개 감소 | availability를 위해 축소를 보수적으로 수행 |
-| warm-up | 새 노드가 READY이고 초기 migration이 끝날 때까지 scale-in 금지 | 불완전한 metric으로 방금 추가한 노드를 다시 제거하지 않음 |
-| cooldown | scale action 또는 migration 진행 중이면 새 결정 보류 | 같은 membership 상태에서 중복 계획 생성 방지 |
-| candidate | 가장 낮은 부하의 eligible node. 동률은 `NodeId` 순 | 결정론적 baseline. 실제 drain 가능 여부는 B1 계획 결과로 확인 |
+| SCADS Director | 성능 모델 + best-fit 탐욕 재배치 | bin 통계·모델, 복제 경로 |
+| ElastMan | feedforward 모델 + p99 feedback | 실측 지연·처리량과 성능 식별 |
+| E-Store | CPU 상·하한 + Greedy/Greedy Extended hot/cold 배치 | tuple 접근 통계와 세밀한 배치 |
+| Accordion | 서버 수 후보별 MILP | 처리 용량·메모리·배치 제약 |
+| P-Store | SPAR 예측 + 동적 계획법 | 부하 이력·재구성 시간·유효 용량 |
+| TIRAMOLA | MDP 기반 행동 평가 | 상태·행동·보상·관측 이력 |
+| PAX | hot partition 기반 휴면 노드 선택, ARIMA 예측 | 복제 데이터와 hints 동기화 |
+| Slicer | 가중치 기반 slice 이동·split/merge | 서버 수는 외부에서 제공 |
 
-tolerance, 연속 관측 수, stabilization window의 숫자는 아직 확정하지 않는다. 공식 제품 기본값은 환경 의존적이므로 §6.3 민감도 실험의 변수로 둔다. 정책은 실제 노드를 만들거나 제거하지 않고 `ScalingDecision`만 낸다. `ScalingController`는 scale-out 노드의 `READY` 또는 scale-in 후보의 `DRAINING`을 확인한 뒤 B1 계획을 요청하고, 생성된 `Change`를 `MigrationScheduler`에 넘긴다. scale-in 종료 요청은 모든 job이 `DONE`인 뒤에만 보낸다.
+특정 target tracking 식이나 자체 비용식을 재현 대상 대신 사용하지 않는다. 원문 알고리즘을 단순화하거나 Tablet에 맞게 바꾸면 변경점을 명시한다. 현재 없는 복제·실측 p99·학습 이력을 가상 값으로 채워 원문 재현으로 표시하지 않는다.
+
+실행 연계의 책임은 기존 B1/B2/B3 경계를 따른다. B3가 증감을 판단하고, 외부 계층이 노드 준비·종료를 담당하며, B1/B2 계획을 migration 실행에 전달한다. 새 노드가 실제로 부하를 맡는 시점과 준비 완료를 구분하고 축소는 drain 완료 뒤에만 수행한다. 구체 API와 중복 작업 처리 규칙은 재현 대상 선정 후 합의한다.
 
 ## 5. 불변식
 
@@ -298,44 +299,25 @@ S6에서 `CATCHING_UP`은 stop-and-copy에 없는 상태이므로 미지원으�
 | 라운드 수, 종료 사유 | `pre-copy`가 stop phase로 넘어간 이유(종료 조건 1·2·3) |
 | 전송 검증 실패 수 | 6.1 + delta batch와 final `seq` 불일치 |
 
-### 6.3 후속: 노드 증감 판단
+### 6.3 후속: 선행 알고리즘의 노드 증감 검증
 
-1단계 범위 밖이다. 1단계 Baseline과 소유권 전환 계약이 고정된 뒤 구현한다.
+현재 [선행 메커니즘 가상 실험](scaling-decision/README.md)은 별도 7조건으로 실행한다. 아래 E1~E7은 더 넓은 후속 평가 질문이며 이 전체 계획이나 실제 노드 연계를 완료했다는 의미가 아니다.
 
-#### 질문
-
-1. 지속 부하가 증가할 때 필요한 노드 수를 얼마나 빠르고 정확하게 결정하는가?
-2. 짧은 spike와 target 주변 진동에서 불필요한 scale action을 얼마나 억제하는가?
-3. 부하가 줄었을 때 가용성을 해치지 않고 언제 scale-in하는가?
-4. 새 노드 warm-up이나 migration 중 중복·반대 방향 결정을 막는가?
-
-#### 동일 조건
-
-시간은 logical tick이고, 각 observation window마다 `ClusterMetrics`를 하나 공급한다. metric stream과 node별 부하는 seed로 고정한다. provisioner와 membership은 fake로 두어 action 요청, READY, migration 완료 시점을 제어한다. policy는 실제 시계를 읽지 않는다.
-
-#### 시나리오
-
-| | metric stream | 변수 | 측정 | 기대 |
-|---|---|---|---|---|
-| E1 지속 증가 | target 아래에서 시작해 상한 위로 step 증가 | 현재 노드 수 ∈ {2, 4, 8}, 증가 폭 | desired node 오차, 결정 지연, 부족 용량 면적 | 비율식에 맞는 scale-out을 연속 관측 뒤 결정 |
-| E2 짧은 spike | 1~2 window만 상한 초과 후 복귀 | 연속 관측 수 ∈ {1, 2, 3} | 불필요한 action 수 | 설정된 연속 관측 수보다 짧은 spike는 `KEEP` |
-| E3 target 진동 | target ± 작은 폭을 반복 | tolerance ∈ {0, 5%, 10%, 20%} | action 수, 방향 전환 수 | tolerance 안에서는 flapping 없음 |
-| E4 지속 저부하 | 하한 아래로 내려가 유지 | stabilization window ∈ {1, 3, 5, 10} | scale-in 지연, 과축소 수 | window 통과 뒤 한 노드씩 감소 |
-| E5 warm-up·migration | scale-out 뒤 READY와 migration 완료를 지연 | warm-up·migration tick | 중복·반대 action 수 | 완료 전 scale-in과 새 action 없음 |
-| E6 경계 | 극단적으로 높거나 낮은 metric | minNodes, maxNodes | 범위 위반 수 | desired node가 항상 범위 안 |
-| E7 candidate | node별 부하가 서로 다름 | 동률 포함 | 선택 node, 결정 재현성 | 가장 낮은 eligible node, 동률은 `NodeId` 순 |
-
-#### 측정 정의
-
-| 지표 | 정의 |
+| 시나리오 | 확인할 질문 |
 |---|---|
-| decision delay | 조건이 처음 충족된 window부터 action 결정까지 |
-| desired node 오차 | 정책 출력과 비율식·범위 제한으로 계산한 기대값의 차이 |
-| 불필요한 action | spike 종료 후 곧바로 반대 action이 필요해진 결정 |
-| direction reversal | stabilization 기간 안에 scale-out과 scale-in 방향이 뒤집힌 횟수 |
-| 부족 용량 면적 | target 초과 비율을 action 완료까지 window별 합산한 값 |
-| 과축소 수 | scale-in 직후 metric이 상한을 넘어 scale-out이 필요해진 횟수 |
-| 중복 action | 이전 action 또는 migration 완료 전에 새 action을 낸 횟수. 이상값 0 |
+| E1 지속 증가 | 용량 확보까지의 지연과 서비스 성능 저하가 얼마나 큰가? |
+| E2 짧은 spike | 준비·이동 비용에 비해 불필요한 증감이 발생하는가? |
+| E3 반복 변동 | 증감 방향 전환과 데이터 왕복 이동을 얼마나 유발하는가? |
+| E4 지속 저부하 | drain 가능한 축소로 자원을 얼마나 회수하는가? |
+| E5 준비·migration 지연 | 이동 중 서비스 간섭과 새 수요를 구분해 대응하는가? |
+| E6 자원·배치 경계 | min/max·메모리·Tablet 배치 제약을 만족하는가? |
+| E7 노드 선택·쏠림 | 선택한 노드와 재배치가 실제 hotspot을 해소하는가? |
+
+hot range·이동 hotspot·단일 hot key와 split/merge 유무를 별도로 다룬다. Slicer처럼 노드 수를 결정하지 않는 알고리즘은 노드 수 고정 배치 실험으로 구분한다.
+
+원문 재현 범위와 관측·모델의 준비 여부를 먼저 확정한다. 정책에는 같은 외부 요청열·초기 데이터·seed를 주되, 정책에 따라 달라지는 사용률·배치를 다시 관측한다. 정책과 무관한 고정 사용률을 서비스 결과처럼 재생하지 않는다.
+
+측정은 실제 서비스의 처리량·지연 목표 위반, 준비부터 부하 분담까지의 시간, 누적 노드 사용, 실제 이동 bytes, 계획 계산 시간, 안전성 위반을 기준으로 설계한다. 가상 시간과 실환경 결과는 분리한다. 필요 노드 수를 특정 비교 정책의 공식으로 정의해 다른 방법의 정답으로 삼지 않는다. 예측·학습 방식은 입력 이력과 평가 구간을 분리한다.
 
 ### 6.4 후속: 이동 Scaling
 
@@ -387,13 +369,13 @@ Rocksteady의 758 MB/s와 tail latency 수치는 측정 항목을 고르는 근�
 - in-process로 실행한다. 서버·네트워크·실제 시계를 쓰지 않는다. `time_domain=virtual`, 단위는 tick이다.
 - 단일 이동은 tick당 byte 예산으로 모델링한다. 여러 job은 node별·cluster 전체 예산을 scheduler가 활성 job에 나눈다. ACK와 framing의 비용 포함 범위를 manifest에 명시한다.
 - seed 1~5를 사용한다. 설정·입력·생성기 버전이 같아야 같은 요청열로 판단하며, seed만 같은 것을 동일 입력으로 간주하지 않는다.
-- 실험의 정식 진입점은 config를 읽는 공통 `experiment-runner`다. B3 main과 최소 adapter는 `cache-core/src/test/java/io/openkache/core/migration/experiment/`에 있으며 연구 backend로 실행한다. 현재 §6.1 Baseline의 config 분기·별도 JVM 호출이 구현됐고 S/E/M backend는 아직 없다. 연결 계약은 §6.6을 따른다. main 전체 실험은 JUnit에서 자동 실행하지 않고 대표 경로와 계약을 검증한다.
-- 모든 실험 결과는 실험 폴더의 `runs/<execution_id>/`에 실행별로 둔다. §6.1·§6.2는 `migration-comparison/`, §6.3은 `scaling-decision/`, §6.4는 `movement-scaling-comparison/`이다. 현재 §6.1 Baseline의 [실행 보고서](migration-comparison/runs/run-2026-10-22T04-48-53.944252700Z-a4354ce4/repeat-001/results.md)와 조건별 요약을 보관한다. 공식 run은 아직 선정하지 않았으며, 선정 후 실행 ID와 config를 실험별 입구 문서에서 지정한다. 저장 계약과 결과 문서 계층은 §6.6을 따른다.
+- 실험의 정식 진입점은 config를 읽는 공통 `experiment-runner`다. B3 main과 최소 adapter는 `cache-core/src/test/java/io/openkache/core/migration/experiment/`에 있으며 연구 backend로 실행한다. 현재 Baseline·S1~S5·S3 민감도·S6·선행 메커니즘 비교 backend의 config 기반 호출이 구현됐다. 실제 노드 증감 통합·M backend는 후속이다. 연결 계약은 §6.6을 따른다. main 전체 실험은 JUnit에서 자동 실행하지 않고 대표 경로와 계약을 검증한다.
+- 모든 실험 결과는 실험 폴더의 `runs/<execution_id>/`에 실행별로 둔다. §6.1·§6.2는 `migration-comparison/`, §6.3은 `scaling-decision/`, §6.4는 `movement-scaling-comparison/`이다. 현재 §6.1 Baseline의 [실행 보고서](migration-comparison/runs/run-2026-10-22T04-48-53.944252700Z-a4354ce4/repeat-001/results.md)와 조건별 요약을 보관한다. Migration의 공식 run은 실험별 입구 문서에서 지정한다. 선행 메커니즘 결과는 scaling-decision 입구에서 정식 run을 지정하며 M은 결과가 없다. 저장 계약과 결과 문서 계층은 §6.6을 따른다.
 - 서버 실측(p99, MOVED 재시도 수, 실제 downtime)은 B1 소유권 전파와 multi-node Runner가 구현된 뒤 별도로 수행한다. virtual 결과와 같은 비교군으로 합산하지 않는다.
 
 ### 6.6 비교·확장 실험의 실행 및 저장 계약
 
-**상태: 공통 Runner의 config 기반 B3 Baseline 호출·반복·제한 시간·JSON 원본·CSV/보고서 생성은 구현됐다(`b3-baseline-json-1`). 2026-10-22 전체 설정 실행의 반복별 요약·보고서를 Git에 보관한다. 아래 variant 공통 실행기·S/E/M backend·비교용 b3-research-v2는 후속 설계이며 해당 비교 결과는 아직 없다.**
+**상태: 공통 Runner의 config 기반 B3 Baseline 호출·반복·제한 시간·JSON 원본·CSV/보고서 생성은 구현됐다(`b3-baseline-json-1`). 2026-10-22 전체 설정 실행의 반복별 요약·보고서를 Git에 보관한다. S1~S5·S3 민감도·S6 비교도 각 전용 backend와 schema로 구현됐다. 선행 메커니즘은 b3-literature-algorithms-json-1로 별도 실행한다. 아래 통합 b3-research-v2와 실제 E 통합·M backend는 후속 설계다.**
 
 #### 실험 단위와 동일 입력
 
@@ -401,7 +383,7 @@ Rocksteady의 758 MB/s와 tail latency 수치는 측정 항목을 고르는 근�
 |---|---|---|---|
 | Baseline 검증 | SC1~SC6 | stop-and-copy 단독 검증 | migration-comparison/runs/<execution_id>/ (재실행 시 생성) |
 | 단일 이동 비교 | S1~S6, S3 민감도 | 조건·seed마다 stop-and-copy와 pre-copy | migration-comparison/runs/<execution_id>/ |
-| 노드 증감 판단 | E1~E7 | 같은 metric stream에 정책·설정 적용 | scaling-decision/runs/<execution_id>/ |
+| 노드 증감 판단(후속) | E1~E7 | 선행 알고리즘 선정 후 같은 외부 workload에서 비교 | scaling-decision/runs/<execution_id>/ |
 | 여러 job 이동 | M1~M5 | 고정 Change 목록·workload에 scheduler·variant 적용 | movement-scaling-comparison/runs/<execution_id>/ |
 
 `execution_id`는 한 suite 실행 전체의 고유 ID, `case_id`는 seed·variant를 제외한 조건 정의의 ID, `run_id`는 조건·seed·candidate 실행의 고유 ID다. `candidate_id`는 같은 case 안에서 알고리즘과 설정 묶음을 구별한다. 예를 들어 같은 target-tracking 정책의 tolerance 5%와 10%는 서로 다른 candidate다. `case_id`는 공통 조건과 variant별 설정 묶음을 참조한다. S3 민감도의 라운드 상한·종료 임계 조합도 서로 다른 case가 된다.
@@ -442,7 +424,7 @@ S 비교를 위한 후속 구현은 test의 experiment 내부에서 먼저 일�
 | 관측·검증 | 쓰기 차단 구간, 요청 결과, 전송량, 실제 종료 사유, oracle·단일 owner·epoch·MOVED 검사 | common/RunObservation 및 검증 코드 |
 | 출력 adapter | 공통 Runner의 결과 계약으로 metric/detail 전달, 파생 CSV·보고서 연결 | common/ExperimentOutput |
 | 단일 이동 suite | S1~S6 × 조건 × seed × variant | comparison/MigrationComparison |
-| 노드 증감 suite | metric stream·fake provisioner/membership | decision/ScalingDecisionExperiment |
+| 노드 증감 suite(후속) | 선정한 선행 알고리즘·관측·provisioner/membership | 재현 범위 확정 후 결정 |
 | 여러 job suite | 다중 노드·Tablet fixture, job별 예산·scheduler 진행 | movement/MovementScalingExperiment |
 
 이는 클래스 책임·배치 계획이며 빈 Java 클래스나 공용 framework를 선행 생성하지 않는다. `MigrationDriver`의 최소 연산은 begin, 요청 처리, step, cancel, 불변 관측 snapshot이다. commit의 readiness·CAS·완료 통지는 adapter가 연결한다. 비교 보고서가 구체 protocol을 직접 조회하지 않게 한다.
@@ -525,7 +507,7 @@ E의 방식은 정책 이름, S/M의 방식은 복사 variant다. 검증 상태�
 1. 구현된 공통 Runner의 Baseline config 선택·실행·JSON 원본·파생 출력을 유지하면서 S 비교용 case·요청열·관측을 일반화한다. 새 경로에서 stop-and-copy를 실행하고 기존 공통 조건의 정합성·tick·byte가 유지되는지 확인한다.
 2. pre-copy의 dirty generation·snapshot barrier·delta seq·tombstone·종료 조건과 adapter를 구현한다. S1~S3·S5·공통 S6 경계를 같은 입력의 두 variant로 비교하고, CATCHING_UP은 pre-copy 전용 검사로 남긴다.
 3. Zipf를 구현하고 S4·S3 민감도·라운드 추적·비교 보고서 및 중단된 실행/한쪽 누락 처리를 검증한다. 미구현 시나리오를 포함해 전체 비교 완료라고 표시하지 않는다.
-4. metric stream·fake provisioner/membership으로 E1~E7 runner를 구현한다. 실제 인프라 연동과 분리하고 정책 설정별 결과를 같은 stream에서 비교한다.
+4. 선행 노드 증감 알고리즘의 재현 대상·입력·생략 범위를 확정한 뒤 E1~E7 평가와 runner를 구현한다. 동일 외부 workload를 사용하며 가상 모델과 실환경 실행을 구분한다.
 5. 다중 노드/Tablet fixture와 scheduler로 M1~M5를 구현한다. 매 tick node·cluster 예산 합계와 job별 진행·전체 결과를 함께 검증한다. M5는 단일 이동 비교의 variant·pair 규칙을 재사용한다.
 6. post-copy는 실패·미도착 key 계약을 결정한 뒤 같은 비교 입력·출력 체계에 추가한다. source-owned 계약을 만족하는 척 표시하지 않는다.
 
@@ -566,7 +548,7 @@ cache-core/src/test/java/io/openkache/core/migration/
 └── experiment/                        현재 Baseline 러너·fixture·tick·JSON codec·Runner용 BaselineResearchMain
     ├── common/                       (후속) 입력·adapter·관측·출력
     ├── comparison/                   (후속) MigrationComparison
-    ├── decision/                     (후속) ScalingDecisionExperiment
+    ├── decision/                     (후속) 선행 알고리즘 재현 범위 확정 후 구성
     └── movement/                     (후속) MovementScalingExperiment
 
 (후속) scaling policy·scheduler 실험, v2 dirty 라운드 상세 원본
@@ -648,7 +630,7 @@ experiments/b3-live-migration/
 | 항목 | 결정 | 위치 |
 |---|---|---|
 | 노드 증감 책임 | B3가 metric에서 desired node count와 증감 방향을 결정. 실제 provision은 외부 계층, 이동 계획은 B1·B2, 실행은 B3 | §1·§4.3 |
-| scaling baseline | target tracking 비율식 + tolerance + 보수적 scale-in + warm-up·진행 중 migration gate | §4.3·§6.3 |
+| scaling 방법 선정 | 기존 target tracking 우선 초안은 보류. 선행 시스템별 알고리즘·전제를 조사한 뒤 재현 범위 선정 | §4.3·§6.3 |
 | 1단계 variant | `stop-and-copy` Baseline만 구현. `pre-copy`, `post-copy`, scaling은 후속 단계 | §1 |
 | commit point | source freeze와 final ACK 뒤 coordinator가 expected table/version을 조건부로 원자 교체 | §3 |
 | freeze 중 요청 | read는 source가 처리, write는 `BUSY`로 즉시 거절 | §3 |

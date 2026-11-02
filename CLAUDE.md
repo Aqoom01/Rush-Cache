@@ -155,3 +155,7 @@ experiment-runner/build/install/openkache-experiment-runner/bin/openkache-experi
 - 브랜치: `master`(검증된 결과물·마일스톤), `develop`(통합). 작업 브랜치는 `develop`에서 `<type>/<영문 요약>`으로 만들고 MR로 `develop`에 병합한다(Squash 권장). 마일스톤 완료 시 `develop` → `master` MR(Squash 금지).
 - 커밋: `<type>: <한국어 설명>` (예: `feat: KV Store GET/SET 구현`)
 - MR 제목: `[Type] 작업 내용 (S15P31D111-<번호>)`. 본문은 `.gitlab/merge_request_templates/Default.md`를 쓰고 `Closes S15P31D111-<번호>`(작업이 남으면 `Refs`)로 Jira 이슈를 연결한다.
+
+## B3 선행 증감·재배치 실험 추가 (2026-11-02)
+
+선행 메커니즘 8개의 연구 prototype은 `experiments/b3-live-migration/scaling-decision/backend/`의 Python 코드로 구현했다. 공통 Runner가 test의 `LiteratureResearchMain`을 통해 실행한다. 가상 요청·대기열·준비·전송 모형이며 실제 OpenKache 노드 실행·원 논문 시스템의 재현은 아니다. 구현 변경점·실행·결과는 해당 폴더의 `README.md`·`results.md`를 따른다. 기존 자체 비교 정책 세 개는 사용하지 않는다. production 노드 증감 controller와 실제 migration 연계·M scheduler는 후속이다.

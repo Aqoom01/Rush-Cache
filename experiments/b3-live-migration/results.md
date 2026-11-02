@@ -8,7 +8,7 @@
 | stop-and-copy SC1~SC6 | 기존 130회 Baseline 보관 | [실행과 결과 안내](migration-comparison/README.md) |
 | S3 민감도 | 45조건 × seed 5개 × 세 방식, 675회 완료 | [설정별 결과·재현](migration-comparison/sensitivity-results.md) |
 | S6 | 10경계 × seed 5개 × 세 방식, 실제 90회·미지원 60행 검증 | [취소·장애·복구 결과](migration-comparison/interruption-results.md) |
-| 노드 증감 E1~E7 | 설계 단계 | [계획](scaling-decision/README.md) |
+| 선행 증감·재배치 메커니즘 | 8개 연구 prototype의 가상 모형 비교. 실제 서버·원 논문 제품 재현 아님 | [결과](scaling-decision/results.md) · [구현 범위](scaling-decision/README.md) |
 | 여러 job 이동 M1~M5 | 설계 단계 | [계획](movement-scaling-comparison/README.md) |
 
 S1~S5의 정합성 위반은 0건이며 최종 데이터 240/240건이 일치했다. 같은 코드의 축소 반복 실험 480회도 모두 성공했고 두 반복의 요약 hash가 일치했다.
