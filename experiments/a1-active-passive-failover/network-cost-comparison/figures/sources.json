@@ -1,0 +1,9 @@
+{
+  "model": "logical-link-fifo-1",
+  "sha256": {
+    "experiments/a1-active-passive-failover/network-cost-comparison/runs/run-2026-10-28T01-36-54.664991200Z-d71e8b8d/repeat-001/summary.csv": "b99de6da4c1f43a9b2262c266ef44f87b5515dbbf61b504d220e67a01f56a3eb",
+    "experiments/a1-active-passive-failover/network-cost-comparison/plot_results.py": "2decdcd2c5ae136b909cd62688cc33800773c038e4f159b9a497c730ce1d9882",
+    "experiments/a1-active-passive-failover/network-cost-comparison/figures/normal-write-cost.png": "290e331626d4d5da9af8abbfd696bd3b1b8561d8f55fc7a0267b0bfae1a98d29",
+    "experiments/a1-active-passive-failover/network-cost-comparison/figures/vr-crash-outcomes.png": "a788b382d7c17fb629749a46166dc87b336888016a18102a554819a7e435dfde"
+  }
+}

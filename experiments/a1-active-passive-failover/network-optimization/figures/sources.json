@@ -1,0 +1,10 @@
+{
+  "model": "logical-link-fifo-1",
+  "sha256": {
+    "experiments/a1-active-passive-failover/network-cost-comparison/runs/run-2026-10-28T01-36-54.664991200Z-d71e8b8d/repeat-001/summary.csv": "b99de6da4c1f43a9b2262c266ef44f87b5515dbbf61b504d220e67a01f56a3eb",
+    "experiments/a1-active-passive-failover/network-optimization/runs/run-2026-10-28T05-25-57.952704Z-1243c82b/repeat-001/summary.csv": "b6332a594308d28a1d3f139cf406e676c716b34dc4d17fde8f5e05e3a46afee9",
+    "experiments/a1-active-passive-failover/network-optimization/plot_comparison.py": "7cb4f679722cde1363b323ada36fc5bcbeed663103980e9894ef3de58f00ec2c",
+    "experiments/a1-active-passive-failover/network-optimization/figures/crash-before-after.png": "826ec1dec4c9a8dd20344d9d18d15f56895f513d293b08699034bf671cb03728",
+    "experiments/a1-active-passive-failover/network-optimization/figures/normal-before-after.png": "4f20f1ae0cb66f1822c342e12d9fc2dcb0453654f4afb0e9871ce79bdf4e4972"
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "run": "runs\\run-2026-10-29T01-03-29.244815600Z-bee0648a\\repeat-001",
+  "files": {
+    "summary.csv": "F7F062BB0E09A995C1E40FCE02BA995A1A0973E3DAE5DCF828871380EEC15E4B",
+    "samples.csv": "8FA8A546F925CD269FB6E6188829B0B5430C9929E2A71EBBAC01D2F20124EF72"
+  },
+  "conditions": 240,
+  "timeDomain": "virtual",
+  "variant": "ROSE_ADAPTATION"
+}

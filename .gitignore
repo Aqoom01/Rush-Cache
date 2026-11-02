@@ -35,3 +35,6 @@ experiments/**/runs/**
 !experiments/**/runs/**/
 !experiments/**/runs/*/repeat-*/summary.csv
 !experiments/**/runs/*/repeat-*/results.md
+!experiments/a1-active-passive-failover/chain-comparison/runs/*/repeat-*/position-summary.csv
+!experiments/a1-active-passive-failover/chain-comparison/runs/*/repeat-*/position-results.md
+!experiments/a1-active-passive-failover/rose-comparison/runs/*/repeat-*/samples.csv
