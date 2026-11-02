@@ -2,9 +2,9 @@
 
 B3는 cluster metric을 보고 **노드를 언제 몇 개 늘리거나 줄일지 결정**하고, B1·B2가 만든 이동 계획(`Change`)을 받아 Tablet 데이터를 실제로 옮기고 소유권을 넘긴다. 비교 대상은 **노드 증감 판단 정책**, **데이터를 옮기는 프로토콜**, **이동 job이 많아질 때의 확장 특성**이다.
 
-**현재 구현(2026-10-28):** stop-and-copy·pre-copy·post-copy의 in-process 프로토콜과 정합성 테스트가 있다. pre/post-copy의 lifecycle·adapter 계약·실패 처리와 실행 방법은 [구현 안내](protocols.md)를 따른다. S1~S5 세 방식 비교 backend와 finite Zipf, S3 종료 임계·라운드 상한 민감도 비교를 구현했다. S6 취소·장애 경계 비교도 별도 backend로 구현했다. 실제 KV/peer 통합, 노드 증감 정책과 scheduler는 후속이다.
+**현재 구현(2026-11-02):** stop-and-copy·pre-copy·post-copy의 in-process 프로토콜과 정합성 테스트가 있다. pre/post-copy의 lifecycle·adapter 계약·실패 처리와 실행 방법은 [구현 안내](protocols.md)를 따른다. S1~S5 세 방식 비교 backend와 finite Zipf, S3 종료 임계·라운드 상한 민감도 비교를 구현했다. S6 취소·장애 경계 비교도 별도 backend로 구현했다. 실제 KV/peer 통합과 scheduler는 후속이다. 이전 자체 노드 증감 비교는 제거했다. 선행 메커니즘 8개의 연구 prototype과 가상 모형 비교를 구현했다. 실제 서버·원 논문 제품 재현과 구분하며 [범위와 결과](scaling-decision/README.md)를 따른다.
 
-- 노드 증감 판단: target metric으로 desired node count 계산, tolerance·stabilization·warm-up으로 진동 억제
+- 노드 증감 판단: 선행 시스템의 실제 알고리즘·전제·평가 방법을 조사하고 재현 범위를 선정
 - 단일 이동: downtime, 총 이동 시간, 전송량 증폭, 정합성
 - 이동 scaling: job 수·동시 실행 수·공유 대역폭에 따른 전체 완료 시간, aggregate throughput, 요청 영향
 
@@ -18,13 +18,14 @@ B3는 desired node count와 scale-in 후보를 정한다. 실제 노드 생성·
 | [protocols.md](protocols.md) | 구현된 pre-copy·post-copy 계약, commit·요청·실패 처리, 테스트 실행 |
 | [references/](references/) | 참고 논문·시스템별 정리. 읽은 내용과 프로젝트 적용 방식을 분리해 적는다 |
 | [migration-comparison/README.md](migration-comparison/README.md) | 단일 이동: SC1~SC6 Baseline·S1~S5 비교·S3 민감도·S6 취소/장애 비교 실행 |
-| [scaling-decision/README.md](scaling-decision/README.md) | E1~E7 노드 증감 판단 계획. runner 미구현 |
+| [scaling-decision/README.md](scaling-decision/README.md) | 선행 메커니즘 8개 가상 모형 실행·결과·재현 범위 |
 | [movement-scaling-comparison/README.md](movement-scaling-comparison/README.md) | M1~M5 여러 job 이동 계획. runner 미구현 |
 
 ## 참고자료와 설계 결정
 
 | 참고자료 | 이 문서에서 가져오는 것 | 가져오지 않는 것 |
 |---|---|---|
+| [선행 노드 증감 알고리즘](references/elastic-scaling-algorithms.md) | SCADS·ElastMan·E-Store·Accordion·P-Store·TIRAMOLA·PAX·Slicer의 실제 절차와 전제 | 원문과 다른 자체 정책을 논문 재현으로 취급하는 것 |
 | [Elastic Scaling Policy](references/elastic-scaling-policy.md) | desired node count 비율식, target tolerance, scale-in stabilization, 새 노드 warm-up, scale-out/in 비대칭 | Kubernetes·AWS 제어면과 서비스별 고정 threshold |
 | [VM Live Migration](references/vm-live-migration.md) | `stop-and-copy`·`pre-copy`, dirty 반복 전송, 수렴 조건, downtime과 총 이동 시간의 분리 | VM의 CPU·장치 상태와 네트워크 주소 이전 |
 | [MongoDB Chunk Migration](references/mongodb-chunk-migration.md) | source가 이동 중 요청 처리, 복사 → 변경분 동기화 → metadata commit → 정리, 참여 노드별 동시 이동 제한 | chunk 분할 조건과 balancer의 재배치 판단 |
@@ -51,15 +52,11 @@ B3는 desired node count와 scale-in 후보를 정한다. 실제 노드 생성·
 
 ### 노드 증감 판단
 
-노드 증감 판단을 구현하는 후속 단계의 첫 비교 기준은 [Elastic Scaling Policy](references/elastic-scaling-policy.md)에 정리한 target tracking이다. **1단계에서는 이 정책을 구현하지 않고 `stop-and-copy` baseline만 구현한다.**
+현재 선행 메커니즘 8개의 연구 prototype·실험 backend와 가상 모형 결과가 있다. 실제 OpenKache 노드 증감 controller는 없다. [선행 시스템별 알고리즘](references/elastic-scaling-algorithms.md)에 실제 입력·결정 절차·평가 환경을 정리했다. [전체 조사](references/tablet-aware-elasticity-survey.md)는 관련 논문·운영 사례와 지표 근거를 제공한다.
 
-`desiredNodes = ceil(currentNodes × currentMetric / targetMetric)`
+SCADS의 성능 모델·best-fit, ElastMan의 feedforward/feedback, E-Store의 hot/cold 배치, Accordion의 서버 수 후보별 MILP, P-Store의 예측·동적 계획법, TIRAMOLA의 MDP, PAX의 partition-aware 노드 활성화가 조사 대상이다. Slicer는 split/merge·배치 참고이며 서버 수 결정은 외부 담당이다.
 
-- 출력은 `KEEP`, `SCALE_OUT(desiredNodes)`, `SCALE_IN(desiredNodes, candidateNode)` 중 하나다.
-- 작은 metric 차이는 tolerance 안에서 무시한다.
-- scale-out은 연속 상한 초과에 빠르게 반응하고, scale-in은 stabilization window 뒤 한 노드씩 수행한다.
-- 새 노드가 READY가 되고 migration이 끝날 때까지 scale-in하지 않는다.
-- scale-out은 새 노드가 READY가 된 뒤, scale-in은 후보가 DRAINING이 된 뒤 B1이 `Change`를 만든다. B3 migration scheduler가 이를 끝내면 scale-in 노드를 종료한다.
+연구 prototype에서 생략·변경한 원문 기능을 기록했으며 B1/B2 배치·실제 migration 실행과의 통합은 후속이다. 특정 비율식이나 자체 비용식을 비교 알고리즘으로 확정하지 않는다. 실제 노드 생성·종료는 외부 provisioner·membership의 책임이며 축소는 drain 완료 후 수행한다.
 
 ### 여러 job의 이동 Scaling
 
@@ -91,11 +88,11 @@ MongoDB의 참여 shard당 동시 이동 1개는 첫 baseline 후보로 쓴다. 
 
 현재 Baseline 실험의 정식 진입점은 config를 읽는 공통 `experiment-runner`다. 공통 Runner는 실험 선택·반복·실제 시간 제한·결과 수집을, B3 backend는 tick 진행·연구별 관측·정합성 검사를 담당한다. **현재 `execution.mode=research`의 config 지정 JVM backend 실행이 구현됐다.** `backend.main`·classpath·인자가 실행 대상을 선택하고 `study`·`experiment`는 연구·실험 식별자다. [실행 안내](migration-comparison/README.md)와 [전체 설정](migration-comparison/baseline.properties)을 따른다.
 
-새 Baseline 실행은 JSON 원본·CSV 요약·Markdown 해석을 실제 생성한다(`b3-baseline-json-1`). 2026-10-22 전체 설정 실행의 [보고서](migration-comparison/runs/run-2026-10-22T04-48-53.944252700Z-a4354ce4/repeat-001/results.md)와 [조건별 요약](migration-comparison/runs/run-2026-10-22T04-48-53.944252700Z-a4354ce4/repeat-001/summary.csv)을 Git에 보관한다. JSON 원본과 manifest·로그는 실행한 PC에 남긴다. S1~S5 비교는 별도 b3-comparison-json-1 backend로 실행한다. S3 민감도는 별도 sensitivity config, S6는 b3-s6-json-1의 interruption config로 실행한다. v2 상세 형식과 E/M backend는 후속이다. 상세 호출·결과 계약은 [design.md §6.6](design.md)에 있다.
+새 Baseline 실행은 JSON 원본·CSV 요약·Markdown 해석을 실제 생성한다(`b3-baseline-json-1`). 2026-10-22 전체 설정 실행의 [보고서](migration-comparison/runs/run-2026-10-22T04-48-53.944252700Z-a4354ce4/repeat-001/results.md)와 [조건별 요약](migration-comparison/runs/run-2026-10-22T04-48-53.944252700Z-a4354ce4/repeat-001/summary.csv)을 Git에 보관한다. JSON 원본과 manifest·로그는 실행한 PC에 남긴다. S1~S5 비교는 별도 b3-comparison-json-1 backend로 실행한다. S3 민감도는 별도 sensitivity config, S6는 b3-s6-json-1의 interruption config로 실행한다. 선행 메커니즘 비교는 별도 b3-literature-algorithms-json-1 backend로 실행한다. v2 상세 형식과 실제 노드 증감 통합·M backend는 후속이다. 상세 호출·결과 계약은 [design.md §6.6](design.md)에 있다.
 
 ## Baseline 실행과 결과
 
 단위·계약 테스트는 `./gradlew build`에 포함된다. SC1~SC6 전체 실행은 공통 Runner에 Baseline config를 전달한다.
 [migration-comparison/README.md](migration-comparison/README.md)에 재현 명령·모델·지표 정의를 기록한다.
 실행하면 `migration-comparison/runs/<execution_id>/`에 실행별 결과가 생성된다. 현재 보관된 Baseline 실행은 26개 조건 × seed 5개, 총 130회이며 정합성 규칙 위반은 0건이다. S1~S5 세 방식 비교는 2026-10-23 generator v2 full 240회를 참조 run으로 선정했다. [단일 이동 결과](migration-comparison/results.md)와 [B3 통합 결과](results.md)에 핵심 수치·재현·제한을 정리했다. SC 결과는 별도 Baseline으로 유지한다.
-SC 결과는 Baseline 단독 검증이다. Baseline 호출·수집과 pre/post-copy 프로토콜 테스트는 구현됐고 S1~S5 비교 backend가 있다. S3 민감도·S6 backend도 구현했고 E/M backend는 후속이다. 공통 입력·adapter·관측·출력과 구현 순서는 [design.md §6.6](design.md)에 정의한다. 실제 서버의 downtime·latency는 아직 측정하지 않는다.
+SC 결과는 Baseline 단독 검증이다. Baseline 호출·수집과 pre/post-copy 프로토콜 테스트는 구현됐고 S1~S5 비교 backend가 있다. S3 민감도·S6·선행 메커니즘 비교 backend를 구현했고 실제 노드 증감 통합·M backend는 후속이다. 공통 입력·adapter·관측·출력과 구현 순서는 [design.md §6.6](design.md)에 정의한다. 실제 서버의 downtime·latency는 아직 측정하지 않는다.
