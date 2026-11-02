@@ -72,3 +72,11 @@ Java21.0.11 전체 build/installDist --rerun-tasks 통과. 기본 병렬·Window
 P/W는 이 client의 Meta item/raw stage만 제어한다. 전체 READ/probe/쓰기 socket·서버 잔류 작업·heap의 전역 상한이 아니다. BUSY 반환 전에 원본 READ/probes가 발생할 수 있다. 영구 미완료 borrowed stage면 permit도 남는다. 한 느린 pending DATA가 같은 frame을 지연시키고 네트워크 실패는 batch 전체에 영향을 준다. 이 가용성·지연 비용을 후속 성능 비교에서 기록해야 한다.
 
 공통 GET/SET/DELETE 데이터셋·장기 client driver·처리량/p95/p99/heap/CPU/GC/NIC/SSD, 최적 E/B/D/P/W, multi-host·전원 장애·LSM/SplinterDB 재현은 미완료다. 독립 Replica RAM Durability Log·stable View·선택적 KV force를 구별하며 per-request stable WAL/fsync(D-PERSIST)를 추가하지 않았다. 기존64MiB state/frame·32MiB KV 한도와 메시지별 TCP 연결 제약도 유지한다. 이번 유한 fixture를 모든 interleaving의 증명이나 성능 향상으로 해석하지 않는다.
+
+## 공통 benchmark adapter 연결 후속 (2026-10-30)
+
+현재 표시 ID V07의 실제 알고리즘을 server benchmark/ionia_eighth adapter에 연결했다. 위 과거 문서명·원래 profile 표기/최초 알고리즘 검사 기록은 보존한다. 기존 알고리즘/core API/wire는 변경하지 않고 공통 ID/deadline/retry·trace·closed/open-loop·전수 지연·로컬 표준 export를 재사용한다.
+
+V07의 실제3/5노드·두 실행 방식·읽기/혼합8조건과 별도 CRUD 값·DELETE OK/MISS·재삽입을 검증하고 결과8개를 schema/hash·histogram/설정으로 대조했다. 여섯 방식 합계 추가99/전체760검사 통과이며 개별 방식의99검사라는 뜻은 아니다. ../experiments/replication-benchmark-v1/ADAPTERS_V02_V07.md 및 REMAINING_ADAPTERS_VALIDATION.json/REMAINING_ADAPTERS_SOURCE_PRESERVATION.json/REMAINING_ADAPTERS_ARTIFACT_CHECK.json을 따른다.
+
+V06 학습의 phase 분리·V07 coalescer의 client별 범위, ready manifest/서버 inventory·공통 정확성/필수 계측·clock/overhead/remote 관찰을 정식 성능 전 보강해야 한다. 본시험 데이터/요청열 후보·pilot과 EC2 접속/진단·성능 비교는 후속이며 commit/push/merge는 하지 않았다. RAM log·stable View/선택적 KV force와 RPC별 socket 정책을 유지한다.

@@ -1,0 +1,93 @@
+{
+  "schema": "o00-pilot-validation-v1",
+  "passed": true,
+  "unit_tests": [
+    {
+      "name": "io.openkache.server.benchmark.pilot.PilotInputsTest",
+      "tests": "6",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0"
+    },
+    {
+      "name": "io.openkache.server.benchmark.pilot.RemoteO00DrainProbeTest",
+      "tests": "5",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0"
+    }
+  ],
+  "separate_jvm_rehearsal": {
+    "passed": true,
+    "requests": 72,
+    "workload_writes": 31,
+    "audit_requests": 8,
+    "replica_value_checks": 9,
+    "input_files": 11,
+    "bundle_libraries": 24,
+    "local_stopped_checked": true
+  },
+  "dataset": {
+    "requests": 3200,
+    "phases": [
+      {
+        "phase": "LOAD",
+        "count": 1000,
+        "get": 0,
+        "set": 1000,
+        "delete": 0,
+        "canonical_bytes": 161076,
+        "sha256": "deff5db6d5a48c7da9cfa5aa132d6f73c5444732132e806112c041f5dbb2f0b0",
+        "file": "load.trace"
+      },
+      {
+        "phase": "WARMUP",
+        "count": 200,
+        "get": 155,
+        "set": 29,
+        "delete": 16,
+        "canonical_bytes": 15176,
+        "sha256": "d8651e42a1366eadc90264e7ebf695ba7adce98b703c0805dd90598e5f9e5c2f",
+        "file": "warmup.trace"
+      },
+      {
+        "phase": "MEASURE",
+        "count": 2000,
+        "get": 1619,
+        "set": 281,
+        "delete": 100,
+        "canonical_bytes": 150176,
+        "sha256": "9c7fa2f59709b4c000573e560ae451449fc87e67bb3df7671e57fc9ea477773b",
+        "file": "measure.trace"
+      }
+    ],
+    "sha256_manifest": "13b6e833938c50e5e8716bdad3cf42bb2a04df00d98ae8a892c7473e9006d882",
+    "executed": false
+  },
+  "negative_controls": [
+    "tampered_trace_rejected",
+    "wrong_replica_code_rejected_before_workload",
+    "repeat_workload_rejected",
+    "old_node_data_rejected",
+    "dataset_overwrite_rejected"
+  ],
+  "source_preservation": {
+    "baseline_sources": 316,
+    "unchanged": 316,
+    "modified_existing_files": [
+      "cache-server/build.gradle.kts"
+    ],
+    "main_jar_excludes_benchmark": true
+  },
+  "zip_sha256": "b894bb344306eea01ab3fff569f1ad61becca0e0a1cc0268abf72064e5633072",
+  "bundle_sha256": "4f4d2a5fe2754b54719324c8e232a7b6a640bbc9ad413ee2a4be8f4042421f73",
+  "not_run": [
+    "949_test_full_regression",
+    "EC2_SSH",
+    "Linux_host_execution",
+    "formal_performance",
+    "variant_pilot",
+    "power_loss_recovery"
+  ],
+  "fixed_during_rehearsal": "ready metadata now atomically published; partial-copy failed run retained in smoke-final"
+}

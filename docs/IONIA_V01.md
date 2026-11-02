@@ -74,3 +74,9 @@ java -cp 'cache-server/build/install/openkache-server/lib/*' io.openkache.server
 O00 기본 생성자를 사용하면 최초 Leader를 읽을 수 있으므로, 비교 시 O00의 Follower 읽기 Options 또는 `readAtFollower`를 명시한다. 기존 O00 CLI는 초기 Follower를 지정하지만 고정 대상 정책이며 전체 Replica 균등 분산과 다르다. View 교체로 해당 대상이 Leader가 될 수도 있다. 대조 실험의 실제 라우팅을 함께 기록해야 한다.
 
 내구성은 정석과 같은 독립 Replica RAM 로그 복제다. per-request SSD WAL/fsync인 D-PERSIST는 구현하지 않았다. KV force와 안정 View 메타데이터 영속화를 Fast ACK 내구성과 혼동하지 않는다. 정석의 전체 로그 replay·64 MiB 상태 전송 제한도 그대로 남는다.
+
+## 공통 benchmark 연결 후속 (2026-10-30)
+
+위195개 검사는 최초 알고리즘 구현 시점 기록이다. 후속으로 실제 IoniaLeaderReadClient를 cache-server의 별도 benchmark/ionia_second adapter에서 공통 trace·closed/open-loop·전수 지연·로컬 표준 결과 저장에 연결했다. 기존 알고리즘 디렉터리와 core/server 생산 코드는 그대로 유지하며 실험 O00 adapter의 수명주기를 작은 session factory 경계로 공유한다. O00의 readReplica를 최초 Leader로 고정하는 대체 구현이 아니다.
+
+추가26/최종전체661검사와 3/5노드 두 실행 방식·읽기/혼합8조건, 별도 CRUD audit/O00 Follower+Meta 대조·V01 export8개를 검증했다. 설정/사용법/실제 증거/한계는 ../experiments/replication-benchmark-v1/ADAPTER_V01.md 및 V01_ADAPTER_VALIDATION.json을 따른다. 현재 local manifest/같은 JVM 적용 관찰이며 정식 분산 성능 비교·ready manifest·SSD/power-loss 검증 완료를 뜻하지 않는다. EC2 접속/진단·commit/push/merge는 하지 않았다.

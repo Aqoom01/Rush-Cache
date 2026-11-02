@@ -1,6 +1,6 @@
 # 계측 정의 v1
 
-기준일2026-10-30. **지표 정의는 작성, 3/5노드 구현·실측은 미완료.** metric-catalog.json의 M01–M36은 지표군이다. 개별 scalar/분포에는 op/phase/node/path 차원과 유효 sample count·분자·분모·계측 계층이 붙는다. 모든 scalar를 항상 수집 가능하다고 가정하지 않는다.
+기준일2026-10-30. **지표 정의와 O00/V01–V07 로컬 전수 지연/결과 저장 연결. 분산36개 지표군 전체 계측·정식 성능 실측은 미완료.** metric-catalog.json의 M01–M36은 지표군이다. 개별 scalar/분포에는 op/phase/node/path 차원과 유효 sample count·분자·분모·계측 계층이 붙는다. 모든 scalar를 항상 수집 가능하다고 가정하지 않는다.
 
 ## 1. 요청·완료·결과 분류
 
@@ -340,4 +340,43 @@ CSV timestamps는 해당 clock_id와ns 단위를 동반한다. request/key/frame
 - 수집원/차원: pilot paired experiment / observer, scenario
 - 구현 상태: PENDING; 정확성/필수안전계측off 금지
 
+
+
+## 8. 로컬 전수 지연·결과 export 구현 반영 (2026-10-30)
+
+위 PENDING 목록은 최초 명세 시점의 상태를 보존한다. 현재 O00의 closed/open-loop에서 phase/op/outcome별 전수 service/scheduled/dispatch-lag histogram과 표준 result.schema envelope를 구현했다. M01/02/03/04/07/08/10/11의 단일 JVM 관찰을 제공하고, 나머지 및 M09의 불완전한 phase별 late ledger는 unsupported/null+사유로 둔다. 1초 창·자원/프로토콜 지표·전체 history·ACK audit·remote/분산 실행은 후속이다.
+
+추가28/전체635검사, 실제 로컬3/5노드 두 실행 방식의 모든 CRUD population, 산출물13개 및 음성 대조4개를 확인했다. percentile은 bucket 상향 근사이며 p99.9는 n<100000이면 주요 비교 부적합이다. 설정 snapshot은 local manifest로서 ready 분산 manifest가 아니고 template은 draft/disabled다. LATENCY_EXPORT.md와 MEASUREMENT_VALIDATION.json을 따른다.
+
+## 9. V02–V07 공통 연결 계측 범위 (2026-10-30)
+
+추가99/전체760검사와 결과48개 대조를 통해 O00/V01–V07 전체8개 adapter의 공통 지연/계수/로컬 export 연결을 확인했다. 새 Metadata.adapterConfiguration은 client/정책/profile·초기 membership·제한/socket timeout을 저장하며 기존7인자 호출과 histogram 계약을 유지한다. ADAPTERS_V02_V07.md/REMAINING_ADAPTERS_VALIDATION.json 참조.
+
+V07 raw batch frame은 logical Meta/일반 RPC와 구분하며 전체 peer message/bytes를 계측한 것으로 표시하지 않는다. 기존36개 지표군의 미지원/미관찰·원격/1초 창·history/ACK audit·clock/overhead 한계는 유지한다. V06 phase간 학습 상태의 자동 이전이 없어 cold/steady 학습과 워밍업 정책을 정식 비교 전에 확정한다. 공통 정확성·필수 계측을 보강한 후 본시험 데이터/요청열 후보·EC2 재개 시 inventory/pilot을 진행한다.
+
+## 10. 제한된 correctness history·ACK 감사 구현 (2026-11-02)
+
+M28/M29의 **단일 JVM·소규모 기능 검증 부분**을 별도 correctness 산출물로 추가했다. 이전 PENDING/후속 표시는 당시 기록이며 위 전체36개 지표의 분산 수집 완료를 뜻하지 않는다. CORRECTNESS_HISTORY.md와 CORRECTNESS_VALIDATION.json을 따른다.
+
+- 전수 key/value/결과·submit/callback·pending/거절/미응답 이력을 보존한다. 제한된 전역 GET/SET/DELETE 선형성 검사는 알려진 초기 상태를 요구하고 uncertain·한도 초과를 PASS로 바꾸지 않는다. checker의 최대24operation 한도를 본시험 천만 요청에 확장해 적용했다고 보고하지 않는다.
+- 별도 예약·배타적·덮어쓰기 없는 key의 SET/DELETE ACK와 READY 이후 실제 GET을 감사한다. O00/V01–V07·3/5노드에서 모든 복제본 적용 후와 follower 정상 close/재기동·생존 다수 복구 후 서비스 수준의 값/부재를 확인한다. ACK 직후 apply 전 crash·leader kill·전원 손실·원격 장애 검증은 아니다.
+- correctness.json/history.jsonl/ack-ledger.json/ack-audit.json·integrity/marker를 저장한다. 독립 Python 검증기로 hash·payload·계수·witness replay·ACK 증거를 대조하며 VIOLATION/INCONCLUSIVE도 유효한 저장 결과일 수 있다.
+- 기존 표준 성능 result의 M28/M29 `not_evaluated`는 그대로다. 별도 correctness artifact의 run/slot/clock/history token/hash로 증거를 구분하며 공통 envelope 자동 통합은 후속이다. 전수 payload·탐색 비용이 성능 mode와 같다고 가정하지 않는다.
+
+필수 host/JVM·protocol/storage·1초 창·clock/observer overhead·분산 관찰과 V06 학습/워밍업 정책은 남아 있다. RAM durability log·stable View·선택적 KV fsync는 변경하지 않았다.
+
+## P02 JVM 원시 관찰의 제공 범위 (2026-11-02)
+
+별도 `benchmark-jvm-observation-v1` sidecar가 process CPU·heap/non-heap·GC count/time과 client endpoint pending을 저장한다. CPU/GC는 누계와 실제 snapshot interval 차이값이며 개별 GC pause가 아니다. 1초 ticker는 목표 주기이며 jitter·stage 경계·마지막 짧은 구간과 실제 source/collection 시각을 그대로 보존한다. terminal 요청 창은 run anchor 기준1초와 원래 LOAD/WARMUP/MEASURE cohort를 별도 보존한다. 자원 interval과 요청 창을 임의로 나누어 CPU/op를 만들지 않는다.
+
+RSS/allocation/개별 pause는 null+reason, peak pending은 sampled lower bound이고 true peak는 null이다. 같은 JVM의 replica 비용을 중복 합산하지 않는다. 초기 baseline·counter reset·필수 source 누락·clock 오류·late callback·수집 cap/종료 오류·실행 cohort 불일치를 대조하며, 정상34/명시 invalid2 bundle과 변조6개를 독립 reader로 검증했다. 상세는 JVM_OBSERVATIONS.md 및 JVM_OBSERVATION_ARTIFACT_CHECK.json을 따른다.
+
+기존 성능 result와 기본7파일 무결성 계약은 그대로다. M18/M23은 전체 역할/replica/source coverage·clock·분모/프로필 통합 전 unsupported를 유지한다. shared-fixture local subset valid는 정식 CPU/op·RSS·SSD 성능 적합성 완료가 아니다. GC 시간 출처는 MXBean의 누적ms→ns이며 ns 정밀도의 개별 pause를 관측했다는 뜻이 아니다. 원격 clock·host/device 계측·계측 오버헤드 적합성은 후속이다.
+
+
+## TCP raw 계측 연결 (2026-11-02)
+
+P03은 sender frame·initiator exchange·logical outcome을 분리해 기록한다. sender에 request/reply/peer를 각1회 합하고 receive/exchange 복사본은 더하지 않는다. JDK stream의4B prefix·protocol header/body 포함 확인된 bytes이며 TCP/IP packet·전달 ACK·host 전체 TIME_WAIT는 아니다. 불확실 부분 write는 exact bytes를 null로 두고 invalid로 남긴다. local socket 상태·event 처리 순서 peak를 OS 전체 연결/진짜 peak로 표시하지 않는다. 구독 이전 연결은 null이다.
+
+같은 monotonic source의 subscription anchor·terminal 창·시작/완료 stage를 보존하고 frame event와 exchange admission cohort의 경계 차이를 명시한다. 실패가 없는 흐름만 reply send↔read를 정확히 대조하고 실패 시에는 진단으로 보존한다. 표준 result M15/M16/M17은 전체 process/role coverage·clock·분모/프로필 통합 전 unsupported를 유지한다. 기존 schema/default7파일은 변경하지 않았다. 전체949검사·독립 산출물43건의 실제 범위/근거는 NETWORK_OBSERVATIONS.md와 관련3개 JSON에 있다.
 

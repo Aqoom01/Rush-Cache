@@ -5,6 +5,7 @@ import io.openkache.core.model.*;
 import io.openkache.core.replication.ionia.*;
 import java.io.*;
 import java.util.*;
+import io.openkache.server.observation.TcpTraffic;
 
 /** Explicit bounded O00 wire format; intentionally separate from the baseline single-node protocol-v1. */
 public final class IoniaWire {
@@ -21,7 +22,10 @@ public final class IoniaWire {
             out.writeLong(source.value()); out.writeLong(target.value()); out.writeUTF(configuration); out.writeByte(kind); writer.write(out);
         }
         if (bytes.size() > MAX_FRAME) throw new IOException("IONIA frame exceeds limit");
-        DataOutputStream out = new DataOutputStream(destination); out.writeInt(bytes.size()); bytes.writeTo(out); out.flush();
+        try (var traffic = TcpTraffic.frame(configuration, source.value(), target.value(), kind)) {
+            DataOutputStream out = new DataOutputStream(traffic.output(destination)); out.writeInt(bytes.size()); bytes.writeTo(out); out.flush();
+            traffic.succeeded(); traffic.written();
+        }
     }
     public static Packet read(InputStream source) throws IOException {
         DataInputStream network = new DataInputStream(source); int size = network.readInt();

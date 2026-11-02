@@ -107,5 +107,8 @@ Windows TCP fixture는 기존 검증 helper의 로컬 포트 예산 gate를 유�
 
 ## 다음 단계
 
-공통 phase coordinator·LOAD_DRAIN/apply frontier 확인·closed/open-loop scheduler·phase/op별 histogram 및 manifest/result export를 구현한다. 아직 phase별 성능 집계, 모든36지표 수집, 분산 history/ACK audit, V01–V07 adapter, 실제 EC2 pilot/성능 비교가 완료된 것은 아니다. 기존 v1 template은 draft/disabled로 유지한다.
+이후 단계3-A에서 fixed-N closed-loop coordinator·phase별 cohort·로컬 LOAD/WARMUP/FINAL apply drain을 구현·검증했다(CLOSED_LOOP.md). 다음은 open-loop·phase/op별 histogram 및 manifest/result export다. 아직 phase별 성능 집계, 모든36지표 수집, 분산 history/ACK audit, V01–V07 adapter, 실제 EC2 pilot/성능 비교가 완료된 것은 아니다. 기존 v1 template은 draft/disabled로 유지한다.
 
+## V01 연결을 위한 실험 세션 경계 (2026-10-30)
+
+O00BenchmarkClient의 기존 생성자/Settings/Diagnostics와 기본 IoniaClient/Options를 보존하고 선택적 IoniaBenchmarkSession.Factory 생성자만 추가했다. V01이 실제 IoniaLeaderReadClient를 연결하면서 deadline/ID/retry/계수/정리를 공유한다. 원본 알고리즘·TCP·공통API는 변경하지 않는다. O00 Follower+Meta 대조와 기존25개 adapter 검사 및 전체 회귀를 유지한다. 상세는 ADAPTER_V01.md를 따른다.

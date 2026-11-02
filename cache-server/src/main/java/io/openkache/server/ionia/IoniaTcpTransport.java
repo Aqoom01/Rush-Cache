@@ -9,6 +9,7 @@ import java.net.*;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.*;
+import io.openkache.server.observation.TcpTraffic;
 
 /** Real TCP transport. Blocking sockets run on virtual threads, never the protocol owner or Netty loop.
  * A PEER stage completes on local flush; only explicit PrepareAck messages contribute to consensus.
@@ -33,7 +34,7 @@ public final class IoniaTcpTransport implements Transport, IoniaClientTransport,
     @Override public CompletionStage<Void> send(PeerEnvelope envelope) {
         if (!self.equals(envelope.from()) || !(envelope.message() instanceof IoniaMessage message))
             return CompletableFuture.failedFuture(new IllegalArgumentException("invalid peer sender/message"));
-        return call(envelope.to(), IoniaWire.PEER, timeoutMillis, out -> IoniaWire.peer(out, message), null);
+        return call(envelope.to(), IoniaWire.PEER, timeoutMillis, out -> IoniaWire.peer(out, message), null, message.getClass().getSimpleName());
     }
     @Override public CompletionStage<WriteAck> record(NodeId to, Request request) {
         return call(to, IoniaWire.RECORD, timeout(request), out -> IoniaWire.request(out, request), (node, in) ->
@@ -61,25 +62,30 @@ public final class IoniaTcpTransport implements Transport, IoniaClientTransport,
         return (int) Math.max(1, Math.min(timeoutMillis, TimeUnit.NANOSECONDS.toMillis(request.timeoutNanos()) + 1));
     }
     private <T> CompletionStage<T> call(NodeId to, int kind, int timeout, IoniaWire.Writer payload, Decoder<T> decoder) {
+        return call(to, kind, timeout, payload, decoder, "");
+    }
+    private <T> CompletionStage<T> call(NodeId to, int kind, int timeout, IoniaWire.Writer payload, Decoder<T> decoder, String peerType) {
         CompletableFuture<T> future = new CompletableFuture<>();
-        if (closed.get() || !addresses.containsKey(to)) { future.completeExceptionally(new IOException("transport closed/unknown replica")); return future; }
+        var traffic = TcpTraffic.exchange(configuration, self.value(), to.value(), kind, peerType);
+        if (closed.get() || !addresses.containsKey(to)) { traffic.rejected(); future.completeExceptionally(new IOException("transport closed/unknown replica")); return future; }
         long correlation = sequence.incrementAndGet();
         try {
             io.execute(() -> {
                 try (Socket socket = new Socket()) {
+                    traffic.created(socket);
                     sockets.add(socket);
                     if (closed.get()) throw new IOException("transport closed");
-                    socket.connect(addresses.get(to), Math.min(timeout, 500)); socket.setSoTimeout(timeout); socket.setTcpNoDelay(true);
-                    IoniaWire.write(socket.getOutputStream(), correlation, self, to, configuration, kind, payload);
-                    if (decoder == null) { future.complete(null); return; }
-                    IoniaWire.Packet reply = IoniaWire.read(socket.getInputStream());
+                    traffic.connecting(); socket.connect(addresses.get(to), Math.min(timeout, 500)); traffic.connected(); socket.setSoTimeout(timeout); socket.setTcpNoDelay(true);
+                    IoniaWire.write(traffic.output(socket.getOutputStream()), correlation, self, to, configuration, kind, payload); traffic.written();
+                    if (decoder == null) { traffic.succeeded(); future.complete(null); return; }
+                    IoniaWire.Packet reply = IoniaWire.read(traffic.input(socket.getInputStream())); traffic.replyRead();
                     if (reply.correlation() != correlation || !reply.source().equals(to) || !reply.target().equals(self)
                             || !reply.configuration().equals(configuration) || reply.kind() != kind) throw new IOException("response correlation/configuration mismatch");
-                    T value = decoder.read(to, reply.body()); IoniaWire.exhausted(reply.body()); future.complete(value);
+                    T value = decoder.read(to, reply.body()); IoniaWire.exhausted(reply.body()); traffic.succeeded(); future.complete(value);
                 } catch (IOException | RuntimeException error) { future.completeExceptionally(error); }
-                finally { sockets.removeIf(Socket::isClosed); }
+                finally { traffic.close(); sockets.removeIf(Socket::isClosed); }
             });
-        } catch (RejectedExecutionException error) { future.completeExceptionally(error); }
+        } catch (RejectedExecutionException error) { traffic.rejected(); future.completeExceptionally(error); }
         return future;
     }
     @Override public void close() {

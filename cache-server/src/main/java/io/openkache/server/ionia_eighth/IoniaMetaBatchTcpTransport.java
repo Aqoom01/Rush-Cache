@@ -9,6 +9,7 @@ import java.net.*;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.*;
+import io.openkache.server.observation.TcpTraffic;
 
 /** Only Meta batches get a new physical TCP RPC. All other requests reuse O00 transport directly. */
 public final class IoniaMetaBatchTcpTransport implements IoniaMetaBatchTransport,AutoCloseable {
@@ -28,23 +29,25 @@ public final class IoniaMetaBatchTcpTransport implements IoniaMetaBatchTransport
     public CompletionStage<IoniaEngine.ViewInfo> probe(NodeId to){return original.probe(to);}
     public CompletionStage<List<Answer>> metaBatch(NodeId to,List<Item> request){
         List<Item> items=List.copyOf(request);IoniaMetaBatchCodec.validate(items);CompletableFuture<List<Answer>> result=new CompletableFuture<>();
-        if(closed.get()||!addresses.containsKey(to))return CompletableFuture.failedFuture(new IOException("closed transport/unknown replica"));
-        long correlation=sequence.incrementAndGet();if(correlation<=0)return CompletableFuture.failedFuture(new IOException("correlation exhausted"));
+        var traffic=TcpTraffic.exchange(configuration,self.value(),to.value(),IoniaMetaBatchCodec.META_BATCH,"");
+        if(closed.get()||!addresses.containsKey(to)){traffic.rejected();return CompletableFuture.failedFuture(new IOException("closed transport/unknown replica"));}
+        long correlation=sequence.incrementAndGet();if(correlation<=0){traffic.rejected();return CompletableFuture.failedFuture(new IOException("correlation exhausted"));}
         long start=System.nanoTime();calls.incrementAndGet();
         try{io.execute(()->{
             try(Socket socket=new Socket()){
+                traffic.created(socket);
                 sockets.add(socket);if(closed.get())throw new IOException("closed transport");
                 List<Item> sent=atSend(items,start);
                 long max=sent.stream().mapToLong(i->i.request().timeoutNanos()).max().orElse(0);
                 int timeout=(int)Math.max(1,Math.min(timeoutMillis,TimeUnit.NANOSECONDS.toMillis(max)+1));
-                socket.connect(addresses.get(to),Math.min(timeout,500));socket.setSoTimeout(timeout);socket.setTcpNoDelay(true);
+                traffic.connecting();socket.connect(addresses.get(to),Math.min(timeout,500));traffic.connected();socket.setSoTimeout(timeout);socket.setTcpNoDelay(true);
                 List<Item> wire=atSend(items,start);
-                IoniaWire.write(socket.getOutputStream(),correlation,self,to,configuration,IoniaMetaBatchCodec.META_BATCH,out->IoniaMetaBatchCodec.requests(out,wire));
-                IoniaWire.Packet reply=IoniaWire.read(socket.getInputStream());
+                IoniaWire.write(traffic.output(socket.getOutputStream()),correlation,self,to,configuration,IoniaMetaBatchCodec.META_BATCH,out->IoniaMetaBatchCodec.requests(out,wire));traffic.written();
+                IoniaWire.Packet reply=IoniaWire.read(traffic.input(socket.getInputStream()));traffic.replyRead();
                 if(reply.correlation()!=correlation||!reply.source().equals(to)||!reply.target().equals(self)||!reply.configuration().equals(configuration)||reply.kind()!=IoniaMetaBatchCodec.META_BATCH)throw new IOException("batch envelope mismatch");
-                result.complete(IoniaMetaBatchCodec.answers(to,reply.body()));
-            }catch(IOException|RuntimeException error){result.completeExceptionally(error);}finally{sockets.removeIf(Socket::isClosed);}
-        });}catch(RejectedExecutionException error){result.completeExceptionally(error);}
+                List<Answer> answers=IoniaMetaBatchCodec.answers(to,reply.body());traffic.succeeded();result.complete(answers);
+            }catch(IOException|RuntimeException error){result.completeExceptionally(error);}finally{traffic.close();sockets.removeIf(Socket::isClosed);}
+        });}catch(RejectedExecutionException error){traffic.rejected();result.completeExceptionally(error);}
         return result;
     }
     private static List<Item> atSend(List<Item> items,long start){

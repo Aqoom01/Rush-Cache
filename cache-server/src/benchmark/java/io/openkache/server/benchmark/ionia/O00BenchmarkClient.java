@@ -49,10 +49,10 @@ public final class O00BenchmarkClient implements BenchmarkClient {
             boolean closed, String closeError) {}
 
     private static final class Session {
-        final IoniaClient client;
+        final IoniaBenchmarkSession client;
         long highestSequence = -1;
         volatile boolean discovered;
-        Session(IoniaClient client) { this.client = client; }
+        Session(IoniaBenchmarkSession client) { this.client = client; }
     }
     private static final class AttemptState {
         final int number;
@@ -87,6 +87,7 @@ public final class O00BenchmarkClient implements BenchmarkClient {
     private final Object lock = new Object();
     private final Settings settings;
     private final TimeSource time;
+    private final IoniaBenchmarkSession.Factory sessionFactory;
     private final IoniaClientTransport raw;
     private final ObservedRpc transport;
     private final ClientAccounting accounting = new ClientAccounting();
@@ -108,6 +109,18 @@ public final class O00BenchmarkClient implements BenchmarkClient {
 
     // 가상 시계 fixture에서는 자동 timer를 끄고 tick을 명시 호출한다.
     O00BenchmarkClient(Settings settings, IoniaClientTransport raw, TimeSource time, boolean autoTick) {
+        this(settings, raw, time, autoTick, originalFactory(settings));
+    }
+
+    /** 실제 client만 교체하고 기존 실행/계측 수명주기를 재사용한다. factory는 전달된 transport/time을 사용해야 한다. */
+    public O00BenchmarkClient(Settings settings, IoniaClientTransport raw, TimeSource time,
+            IoniaBenchmarkSession.Factory factory) {
+        this(settings, raw, time, true, factory);
+    }
+
+    private O00BenchmarkClient(Settings settings, IoniaClientTransport raw, TimeSource time,
+            boolean autoTick, IoniaBenchmarkSession.Factory factory) {
+        this.sessionFactory = Objects.requireNonNull(factory);
         this.settings = Objects.requireNonNull(settings);
         this.raw = Objects.requireNonNull(raw);
         this.time = Objects.requireNonNull(time);
@@ -117,6 +130,20 @@ public final class O00BenchmarkClient implements BenchmarkClient {
             control.scheduleAtFixedRate(this::tick, settings.timerPeriodNanos(),
                     settings.timerPeriodNanos(), TimeUnit.NANOSECONDS);
         }
+    }
+
+    private static IoniaBenchmarkSession.Factory originalFactory(Settings settings) {
+        Objects.requireNonNull(settings);
+        return (id, transport, time) -> {
+            var client = new IoniaClient(id, settings.replicas(), settings.leader(), 0, transport, time,
+                    new IoniaClient.Options(settings.readReplica(), true, 10_000_000L));
+            return new IoniaBenchmarkSession() {
+                @Override public CompletionStage<IoniaEngine.ViewInfo> refreshView() { return client.refreshView(); }
+                @Override public CompletionStage<Result> execute(Command command, RequestContext context) { return client.execute(command, context); }
+                @Override public void onTimer(TimerEvent event) { client.onTimer(event); }
+                @Override public void close() { client.close(); }
+            };
+        };
     }
 
     @Override public CompletionStage<ClientOutcome> submit(LogicalRequest request) {
@@ -154,9 +181,7 @@ public final class O00BenchmarkClient implements BenchmarkClient {
             }
             if (occupiedSlots >= settings.maxInFlight()) { return reject("logical admission limit"); }
             if (session == null) {
-                session = new Session(new IoniaClient(new ClientId(wireClient), settings.replicas(),
-                        settings.leader(), 0, transport, time,
-                        new IoniaClient.Options(settings.readReplica(), true, 10_000_000L)));
+                session = new Session(Objects.requireNonNull(sessionFactory.open(new ClientId(wireClient), transport, time)));
                 sessions.put(request.clientId(), session);
             }
             var context = new RequestContext(new ClientId(wireClient), new OperationId(wireOperation),

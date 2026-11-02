@@ -180,3 +180,11 @@ python .\docs\models\v05_selector_model.py
 4. **I4 — 전체 build/installDist·보호 hash·명세 대조**: V05-18. 이 단계 완료 뒤 V05a 기능 검증 완료로 표시.
 
 성능·최적 파라미터·multi-host·SSD·power-loss·per-request stable WAL(D-PERSIST)·V05b lag/서버 queue 계측·V06 MetaQuery batch는 남아 있다. 독립 Replica RAM Durability Log, stable View 및 선택적 KV force를 유지/구별한다. 현재64MiB 상태 전송/32MiB KV payload 한도도 그대로다.
+
+## 공통 benchmark adapter 연결 후속 (2026-10-30)
+
+현재 표시 ID V06의 실제 알고리즘을 server benchmark/ionia_seventh adapter에 연결했다. 위 과거 문서명·원래 profile 표기/최초 알고리즘 검사 기록은 보존한다. 기존 알고리즘/core API/wire는 변경하지 않고 공통 ID/deadline/retry·trace·closed/open-loop·전수 지연·로컬 표준 export를 재사용한다.
+
+V06의 실제3/5노드·두 실행 방식·읽기/혼합8조건과 별도 CRUD 값·DELETE OK/MISS·재삽입을 검증하고 결과8개를 schema/hash·histogram/설정으로 대조했다. 여섯 방식 합계 추가99/전체760검사 통과이며 개별 방식의99검사라는 뜻은 아니다. ../experiments/replication-benchmark-v1/ADAPTERS_V02_V07.md 및 REMAINING_ADAPTERS_VALIDATION.json/REMAINING_ADAPTERS_SOURCE_PRESERVATION.json/REMAINING_ADAPTERS_ARTIFACT_CHECK.json을 따른다.
+
+V06 학습의 phase 분리·V07 coalescer의 client별 범위, ready manifest/서버 inventory·공통 정확성/필수 계측·clock/overhead/remote 관찰을 정식 성능 전 보강해야 한다. 본시험 데이터/요청열 후보·pilot과 EC2 접속/진단·성능 비교는 후속이며 commit/push/merge는 하지 않았다. RAM log·stable View/선택적 KV force와 RPC별 socket 정책을 유지한다.

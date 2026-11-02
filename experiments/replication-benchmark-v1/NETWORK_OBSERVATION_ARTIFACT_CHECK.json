@@ -1,0 +1,414 @@
+{
+  "status": "passed",
+  "normal_bundles": 33,
+  "declared_invalid_bundles": 2,
+  "burst_bundles": 2,
+  "tamper_controls": 6,
+  "total_checks": 43,
+  "checks": [
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\cache-server\\build\\network-observation-fixtures\\network-O00-n3-closed-b5c395b9-51a6-43bc-a62c-4a0d068ac144",
+      "validity": "valid",
+      "storage_verified": true,
+      "qualified": true,
+      "logical_outcomes": 19,
+      "rows": 129,
+      "processes": 1,
+      "transport_failures": 0
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\cache-server\\build\\network-observation-fixtures\\network-O00-n3-open-fe0f828e-1007-492e-8321-df1da27ffee4",
+      "validity": "valid",
+      "storage_verified": true,
+      "qualified": true,
+      "logical_outcomes": 19,
+      "rows": 109,
+      "processes": 1,
+      "transport_failures": 0
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\cache-server\\build\\network-observation-fixtures\\network-O00-n5-closed-74b01f46-af18-4b0c-bd50-f5413a9b7b7e",
+      "validity": "valid",
+      "storage_verified": true,
+      "qualified": true,
+      "logical_outcomes": 19,
+      "rows": 257,
+      "processes": 1,
+      "transport_failures": 0
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\cache-server\\build\\network-observation-fixtures\\network-O00-n5-open-bdba04fb-b36c-4ac1-9615-722e6e6045ce",
+      "validity": "valid",
+      "storage_verified": true,
+      "qualified": true,
+      "logical_outcomes": 19,
+      "rows": 203,
+      "processes": 1,
+      "transport_failures": 0
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\cache-server\\build\\network-observation-fixtures\\network-V01-n3-closed-6a95f6b3-ebc1-4890-9689-7f5a42feb3e8",
+      "validity": "valid",
+      "storage_verified": true,
+      "qualified": true,
+      "logical_outcomes": 19,
+      "rows": 139,
+      "processes": 1,
+      "transport_failures": 0
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\cache-server\\build\\network-observation-fixtures\\network-V01-n3-open-ed35aaa0-72c0-4539-b912-ee9caa9f7881",
+      "validity": "valid",
+      "storage_verified": true,
+      "qualified": true,
+      "logical_outcomes": 19,
+      "rows": 113,
+      "processes": 1,
+      "transport_failures": 0
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\cache-server\\build\\network-observation-fixtures\\network-V01-n5-closed-5354e069-4b8d-4729-8884-36ff3ab890f7",
+      "validity": "valid",
+      "storage_verified": true,
+      "qualified": true,
+      "logical_outcomes": 19,
+      "rows": 249,
+      "processes": 1,
+      "transport_failures": 0
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\cache-server\\build\\network-observation-fixtures\\network-V01-n5-open-0ef1ddf7-6ab6-4738-a311-2b2c61b211b0",
+      "validity": "valid",
+      "storage_verified": true,
+      "qualified": true,
+      "logical_outcomes": 19,
+      "rows": 184,
+      "processes": 1,
+      "transport_failures": 0
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\cache-server\\build\\network-observation-fixtures\\network-V02-n3-closed-1a2db835-ce74-4a05-8f65-ade33ae89f73",
+      "validity": "valid",
+      "storage_verified": true,
+      "qualified": true,
+      "logical_outcomes": 19,
+      "rows": 141,
+      "processes": 1,
+      "transport_failures": 0
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\cache-server\\build\\network-observation-fixtures\\network-V02-n3-open-34c2978b-5711-4a4b-ac93-af7bce44edd0",
+      "validity": "valid",
+      "storage_verified": true,
+      "qualified": true,
+      "logical_outcomes": 19,
+      "rows": 113,
+      "processes": 1,
+      "transport_failures": 0
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\cache-server\\build\\network-observation-fixtures\\network-V02-n5-closed-4af17de3-3771-451a-9977-632b743bb446",
+      "validity": "valid",
+      "storage_verified": true,
+      "qualified": true,
+      "logical_outcomes": 19,
+      "rows": 255,
+      "processes": 1,
+      "transport_failures": 0
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\cache-server\\build\\network-observation-fixtures\\network-V02-n5-open-4824b1ac-cb2c-4b8a-b932-9f409c69fcea",
+      "validity": "valid",
+      "storage_verified": true,
+      "qualified": true,
+      "logical_outcomes": 19,
+      "rows": 196,
+      "processes": 1,
+      "transport_failures": 0
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\cache-server\\build\\network-observation-fixtures\\network-V03-n3-closed-b0591fcd-66d0-47bc-af67-3e7462c53961",
+      "validity": "valid",
+      "storage_verified": true,
+      "qualified": true,
+      "logical_outcomes": 19,
+      "rows": 126,
+      "processes": 1,
+      "transport_failures": 0
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\cache-server\\build\\network-observation-fixtures\\network-V03-n3-open-77ba68e3-0e9b-4910-b2c1-c2e9ba2f1715",
+      "validity": "valid",
+      "storage_verified": true,
+      "qualified": true,
+      "logical_outcomes": 19,
+      "rows": 122,
+      "processes": 1,
+      "transport_failures": 0
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\cache-server\\build\\network-observation-fixtures\\network-V03-n5-closed-ba2ccb1c-3adf-4d58-8896-38f885bd9a3f",
+      "validity": "valid",
+      "storage_verified": true,
+      "qualified": true,
+      "logical_outcomes": 19,
+      "rows": 216,
+      "processes": 1,
+      "transport_failures": 0
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\cache-server\\build\\network-observation-fixtures\\network-V03-n5-open-ec0ccc7a-0403-43bc-b487-728726a63368",
+      "validity": "valid",
+      "storage_verified": true,
+      "qualified": true,
+      "logical_outcomes": 19,
+      "rows": 202,
+      "processes": 1,
+      "transport_failures": 0
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\cache-server\\build\\network-observation-fixtures\\network-V04-n3-closed-11227fd9-0690-47e9-8a0c-608591ca21b7",
+      "validity": "valid",
+      "storage_verified": true,
+      "qualified": true,
+      "logical_outcomes": 19,
+      "rows": 134,
+      "processes": 1,
+      "transport_failures": 0
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\cache-server\\build\\network-observation-fixtures\\network-V04-n3-open-970b6900-3e36-4573-ac7b-117c5e36d570",
+      "validity": "valid",
+      "storage_verified": true,
+      "qualified": true,
+      "logical_outcomes": 19,
+      "rows": 116,
+      "processes": 1,
+      "transport_failures": 0
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\cache-server\\build\\network-observation-fixtures\\network-V04-n5-closed-cc43b1be-fb6f-4e85-a3d4-72cbc3ecf847",
+      "validity": "valid",
+      "storage_verified": true,
+      "qualified": true,
+      "logical_outcomes": 19,
+      "rows": 232,
+      "processes": 1,
+      "transport_failures": 0
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\cache-server\\build\\network-observation-fixtures\\network-V04-n5-open-039ece6f-05e0-49d1-a0e3-5037856e9efd",
+      "validity": "valid",
+      "storage_verified": true,
+      "qualified": true,
+      "logical_outcomes": 19,
+      "rows": 200,
+      "processes": 1,
+      "transport_failures": 0
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\cache-server\\build\\network-observation-fixtures\\network-V05-n3-closed-9fc797ef-2200-4147-91fb-328021ff3a3a",
+      "validity": "valid",
+      "storage_verified": true,
+      "qualified": true,
+      "logical_outcomes": 19,
+      "rows": 131,
+      "processes": 1,
+      "transport_failures": 0
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\cache-server\\build\\network-observation-fixtures\\network-V05-n3-open-9e35da0c-6f13-4fc4-b0f1-f86ca405ce51",
+      "validity": "valid",
+      "storage_verified": true,
+      "qualified": true,
+      "logical_outcomes": 19,
+      "rows": 114,
+      "processes": 1,
+      "transport_failures": 0
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\cache-server\\build\\network-observation-fixtures\\network-V05-n5-closed-6e7cefad-612a-4640-9461-3a1ab394b4e8",
+      "validity": "valid",
+      "storage_verified": true,
+      "qualified": true,
+      "logical_outcomes": 19,
+      "rows": 244,
+      "processes": 1,
+      "transport_failures": 0
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\cache-server\\build\\network-observation-fixtures\\network-V05-n5-open-3b893f2c-90b7-4b8b-ba8e-7f2223908b98",
+      "validity": "valid",
+      "storage_verified": true,
+      "qualified": true,
+      "logical_outcomes": 19,
+      "rows": 206,
+      "processes": 1,
+      "transport_failures": 0
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\cache-server\\build\\network-observation-fixtures\\network-V06-n3-closed-3f063b82-e455-4265-9fc2-f98aabcbc6b7",
+      "validity": "valid",
+      "storage_verified": true,
+      "qualified": true,
+      "logical_outcomes": 19,
+      "rows": 130,
+      "processes": 1,
+      "transport_failures": 0
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\cache-server\\build\\network-observation-fixtures\\network-V06-n3-open-91ed2fe5-193b-4b7f-a805-824d952e31f3",
+      "validity": "valid",
+      "storage_verified": true,
+      "qualified": true,
+      "logical_outcomes": 19,
+      "rows": 109,
+      "processes": 1,
+      "transport_failures": 0
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\cache-server\\build\\network-observation-fixtures\\network-V06-n5-closed-f91aaa37-51bf-4a0f-918f-6cb520f0c7c0",
+      "validity": "valid",
+      "storage_verified": true,
+      "qualified": true,
+      "logical_outcomes": 19,
+      "rows": 250,
+      "processes": 1,
+      "transport_failures": 0
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\cache-server\\build\\network-observation-fixtures\\network-V06-n5-open-1bead5cd-7062-4770-9072-1611801eeb0f",
+      "validity": "valid",
+      "storage_verified": true,
+      "qualified": true,
+      "logical_outcomes": 19,
+      "rows": 193,
+      "processes": 1,
+      "transport_failures": 0
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\cache-server\\build\\network-observation-fixtures\\network-V07-n3-closed-d74ee9b3-d473-4f94-b6cf-3001810248ea",
+      "validity": "valid",
+      "storage_verified": true,
+      "qualified": true,
+      "logical_outcomes": 19,
+      "rows": 126,
+      "processes": 1,
+      "transport_failures": 0
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\cache-server\\build\\network-observation-fixtures\\network-V07-n3-open-3add309e-855b-4d50-88e2-d170af7e9d1c",
+      "validity": "valid",
+      "storage_verified": true,
+      "qualified": true,
+      "logical_outcomes": 19,
+      "rows": 106,
+      "processes": 1,
+      "transport_failures": 0
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\cache-server\\build\\network-observation-fixtures\\network-V07-n5-closed-ac3f5d82-d232-439c-a628-5cdef2d68684",
+      "validity": "valid",
+      "storage_verified": true,
+      "qualified": true,
+      "logical_outcomes": 19,
+      "rows": 229,
+      "processes": 1,
+      "transport_failures": 0
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\cache-server\\build\\network-observation-fixtures\\network-V07-n5-open-ee7397bc-0cac-4d20-b82f-6fd6625e6b5f",
+      "validity": "valid",
+      "storage_verified": true,
+      "qualified": true,
+      "logical_outcomes": 19,
+      "rows": 211,
+      "processes": 1,
+      "transport_failures": 0
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\cache-server\\build\\network-observation-fixtures\\network-diagnostic-b24c4c6e-4625-4309-8bd5-93fdafdf6e1d",
+      "validity": "valid",
+      "storage_verified": true,
+      "qualified": true,
+      "logical_outcomes": 19,
+      "rows": 140,
+      "processes": 1,
+      "transport_failures": 1
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\cache-server\\build\\network-observation-fixtures\\network-control-false-157190d7-e48f-4226-9366-ec9b56423bba",
+      "validity": "invalid",
+      "storage_verified": true,
+      "qualified": false,
+      "issues": [
+        "FINAL_LOGICAL_ACCOUNTING",
+        "LOGICAL_COHORT_MISMATCH"
+      ]
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\cache-server\\build\\network-observation-fixtures\\network-control-true-7cffecdb-6c59-41f6-8ad2-18c2655b1183",
+      "validity": "invalid",
+      "storage_verified": true,
+      "qualified": false,
+      "issues": [
+        "NO_CLIENT_WIRE_OBSERVATIONS"
+      ]
+    }
+  ],
+  "bursts": [
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\cache-server\\build\\network-observation-fixtures\\burst-n3-39b71774-2ae1-44d0-a25a-5431bf560c75",
+      "sha256": "ef6fcacc660a20b81de6f6074c1bcee80b3511122bfd0ead15cdb5f576cb5953",
+      "logical_queries": 4,
+      "batch_frames": 1,
+      "verified": true
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\cache-server\\build\\network-observation-fixtures\\burst-n5-19557c2f-dd92-4efa-86ec-f978ee5ad10f",
+      "sha256": "e032150b42cf6e7d2747d13a3454f4110f5cacfb5f3f92797663cf4eb7d1050e",
+      "logical_queries": 4,
+      "batch_frames": 1,
+      "verified": true
+    }
+  ],
+  "negative_controls": [
+    {
+      "name": "missing-complete",
+      "rejected": true,
+      "reason": "missing completion",
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\build\\ionia-validation\\20261102-144644-a3a346a1\\p03-negative-controls\\missing-complete"
+    },
+    {
+      "name": "byte-tamper",
+      "rejected": true,
+      "reason": "data hash: network.json",
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\build\\ionia-validation\\20261102-144644-a3a346a1\\p03-negative-controls\\byte-tamper"
+    },
+    {
+      "name": "rehashed-client-bytes",
+      "rejected": true,
+      "reason": "client byte cross-check",
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\build\\ionia-validation\\20261102-144644-a3a346a1\\p03-negative-controls\\rehashed-client-bytes"
+    },
+    {
+      "name": "rehashed-receive-double-count",
+      "rejected": true,
+      "reason": "sender totals",
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\build\\ionia-validation\\20261102-144644-a3a346a1\\p03-negative-controls\\rehashed-receive-double-count"
+    },
+    {
+      "name": "rehashed-logical-cohort",
+      "rejected": true,
+      "reason": "logical cohort: success",
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\build\\ionia-validation\\20261102-144644-a3a346a1\\p03-negative-controls\\rehashed-logical-cohort"
+    },
+    {
+      "name": "invalid-upgraded-valid",
+      "rejected": true,
+      "reason": "logical cohort: success",
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\build\\ionia-validation\\20261102-144644-a3a346a1\\p03-negative-controls\\invalid-upgraded-valid"
+    }
+  ],
+  "note": "43 artifact checks are separate from 949 JUnit tests; no security authentication or performance qualification"
+}

@@ -1,0 +1,193 @@
+{
+  "schema_version": "benchmark-b3-validation-v1",
+  "date": "2026-10-30",
+  "scope": "fixed-N closed-loop and local O00 apply observation; functional fixtures only",
+  "status": "passed",
+  "java": "Microsoft OpenJDK21.0.11+10-LTS",
+  "gradle": "9.8.0",
+  "new_tests": 23,
+  "prior_tests": 562,
+  "total_tests": 585,
+  "failures": 0,
+  "errors": 0,
+  "skipped": 0,
+  "command": ".\\experiments\\ionia-validation\\Run-Validation.ps1 -Mode Full -Repeat 1 -PortWaitSeconds 60",
+  "evidence": "build/ionia-validation/20261030-132639-bd2f843e",
+  "manifest": {
+    "mode": "Full",
+    "repeat": 1,
+    "javaHome": "C:\\Users\\SSAFY\\.jdks\\ms-21.0.11",
+    "windowsPortGate": true,
+    "maxObservedPortFraction": 0.1,
+    "gradleArgs": [
+      "build",
+      ":cache-server:installDist",
+      "--rerun-tasks",
+      "--console=plain"
+    ],
+    "status": "passed",
+    "completedRuns": 1
+  },
+  "results": {
+    "cache-core": {
+      "tests": 392,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "suites": []
+    },
+    "cache-server": {
+      "tests": 90,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "suites": []
+    },
+    "experiment-runner": {
+      "tests": 16,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "suites": []
+    },
+    "experiment-runner-benchmark": {
+      "tests": 47,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "suites": [
+        {
+          "tests": 2,
+          "name": "io.openkache.runner.benchmark.client.ClientAccountingTest"
+        },
+        {
+          "tests": 14,
+          "name": "io.openkache.runner.benchmark.execution.ClosedLoopRunnerTest"
+        },
+        {
+          "tests": 6,
+          "name": "io.openkache.runner.benchmark.KeyValueCodecTest"
+        },
+        {
+          "tests": 15,
+          "name": "io.openkache.runner.benchmark.TraceGeneratorTest"
+        },
+        {
+          "tests": 5,
+          "name": "io.openkache.runner.benchmark.TraceToolTest"
+        },
+        {
+          "tests": 5,
+          "name": "io.openkache.runner.benchmark.TraceWriterTest"
+        }
+      ]
+    },
+    "cache-server-benchmark": {
+      "tests": 40,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "suites": [
+        {
+          "tests": 4,
+          "name": "io.openkache.server.benchmark.ionia.ClosedLoopO00TcpTest"
+        },
+        {
+          "tests": 5,
+          "name": "io.openkache.server.benchmark.ionia.LocalO00DrainProbeTest"
+        },
+        {
+          "tests": 25,
+          "name": "io.openkache.server.benchmark.ionia.O00BenchmarkClientTest"
+        },
+        {
+          "tests": 3,
+          "name": "io.openkache.server.benchmark.ionia.O00BenchmarkTcpTest"
+        },
+        {
+          "tests": 3,
+          "name": "io.openkache.server.benchmark.ionia.ObservedRpcTest"
+        }
+      ]
+    }
+  },
+  "tcp_evidence": "Closed-loop local TCP n=3, mix=100/0/0, phases=8/7/19, concurrency2/streams4, all replica applies=8; local functional fixture, no performance comparison.\nClosed-loop local TCP n=5, mix=100/0/0, phases=8/7/19, concurrency2/streams4, all replica applies=8; local functional fixture, no performance comparison.\nClosed-loop local TCP n=3, mix=80/15/5, phases=8/7/19, concurrency2/streams4, all replica applies=15; local functional fixture, no performance comparison.\nClosed-loop local TCP n=5, mix=80/15/5, phases=8/7/19, concurrency2/streams4, all replica applies=15; local functional fixture, no performance comparison.\n",
+  "checks": [
+    "Fixed logical streams with round-robin worker assignment; no duplicate/missing requests; C bounded driver slots",
+    "Separate LOAD/WARMUP/MEASURE cohorts and backend lifetime-delta reconciliation",
+    "Same-ID bounded admission retry; no extra admitted logical counts",
+    "Apply/publication/raw barrier before warm-up and measurement; fixed target never raised to hide extra writes",
+    "Unsupported/dirty/missing replica/view change/recovery/lag outcomes do not pass normal-load qualification",
+    "Fixed N below minimum duration fails without extra requests or padding time",
+    "Invalid client ID/outcome or dishonest backend counters detected",
+    "Already-admitted NO_RESPONSE not retried by coordinator",
+    "Wait timeout/work limit cancellation, bounded cleanup, interrupt restoration and one-shot use",
+    "Uncooperative future stays unresolved, not fabricated as a no-response completion",
+    "Streams<=1024/concurrency bound and total request long overflow guard"
+  ],
+  "local_tcp_fixtures": [
+    {
+      "replicas": 3,
+      "mix": "GET100",
+      "load": 8,
+      "warmup": 7,
+      "measure": 19,
+      "streams": 4,
+      "concurrency": 2,
+      "applied_frontier": 8
+    },
+    {
+      "replicas": 5,
+      "mix": "GET100",
+      "load": 8,
+      "warmup": 7,
+      "measure": 19,
+      "streams": 4,
+      "concurrency": 2,
+      "applied_frontier": 8
+    },
+    {
+      "replicas": 3,
+      "mix": "GET80/SET15/DELETE5",
+      "load": 8,
+      "warmup": 7,
+      "measure": 19,
+      "streams": 4,
+      "concurrency": 2,
+      "applied_frontier": 15
+    },
+    {
+      "replicas": 5,
+      "mix": "GET80/SET15/DELETE5",
+      "load": 8,
+      "warmup": 7,
+      "measure": 19,
+      "streams": 4,
+      "concurrency": 2,
+      "applied_frontier": 15
+    }
+  ],
+  "main_jar_benchmark_entries": {
+    "cache-server/build/libs/cache-server-0.1.0-SNAPSHOT.jar": 0,
+    "experiment-runner/build/libs/experiment-runner-0.1.0-SNAPSHOT.jar": 0
+  },
+  "existing_source_files_checked": 238,
+  "existing_source_changes": 0,
+  "new_source_files": 8,
+  "preservation_artifact": "B3_SOURCE_PRESERVATION.json",
+  "remote_actions": 0,
+  "ec2_diagnostics": 0,
+  "common_performance_comparisons": 0,
+  "commits": 0,
+  "pushes": 0,
+  "limitations": [
+    "Local Java API and fixtures, not a remote benchmark launcher or manifest loader; template stays draft/disabled.",
+    "Only fixed-request closed-loop; open-loop, histogram and result.schema.json export remain pending.",
+    "Local observer requires explicitly provided empty isolated O00 engines; original View-only remote probe cannot certify remote apply frontiers.",
+    "No forced JVM kill/realtime guarantee; client/probe/callback operations must be cooperative and nonblocking.",
+    "Finite protocol/API fixtures are not full concurrent linearizability, durability fault injection or SSD performance proof.",
+    "Lifetime backend snapshot deltas reconcile phase cohorts; peer bytes/socket/host metrics not collected.",
+    "Drain includes a gap between warm-up and measurement; pilot must qualify the eventual performance methodology.",
+    "Original RPC-per-socket transport and prior recorded V07 TCP intermittent issue remain unchanged; no failure in this final full run."
+  ]
+}
