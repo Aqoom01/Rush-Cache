@@ -65,9 +65,9 @@ master가 장애를 감지하고 사슬을 다시 잇는다. 노드 위치에 �
 
 ## fencing — master가 한다
 
-Chain 자체에는 epoch가 없다. 사슬 구성을 바꾸는 주체가 **master 하나**이고, master가 각 노드에게 "네 앞·뒤는 누구"를 알려준다. 옛 head가 돌아와도 master가 사슬에 안 넣으면 아무 쓰기도 못 받는다.
+논문의 fail-stop 전제에서 master가 죽은 노드를 제거하고 앞·뒤 연결을 바꾼다. 분단된 노드가 살아 있을 때는 구성 번호만 올린다고 옛 head/tail의 처리가 자동 차단되지 않는다. 실제 시스템은 기존 구성의 중단 보장·lease 등 추가 조건이 필요하므로 Sentinel과 같은 보장이라고 단정하면 안 된다.
 
-> 즉 "누가 Primary(head)인가"와 "옛 Primary 차단"을 **프로토콜 밖의 master에 전부 위임**한다. Redis Sentinel과 같은 구조다. 우리 실험에서는 master 역할을 설정 변경 또는 간단한 코디네이터로 흉내 내야 하고, 그 master가 단일 장애점이라는 점을 보고서에 적어야 한다.
+우리 실험의 master는 **실제로 영구 중단된 노드만 제외하는 신뢰 코디네이터**다. 분단에서는 강제 재구성하지 않는다. master 합의와 감지 오판은 구현 범위 밖이며 재구성 가용성은 이 master에 의존한다.
 
 
 ## CRAQ — 읽기를 모든 노드로
@@ -128,7 +128,13 @@ tail이 v5를 적용하면 ack가 올라가면서 각 노드가 v5를 clean으�
 | 쓰기 전달 / ack | `PeerMessage` record 2개 (Forward, Ack) |
 | clean/dirty 버전 (CRAQ) | `KvStore.Entry.version` 확장 필요 |
 
-## 참고
+## 현재 구현 (2026-10-29)
+
+`cache-core/.../replication/chain/ChainEngine`에 Chain만 구현했고 CRAQ는 미구현이다. head 쓰기·tail 읽기, 역방향 Ack, client/operation 중복 응답, 전 생존자 freeze·KV 적용 완료·peer suffix 복구·open을 제공한다. CacheEngine future 때문에 tail 결과를 head로 중계한다. 실제 tail→client 연결, master 합의, 노드 재시작/추가는 포함하지 않는다.
+
+[네 방식 288조건 + 위치별 crash 24조건](../chain-comparison/results.md)을 실행했다. head/middle/tail crash와 두 번의 순차 crash를 검증했지만 이는 신뢰 master 가정 아래의 결과다. 위 조사 항목의 CRAQ 읽기·신규 tail 추가 등은 완료된 기능이 아니다.
+
+### 참고 링크
 
 - van Renesse, Schneider. *Chain Replication* (OSDI 2004): https://www.cs.cornell.edu/home/rvr/papers/OSDI04.pdf — §2 프로토콜, §3 failover
 - Terrace, Freedman. *CRAQ* (USENIX ATC 2009): https://www.usenix.org/legacy/event/usenix09/tech/full_papers/terrace/terrace.pdf

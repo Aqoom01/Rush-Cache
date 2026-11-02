@@ -1,5 +1,7 @@
 # Rosé — 복제 지연에 상한을 둔 비동기 Primary-Backup
 
+> **2026-10-29 구현 기준 정정:** 아래는 초기 논문 조사·적용 초안이다. 실제 구현은 단일 파티션·op 개수 상한의 `ROSE_ADAPTATION`이다. “L개 이하 유실”은 이 모델의 단일 Primary crash에서 검증한 명제이며 논문 전체의 지역/다중 파티션 장애 보장을 재현한 결과가 아니다. 실제 승격은 정확한 crash oracle과 최장 생존 prefix 선택을 사용한다. “PB와 감지·승격·fencing을 완전히 동일하게 유지”는 실현된 전제가 아니다. 다중 파티션 coordinated apply·snapshot·영속 WAL trim·제품의 failover 후 성능 유지 주장은 구현/검증하지 않았다. [실제 범위](../rose-comparison/README.md)와 [240조건 결과](../rose-comparison/results.md)를 기준으로 본다.
+
 Zarkadas, Kostopoulou, Graham, Yang, Cidon, Eldeeb (Columbia), Bernstein (Microsoft Research), *Rosé: Flexible Replication With Strong Semantics For Partitioned Databases*, CIDR 2026 — https://vldb.org/cidrdb/papers/2026/p8-zarkadas.pdf
 
 ## Rosé란?
