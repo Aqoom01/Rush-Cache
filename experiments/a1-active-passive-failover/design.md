@@ -1,6 +1,6 @@
 # A1 설계
 
-상태: 설계 문서와 참고 자료 정리만 있다. `core.replication`에는 `package-info.java`만 있고 A1 코드는 **미구현**이다. 구현 현황은 §7을 따른다.
+상태(2026-10-28): crash-only Primary-Backup 기준형과 고정 3노드 VR을 구현했다. 초기 설계와 실제 구현의 차이는 §9~10 및 [현재 실행 문서](protocol-comparison/README.md)를 따른다. 아래 구현 계획 중 이번 범위를 벗어난 항목은 완료로 보지 않는다.
 
 ## 1. 목표와 범위
 
@@ -188,3 +188,52 @@ experiments/a1-active-passive-failover/
 | `Redirect`가 읽기·쓰기 대상을 따로 가리켜야 하는지 (Chain은 head와 tail이 다르다) | 공통 계약 변경이라 팀 확인 | Chain 구현 전 |
 | 결과 JSON 형식 (failover 시간, 유실 개수, time_domain) | Metrics·팀 합의 | 결과 Schema 합의 후 |
 | VR의 GET 처리 (논문대로 로그 경유 / Primary 로컬 읽기) | A1 | 3단계 |
+
+## 9. 단일 crash 기준형 구현 갱신 (2026-10-28)
+
+기존 고정 구성 엔진을 CrashOnlyPrimaryBackupEngine으로 조립하여 heartbeat timeout, 최소 Backup ID 승계, epoch 증가, 생존 Backup READY 이후 쓰기 재개를 구현했다. 자세한 상태 전환·실험 전제는 [실행 문서](failover-comparison/README.md)를 따른다. 이전 절의 전체 failover·fencing 계획과 달리 현재 구현은 단일 영구 crash와 고유 키 보존 검증으로 제한한다. VR·분단 안전성·recovery·실제 TCP 연결은 후속이다.
+
+## 10. VR 및 분단·미완료 쓰기 비교 구현 (2026-10-28)
+
+`core.replication.vr.VrEngine`에 고정 3노드 과반수 로그, view change, 미확정 suffix 선택·재확정, client table, 순서 있는 KV 적용을 구현했다.
+읽기도 로그를 통과한다. 이전 §9의 후속 중 VR·분단·미완료 로그 복구는 이번 단계에서 구현했다. 분단 후 메모리를 유지한 노드가 따라잡는 것은 지원하지만 JVM 재시작 recovery와 membership 변경은 포함하지 않는다.
+
+기준형은 비교를 위해 crash-only 범위를 유지한다. 기준형에 VR의 보장을 덧붙였다고 서술하지 않는다. 부분 복제 후 승격 시 기준형 복제본이 달라질 수 있음을 비교 실험에 남긴다.
+같은 실행기로 PB/VR × 8시나리오 × 2지연 × 5seed를 실행하며, 모델·보장 전제·원본 지표는 [protocol-comparison](protocol-comparison/README.md)에 명시했다.
+
+## 11. VR 전송 개선 (2026-10-28)
+
+기본 전송을 INCREMENTAL로 바꿨다. 새 연산·누락 suffix만 전송하고 작은 COMMIT으로 heartbeat를 보낸다. 전체 상태 전달은 유지하며 원격 확인과 1~4초 backoff로 중복 재전송을 제한한다.
+상태 전달이 증분 재전송에 밀리지 않도록 우선순위를 두고, 초기 감지와 별도로 view-change 대기 예산을 최소 3초로 잡았다.
+FULL_LOG 모드는 기존 실험의 정확한 재현을 위해 유지했다. [같은 네트워크 비용 216조건의 개선 전후 결과](network-optimization/results.md)를 따른다.
+
+## 12. 연속 부하와 후속 연구 범위 (2026-10-28)
+
+고정 간격 open-loop 입력 30초, 10~20초 ACK 지연, 정상화 이후 추가 관측을 [48조건으로 실행](sustained-load/results.md)했다.
+동시 쓰기 한 건이라는 구현 조건과 큰 값에서의 재동기화 비용을 확인했다. 동시 쓰기 pipeline·느린 노드 전송/지연 정책·checkpoint는 [멘토 질문](sustained-load/mentoring-questions.md)으로 남겨 후속 범위를 정한다.
+
+## 13. 부하 중 crash (2026-10-28)
+
+0~30초 연속 입력 중 11초에 실제 Primary를 종료하는 [48조건](load-crash/results.md)을 추가했다.
+첫 post-crash OK와 crash 전 성공 요청의 생존 보존을 구분한다. VR은 로그 보존과 KV 적용을 따로 검사하고 죽은 노드 메모리를 보존 근거에서 제외한다.
+이 실험은 위 멘토 질문의 추가 근거이며 pipeline·checkpoint·느린 노드 정책의 구현 범위를 늘리지 않았다.
+
+## 14. Raft 추가 (2026-10-29)
+
+`raft/RaftEngine`에 고정 3노드 투표·로그 최신성 검사·AppendEntries·충돌 suffix 교체·현재 term commit·리더 no-op을 구현했다. 읽기는 로그 경유, 단일 in-flight, 메모리 유지 분단/복구 범위다. term·votedFor·로그를 디스크에 저장하지 않으므로 프로세스 재시작 recovery는 지원하지 않는다.
+
+기존 PB/VR 실험은 유지하고 [별도 공통 비교 216조건](election-comparison/results.md)을 추가했다. PB/VR 감지 200ms와 Raft 선거 [200,400)ms의 분포 차이를 명시한다. 실험 결과를 선출 자체의 속도 순위로 해석하지 않는다. Chain Replication·Rosé는 구현 대기이며 기존 세 멘토 질문의 정책 범위도 그대로다.
+
+## 15. Chain Replication 추가 (2026-10-29)
+
+`chain/ChainEngine`에 SET/DELETE 사슬 전달·tail 읽기·tail 확정·역방향 Sent Ack를 구현했다. CacheEngine future를 가진 head로 tail 결과를 한 번 중계하며 그 peer 홉도 비용에 포함한다. master는 정확한 영구 crash만 제거하는 실험 코디네이터다. 전 생존자 freeze 및 KV 적용 완료 → peer suffix 재전송 → Ack·prefix 일치 → 전 생존자 open 순서를 사용한다. 살아 있는 분단 노드는 제거하지 않는다.
+
+[네 방식 공통 288조건과 Chain 위치별 crash 24조건](chain-comparison/results.md)을 추가했다. 기존 PB/VR/Raft 216조건은 CSV가 그대로 재현된다. CRAQ·신규 노드 합류·master 합의·재시작·checkpoint·pipeline은 포함하지 않았으며 기존 세 멘토 질문을 유지한다. 다음 주 variant는 Rosé다.
+
+## 16. Rosé 기반 단일 파티션 변형 (2026-10-29)
+
+`rose/RoseEngine`에 op 단위 lag 예약·상한 도달 시 한 요청 대기·deadline 경계·중복 응답·prefix 복구를 구현했다. 양수 L은 최소 Backup 적용 ACK와 예약 로그 길이 차이를 제한하며, 0은 비교용 전원 ACK 동기 모드, -1은 무제한 비동기 제어군이다.
+
+외부 master는 정확한 원래 Primary crash만 제외하고 가장 긴 생존 적용 prefix를 선택한다. 기존 NodeId 고정 승계와 다르며 master 합의·통신 비용을 모델링하지 않는다. 다중 파티션 snapshot·coordinated apply·지역 복제·영속 WAL을 재현한 Rosé 전체 구현이 아니다. §4 조사 표의 일반적인 논문 보장을 실제 구현 결과로 혼동하지 않는다.
+
+[240조건의 성공·유실·lag trade-off](rose-comparison/results.md)를 실행했다. 기존 네 방식 288조건은 CSV가 그대로 재현된다. 논문 재현 범위·동시성 통제·상태 전달 우선순위는 [최신 멘토 질문](mentoring/2026-10-29-questions.md)으로 정리했다.
