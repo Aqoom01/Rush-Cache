@@ -119,7 +119,13 @@ GC로 멈췄다 깨어난 옛 리더가 옛 term으로 AppendEntries를 보내�
 | Follower가 클라이언트 요청 받음 | `NOT_PRIMARY` + `Redirect(leaderId)` |
 | RequestVote / AppendEntries | `PeerMessage` record 2개 |
 
-## 참고
+## 현재 구현 (2026-10-29)
+
+`cache-core/.../replication/raft/RaftEngine`에 고정 3노드 연구 구현을 추가했다. 위의 `EpochStore` 연계는 조사 단계의 제안이며 실제 구현에는 적용하지 않았다. term·votedFor·log는 모두 메모리에만 유지하고 **재시작을 범위에서 제외**했다. 빈 상태의 노드를 같은 NodeId로 재합류시키지 않는다. 영구 crash와 메모리 유지 partition/repair를 검증한다.
+
+읽기 로그 경유, seed별 election timeout, 현재 term no-op, 요청 중복 처리, 충돌 suffix 교체와 검증 범위는 [비교 README](../election-comparison/README.md), 실제 결과는 [216조건 보고](../election-comparison/results.md)를 따른다. 감지 설정이 같지 않아 "선출 방식만 다른" 실험이라고 주장하지 않는다.
+
+### 참고 링크
 
 - Ongaro, Ousterhout. *In Search of an Understandable Consensus Algorithm* (2014): https://raft.github.io/raft.pdf — §5 선출·복제·안전성, §9.6 Pre-Vote
 - Raft 공식 사이트 시각화: https://raft.github.io/
