@@ -11,7 +11,7 @@ import io.openkache.core.balance.TabletLoad;
  * <p>구현은 다음을 지켜야 한다 (design.md §5).
  *
  * <ul>
- *   <li>{@code Split}의 key는 범위 안에서 {@code start}보다 크고, 나뉜 두 범위 모두에 {@code load}의 key가 하나 이상 있다.
+ *   <li>{@code Split}의 {@code at}은 구간 안에 있고 시작점과 다르다. 그래서 두 조각 모두 비어 있지 않다.
  *   <li>같은 입력에는 같은 결정을 낸다. 난수와 실제 시각을 쓰지 않는다.
  *   <li>입력을 변경하지 않는다.
  * </ul>

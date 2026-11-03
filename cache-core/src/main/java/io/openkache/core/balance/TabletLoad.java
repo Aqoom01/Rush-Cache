@@ -1,21 +1,21 @@
 package io.openkache.core.balance;
 
+import io.openkache.core.tablet.TabletRange;
 import java.util.List;
 import java.util.Objects;
 
 /**
  * Tablet 하나를 관찰 window 하나 동안 본 결과. 분할 정책의 입력이다.
  *
- * <p>{@code keys}는 범위 안에 있는 모든 key다. 이 window에 요청을 받지 않은 key도 요청 수 0으로 포함한다. key 순서({@link
- * KeyRange#ORDER})로 정렬되어 있고 중복이 없어야 한다.
+ * <p>{@code keys}는 해시값 오름차순(부호 없음)이고 중복이 없으며 모두 {@code range} 안에 있어야 한다.
  *
- * <p>B2 내부 최소 타입이다. 불변 객체이므로 여러 thread에서 공유할 수 있다.
+ * <p>불변 객체이므로 여러 thread에서 공유할 수 있다.
  *
- * @param range 이 Tablet의 key 범위
+ * @param range 이 Tablet의 해시 구간 (B1 {@link TabletRange})
  * @param window 논리 시간 window 번호 (0 이상). 실제 시계가 아니다
- * @param keys 범위 안 key별 요청 수. key 순서로 정렬, 중복 없음
+ * @param keys 이 window에 관찰한 key별 요청 수
  */
-public record TabletLoad(KeyRange range, long window, List<KeyLoad> keys) {
+public record TabletLoad(TabletRange range, long window, List<KeyLoad> keys) {
 
     public TabletLoad {
         Objects.requireNonNull(range, "range");
@@ -24,12 +24,12 @@ public record TabletLoad(KeyRange range, long window, List<KeyLoad> keys) {
         }
         keys = List.copyOf(keys);
         for (int i = 0; i < keys.size(); i++) {
-            KeyLoad current = keys.get(i);
-            if (!range.contains(current.key())) {
-                throw new IllegalArgumentException(current.key() + " is outside " + range);
+            long hash = keys.get(i).keyHash();
+            if (!range.contains(hash)) {
+                throw new IllegalArgumentException(Long.toUnsignedString(hash) + " is outside " + range);
             }
-            if (i > 0 && KeyRange.ORDER.compare(keys.get(i - 1).key(), current.key()) >= 0) {
-                throw new IllegalArgumentException("keys must be sorted without duplicates at index " + i);
+            if (i > 0 && Long.compareUnsigned(keys.get(i - 1).keyHash(), hash) >= 0) {
+                throw new IllegalArgumentException("keys must be sorted by hash without duplicates at index " + i);
             }
         }
     }

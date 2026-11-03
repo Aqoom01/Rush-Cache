@@ -15,8 +15,8 @@ import java.util.Objects;
 public record KvEntry(Bytes key, Bytes value, long version) {
 
     /**
-     * SCAN/RANGE 결과 정렬에 쓰는 Key 순서. 부호 없는 바이트 사전순이며, 앞부분이 같으면 짧은 쪽이 먼저다. {@code
-     * core.balance.KeyRange#ORDER}와 같은 순서지만 공통 모듈이 연구 패키지를 참조하지 않도록 따로 둔다.
+     * SCAN/RANGE 결과 정렬에 쓰는 Key 순서. 부호 없는 바이트 사전순이며, 앞부분이 같으면 짧은 쪽이 먼저다. 공통 모듈이 연구 패키지를
+     * 참조하지 않도록 KV 안에 둔다.
      */
     public static final Comparator<Bytes> KEY_ORDER = KvEntry::compareKeys;
 

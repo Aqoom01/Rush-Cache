@@ -28,7 +28,7 @@ import java.util.List;
  * <p><b>변환의 한계.</b> 64비트에 임의 길이 key의 순서를 모두 담을 수는 없다. 앞 8바이트가 같은 key는 같은 점이 되어 더 쪼갤 수 없고(예:
  * {@code "user:000123"}과 {@code "user:000456"}은 둘 다 {@code "user:000"}), 그 뒤의 순서도 사라진다. Bigtable은 경계를 실제 key로 두므로
  * 이 제한이 없지만, 우리는 모든 variant가 같은 {@link RoutingTable}(64비트 구간)을 쓰기 위해 이렇게 둔다. 응용은 구분력이 앞 8바이트 안에
- * 오도록 key를 설계해야 한다(길이 8의 big-endian 번호처럼). 짧은 key는 0으로 채운다. 순서는 {@code core.balance.KeyRange.ORDER}(부호
+ * 오도록 key를 설계해야 한다(길이 8의 big-endian 번호처럼). 짧은 key는 0으로 채운다. 순서는 {@code core.kv.KvEntry.KEY_ORDER}(부호
  * 없는 바이트 사전순)와 앞 8바이트 안에서 일치한다.
  *
  * <p>정리는 {@code experiments/b1-tablet-distribution/references/bigtable-key-order-tablet.md}, 결정은 {@code design.md} §4.7.
