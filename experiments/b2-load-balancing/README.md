@@ -15,8 +15,8 @@
 
 | variant | 기능 | 근거 | 상태 |
 |---|---|---|---|
-| `midpoint-split` | Split | Baseline (key 범위의 가운데에서 분할. 논문 §4.4의 비교 대상) | 구현 (`MidpointSplitPolicy`) |
-| `split-for-heat` | Split | [DynamoDB Split-for-Heat](references/dynamodb-split-for-heat.md) | 설계 |
+| `midpoint-split` | Split | Baseline (hash 구간의 가운데에서 분할. 논문 §4.4의 비교 대상) | 구현 (`MidpointSplitPolicy`) |
+| `split-for-heat` | Split | [DynamoDB Split-for-Heat](references/dynamodb-split-for-heat.md) | 구현 (`HeatSplitPolicy`) |
 | 미정 | Merge | 미정 | - |
 | 미정 | 재배치 | 미정 | - |
 

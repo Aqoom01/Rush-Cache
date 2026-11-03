@@ -5,7 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import io.openkache.core.balance.KeyRange;
+import io.openkache.core.kv.KvEntry;
 import io.openkache.core.model.Bytes;
 import io.openkache.core.model.NodeId;
 import io.openkache.core.tablet.DistributionScheme;
@@ -56,7 +56,7 @@ class KeyOrderSchemeTest extends DistributionSchemeContract {
             rnd.nextBytes(b);
             Bytes ka = Bytes.copyOf(a);
             Bytes kb = Bytes.copyOf(b);
-            int byKey = Integer.signum(KeyRange.ORDER.compare(ka, kb));
+            int byKey = Integer.signum(KvEntry.KEY_ORDER.compare(ka, kb));
             int byPoint = Long.compareUnsigned(KeyOrderScheme.pointOf(ka), KeyOrderScheme.pointOf(kb));
             // 한쪽이 다른 쪽의 앞부분이고 나머지가 전부 0이면 점은 같지만 key 순서는 짧은 쪽이 앞선다(0 채움의 한계)
             if (byPoint == 0) {
