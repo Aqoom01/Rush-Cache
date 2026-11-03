@@ -90,7 +90,9 @@ SIGTERM이나 Ctrl+C를 받으면 아래 순서로 닫습니다.
 - server의 `/metrics`: 호스트에 공개하지 않고, compose 내부 네트워크에서 Prometheus만 접근합니다.
 - 이미지: linux/amd64와 linux/arm64를 지원하는 Temurin 21 이미지를 씁니다.
 
-**범위 밖:** Terraform과 AWS 자원 생성은 이번 범위가 아닙니다.
+**AWS 실험 환경** (`infra/`)
+- Terraform으로 실험할 때만 EC2(m6gd.medium, 최대 8대)를 만들고 결과를 S3에 올린 뒤 지웁니다. 설계와 절차는 `infra/README.md`를 따릅니다.
+- 현재는 `infra/bootstrap/`(state·결과 버킷, IAM, 비용 알림)만 구성했습니다. 실험 클러스터(`infra/experiment/`)와 linux/arm64 실행은 아직 확인하지 않았습니다.
 
 ## 6. 연구 담당자가 확인해야 할 것 (아직 정해지지 않음)
 
