@@ -127,6 +127,7 @@ terminate가 아니라 stop이므로 다음 실행 전까지 루트 EBS는 남�
 |---|---|---|
 | `NODES` | 1 | cache-server 대수(1-8). 부하 생성 1대는 항상 추가된다 |
 | `CONFIG` | `experiments/baseline-single-node/config.properties` | 실행할 TCP 실험 config. 고른 브랜치에 커밋돼 있어야 한다 |
+| `STORAGE` | `memory` | cache-server KV 저장소. `nvme`면 노드가 instance store를 포맷해 쓴다(`docs/storage-nvme.md`). 결과의 `storageLayer`에 기록된다 |
 
 결과 위치는 job 로그 마지막의 `결과: s3://...` 줄에 나온다. 받는 방법은 §4.
 
