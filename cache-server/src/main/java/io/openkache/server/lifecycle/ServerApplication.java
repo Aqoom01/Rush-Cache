@@ -81,7 +81,7 @@ public final class ServerApplication implements AutoCloseable {
         for (int i = 0; i < config.workers(); i++) {
             workers.add(new OwnerWorker(new WorkerId(i), WORKER_MAILBOX_CAPACITY));
         }
-        engine = new KvEngine(config.nodeId(), workers, TimeSource.system());
+        engine = new KvEngine(config.nodeId(), workers, TimeSource.system(), config.storage(), metrics.sink());
 
         acceptGroup = new MultiThreadIoEventLoopGroup(
                 1, new DefaultThreadFactory("openkache-accept"), NioIoHandler.newFactory());
@@ -97,7 +97,7 @@ public final class ServerApplication implements AutoCloseable {
                         new ClientRequestHandler(metrics, engine, config.requestTimeout()));
 
         LOG.info(
-                "node {} of cluster '{}' started: client={}:{} peer={}:{} (peer protocol not implemented) metrics=http://{}:{}/metrics workers={}",
+                "node {} of cluster '{}' started: client={}:{} peer={}:{} (peer protocol not implemented) metrics=http://{}:{}/metrics workers={} storage={}",
                 config.nodeId().value(),
                 config.clusterId(),
                 config.bindHost(),
@@ -106,7 +106,8 @@ public final class ServerApplication implements AutoCloseable {
                 config.peerPort(),
                 config.adminHost(),
                 config.adminPort(),
-                config.workers());
+                config.workers(),
+                config.storage());
     }
 
     private Channel bind(int port, FrameEncoder encoder, ChannelHandler handler) throws InterruptedException {
