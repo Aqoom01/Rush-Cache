@@ -37,7 +37,12 @@ class KvEngineTest {
 
     private final List<OwnerWorker> workers =
             List.of(new OwnerWorker(new WorkerId(0), 4), new OwnerWorker(new WorkerId(1), 4));
-    private final KvEngine engine = new KvEngine(new NodeId(0), workers, TimeSource.system());
+    private final KvEngine engine = newEngine(workers);
+
+    /** 시험할 엔진. 하위 클래스가 저장소를 바꿔 같은 테스트를 다시 돌린다. */
+    KvEngine newEngine(List<OwnerWorker> workers) {
+        return new KvEngine(new NodeId(0), workers, TimeSource.system());
+    }
 
     @AfterEach
     void tearDown() {
@@ -134,7 +139,7 @@ class KvEngineTest {
     @Test
     void countIsBusyWhenAnyWorkerMailboxIsFull() throws InterruptedException {
         try (OwnerWorker solo = new OwnerWorker(new WorkerId(9), 1)) {
-            KvEngine soloEngine = new KvEngine(new NodeId(0), List.of(solo), TimeSource.system());
+            KvEngine soloEngine = newEngine(List.of(solo));
             CountDownLatch started = new CountDownLatch(1);
             CountDownLatch release = new CountDownLatch(1);
 
@@ -265,7 +270,7 @@ class KvEngineTest {
     @Test
     void scanIsBusyWhenAnyWorkerMailboxIsFullAndUnavailableAfterClose() throws InterruptedException {
         try (OwnerWorker solo = new OwnerWorker(new WorkerId(9), 1)) {
-            KvEngine soloEngine = new KvEngine(new NodeId(0), List.of(solo), TimeSource.system());
+            KvEngine soloEngine = newEngine(List.of(solo));
             CountDownLatch started = new CountDownLatch(1);
             CountDownLatch release = new CountDownLatch(1);
 
@@ -289,7 +294,7 @@ class KvEngineTest {
     @Test
     void mailboxFullReturnsBusyWithoutBlockingTheCaller() throws InterruptedException {
         try (OwnerWorker solo = new OwnerWorker(new WorkerId(9), 1)) {
-            KvEngine soloEngine = new KvEngine(new NodeId(0), List.of(solo), TimeSource.system());
+            KvEngine soloEngine = newEngine(List.of(solo));
             Bytes key = Bytes.utf8("only-worker-key");
             CountDownLatch started = new CountDownLatch(1);
             CountDownLatch release = new CountDownLatch(1);
