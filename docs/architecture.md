@@ -91,8 +91,10 @@ SIGTERM이나 Ctrl+C를 받으면 아래 순서로 닫습니다.
 - 이미지: linux/amd64와 linux/arm64를 지원하는 Temurin 21 이미지를 씁니다.
 
 **AWS 실험 환경** (`infra/`)
-- Terraform으로 실험할 때만 EC2(m6gd.medium, 최대 8대)를 만들고 결과를 S3에 올린 뒤 지웁니다. 설계와 절차는 `infra/README.md`를 따릅니다.
-- 현재는 `infra/bootstrap/`(state·결과 버킷, IAM, 비용 알림)만 구성했습니다. 실험 클러스터(`infra/experiment/`)와 linux/arm64 실행은 아직 확인하지 않았습니다.
+- Terraform으로 실험할 때만 EC2(m6gd.medium, cache-server 8대 + 부하 생성 1대)를 만들고 결과를 S3에 올린 뒤 지웁니다. 설계와 절차는 `infra/README.md`를 따릅니다.
+- `infra/bootstrap/`(state·결과 버킷, IAM, 비용 알림)과 `infra/experiment/`(노드 N대, 1시간 자동 정지)를 구성했고, m6gd.medium(linux/arm64)에서 이미지 빌드와 서버 기동까지 확인했습니다.
+- runner(GitLab Runner)는 교보재 계정 밖의 SSAFY 제공 EC2에 둡니다. `experiment-runner`는 교보재의 부하 생성 노드에서 cache-server 1번 노드로 요청하고, 결과를 S3에 올립니다(`run.sh`).
+- 팀원은 GitLab CI 파이프라인(웹 실행)으로 돌립니다. 실행은 한 번에 하나씩이며 뒤 요청은 대기합니다.
 
 ## 6. 연구 담당자가 확인해야 할 것 (아직 정해지지 않음)
 

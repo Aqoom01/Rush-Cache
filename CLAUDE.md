@@ -31,8 +31,8 @@ OpenStd(OpenKache)는 고성능 NVMe SSD 기반 분산 캐시의 가용성과 �
 - **`cache-server`** (`io.openkache.server`): Netty 실행 애플리케이션. 설정 검증, client·peer listener, TCP frame codec, PING, `/metrics`(Prometheus), GET/SET/DELETE의 `KvEngine` 연결까지 구현했다. peer 프로토콜(복제·장애 감지·마이그레이션 메시지)은 PING 외에는 `NOT_IMPLEMENTED`로 응답한다.
 - **`experiment-runner`** (`io.openkache.runner`): Workload Generator + Experiment Runner 최소 구현. `cache-core`에만 의존하고(production), Netty 없이 `protocol-v1`을 직접 구현한 TCP client로 단일 노드 `cache-server`에 GET/SET/DELETE를 보낸다. warm-up/측정 구간 분리, HIT/MISS/실패 분리 집계, reservoir 기반 p50/p99, JSON(원본)+CSV(요약) 결과 기록까지 구현했다. 3-node, 장애 주입, Zipfian 분포는 미구현. 통합 테스트에서만(test 전용 의존성) `cache-server`를 띄워 end-to-end로 검증한다.
 - 의존 방향은 `cache-server → cache-core`, `experiment-runner → cache-core`(+ 테스트 전용 `cache-server`)만 허용한다. Netty·Prometheus·logging 구현은 server에만 둔다. 연구별 Gradle 모듈은 만들지 않는다(`experiment-runner`는 연구가 아닌 공통 모듈이다).
-- `monitoring/`(Prometheus, Grafana), `deploy/`(Dockerfile, compose): linux/amd64에서 이미지 빌드, compose 실행, PING, 호스트 `experiment-runner`로 GET/SET/DELETE 실행, Prometheus 수집, Grafana 대시보드까지 확인했다. 이미지에는 서버 배포본만 들어가지만 `settings.gradle.kts`가 `experiment-runner`를 include하므로 빌드 단계에서 그 디렉터리도 복사해야 한다. linux/arm64 실행은 아직 확인하지 않았다.
-- `infra/`는 비어 있다.
+- `monitoring/`(Prometheus, Grafana), `deploy/`(Dockerfile, compose): linux/amd64에서 이미지 빌드, compose 실행, PING, 호스트 `experiment-runner`로 GET/SET/DELETE 실행, Prometheus 수집, Grafana 대시보드까지 확인했다. 이미지에는 서버 배포본만 들어가지만 `settings.gradle.kts`가 `experiment-runner`를 include하므로 빌드 단계에서 그 디렉터리도 복사해야 한다. linux/arm64는 AWS m6gd.medium에서 이미지 빌드와 cache-server 기동(`/metrics` 응답)까지 확인했다(2026-11-03, 요청 처리는 미확인).
+- `infra/`: Terraform 기반 AWS 실험 클러스터(실험할 때만 EC2 생성 → 결과 S3 → destroy). `bootstrap/`(state·결과 버킷, 최소 권한 IAM, 비용 알림)은 적용을 마쳤고, `experiment/`·`scripts/`로 노드 기동까지 확인했다. 팀원 실행용 GitLab CI(`.gitlab-ci.yml`, 웹 실행, 입력 `NODES`·`CONFIG`, Runner는 SSAFY 서버)는 cache-server N대 + 부하 생성 1대를 띄워 TCP 실험 config를 실행하고 결과를 S3에 올린 뒤 지운다(2026-11-04 첫 실행 성공). **m6gd.medium만, cache-server 8대 + 부하 생성 1대(전체 9대), 월 27만 원**은 교보재 조건이므로 절대 넘지 않는다. AWS 명령은 profile `openstd`로만 실행한다. 설계와 절차는 `infra/README.md`.
 
 ### A1 추가 구현 (2026-10-29)
 

@@ -1,0 +1,56 @@
+# AWS 실험 클러스터. GitLab 웹의 Build → Pipelines → Run pipeline에서 보호 브랜치를 골라 실행한다.
+# 설계와 상한 규칙은 infra/README.md.
+
+stages:
+  - experiment
+
+variables:
+  NODES:
+    value: "1"
+    options: ["1", "2", "3", "4", "5", "6", "7", "8"]
+    description: "실행할 cache-server 대수입니다. 부하 생성 노드 1대는 자동으로 추가됩니다."
+  CONFIG:
+    value: "experiments/baseline-single-node/config.properties"
+    description: "실행할 실험 config 경로입니다. 결과 위치는 job 로그 끝에 나옵니다."
+  # git bundle을 만들려면 전체 이력이 필요하다.
+  GIT_DEPTH: "0"
+  # after_script 기본 제한(5분)은 노드가 많을 때 destroy에 부족하다.
+  RUNNER_AFTER_SCRIPT_TIMEOUT: 15m
+
+aws-experiment:
+  stage: experiment
+  tags: [openstd-aws]
+  image:
+    name: hashicorp/terraform:1.17.1
+    entrypoint: [""]
+  # job 하나로 묶어야 up과 down 사이에 다른 파이프라인이 끼어들지 않는다(resource_group은 job 단위 잠금).
+  # 뒤에 온 실행은 대기하고, 먼저 요청한 순서로 진행한다(GitLab 프로젝트 설정의 resource group process mode를 oldest_first로 둔다).
+  resource_group: aws-experiment
+  # 기존 클러스터 대기 60분 + 기동 15분 + 실험 최대 60분(execution.timeout.ms 상한) + 여유
+  timeout: 160m
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "web" && $CI_COMMIT_REF_PROTECTED == "true"
+  before_script:
+    - apk add --no-cache bash coreutils aws-cli git > /dev/null
+  script:
+    # 자동 정지 시각을 실험 제한 시간 + 30분(기동·업로드 여유)으로 잡는다.
+    - t=$(sed -n 's/^execution.timeout.ms=//p' "$CONFIG" | tr -d '\r'); export TF_VAR_max_lifetime_minutes=$(( ${t:-3600000} / 60000 + 30 ))
+    # 로컬에서 띄운 클러스터가 있으면 최대 60분 기다린다. 끝나지 않으면 지우지 않고 실패한다.
+    - infra/scripts/up.sh --wait 3600 "$NODES"
+    # up.sh가 기존 클러스터 없음을 확인한 뒤에만 표시한다. apply가 중간에 실패해도 지울 수 있게 apply 전에 남긴다.
+    - touch .ci-owns-cluster
+    - infra/scripts/up.sh --apply
+    - infra/scripts/wait.sh 900
+    # 결과는 s3://openstd-s15p31d111-results/results/<study>/<UTC 시각>-<commit 8자리>/
+    - infra/scripts/run.sh "$CONFIG"
+  # 이 job이 만든 클러스터만 성공·실패·취소와 관계없이 지운다. 로컬에서 띄운 클러스터는 건드리지 않는다.
+  after_script:
+    - |
+      if [ -f .ci-owns-cluster ]; then
+        apk add --no-cache bash coreutils aws-cli git > /dev/null
+        for i in 1 2 3; do
+          infra/scripts/down.sh && infra/scripts/down.sh --apply && break
+          echo "destroy 실패($i/3). 30초 뒤 다시 시도한다"
+          sleep 30
+        done
+      fi
