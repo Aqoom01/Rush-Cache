@@ -1,6 +1,6 @@
 # B3 설계
 
-**최신 구현 현황(2026-11-02):** 아래 단계 계획 중 pre-copy와 post-copy 프로토콜·수신기·정합성 테스트를 구현했다. 상세와 확정된 post-copy 실패/조회 계약은 [protocols.md](protocols.md)에 있다. pre-copy의 라운드·seq는 공통 `MigrationJob` 필드를 변경하지 않고 protocol의 `rounds()`·`acknowledgedSequence()`로 제공하며 `DeltaBatch`로 전달한다. source-owned `JobState.CATCHING_UP`을 추가했고 post-copy는 별도 `PostCopyState`를 사용한다. S1~S5 세 방식 비교 backend와 b3-comparison-json-1 원본/요약 생성을 구현했다. S3 민감도와 별도 S6 취소·장애 비교도 구현하고 실험했다. 자체 노드 증감 비교 구현·설정·결과는 제거했다. 선행 메커니즘 8개의 연구 prototype과 가상 비교 backend를 구현했다. 원 논문 제품·실제 노드 실행의 재현은 아니다. [변경점과 실행 범위](scaling-decision/README.md), [결과](scaling-decision/results.md)를 따른다. M scheduler, schema v2 dirty 상세 보고서와 실제 KV/peer 연계는 후속이다. 아래 1단계·후속 구분과 초안 설명은 원래 구현 순서이며 최신 완료 여부는 이 문단과 구현 안내를 기준으로 한다.
+**최신 구현 현황(2026-11-02):** 아래 단계 계획 중 pre-copy와 post-copy 프로토콜·수신기·정합성 테스트를 구현했다. 상세와 확정된 post-copy 실패/조회 계약은 [protocols.md](protocols.md)에 있다. pre-copy의 라운드·seq는 공통 `MigrationJob` 필드를 변경하지 않고 protocol의 `rounds()`·`acknowledgedSequence()`로 제공하며 `DeltaBatch`로 전달한다. source-owned `JobState.CATCHING_UP`을 추가했고 post-copy는 별도 `PostCopyState`를 사용한다. S1~S5 세 방식 비교 backend와 b3-comparison-json-1 원본/요약 생성을 구현했다. S3 민감도와 별도 S6 취소·장애 비교도 구현하고 실험했다. 자체 노드 증감 비교 구현·설정·결과는 제거했다. 선행 메커니즘 8개의 연구 prototype과 가상 비교 backend를 구현했다. 원 논문 제품·실제 노드 실행의 재현은 아니다. [변경점과 실행 범위](scaling-decision/README.md), [결과](scaling-decision/results.md)를 따른다. M scheduler·다중 노드 fixture·M1~M5 backend를 구현하고 정식 210회·축소 두 반복 168회를 완료했다. 결과와 실제 실행 범위는 [다중 이동 결과](movement-scaling-comparison/results.md)를 따른다. schema v2 dirty 상세 보고서와 실제 KV/peer 연계는 후속이다. 아래 1단계·후속 구분과 초안 설명은 원래 구현 순서이며 최신 완료 여부는 이 문단과 구현 안내를 기준으로 한다.
 
 Baseline 실행: 공통 Runner 연계와 §6.1 SC1~SC6 결과 보관까지 구현했다. S1~S5 variant 비교 backend도 구현했다. S3 민감도와 별도 S6 취소·장애 비교 backend도 구현했다. 실제 KV/peer 연계·scaling과 v2 dirty 라운드 상세는 후속이다. 실행 방법은 [migration-comparison/README.md](migration-comparison/README.md), 보관된 실행은 [Baseline 보고서](migration-comparison/runs/run-2026-10-22T04-48-53.944252700Z-a4354ce4/repeat-001/results.md)와 [조건별 요약](migration-comparison/runs/run-2026-10-22T04-48-53.944252700Z-a4354ce4/repeat-001/summary.csv)을 따른다. S1~S5는 2026-10-23 generator v2 full 240회를 참조 run으로 선정했고 migration-comparison/results.md와 B3 통합 results.md에 정리했다. SC 수치는 별도 Baseline으로 보존한다.
 
@@ -319,9 +319,11 @@ hot range·이동 hotspot·단일 hot key와 split/merge 유무를 별도로 다
 
 측정은 실제 서비스의 처리량·지연 목표 위반, 준비부터 부하 분담까지의 시간, 누적 노드 사용, 실제 이동 bytes, 계획 계산 시간, 안전성 위반을 기준으로 설계한다. 가상 시간과 실환경 결과는 분리한다. 필요 노드 수를 특정 비교 정책의 공식으로 정의해 다른 방법의 정답으로 삼지 않는다. 예측·학습 방식은 입력 이력과 평가 구간을 분리한다.
 
-### 6.4 후속: 이동 Scaling
+### 6.4 이동 Scaling — M1~M5 구현·실험 완료
 
-1단계 범위 밖이다. 단일 job Baseline이 안정된 뒤 여러 `Change`를 동시에 실행하는 scheduler를 붙인다.
+2026-11-04 후속으로 [선행 Scheduler 방법 비교](scheduler-comparison/README.md)를 별도 구현·실행했다. 고정 계획의 FIFO·MongoDB식·TiDB 변형·iter-GWIN·single-MCs·SLAMIG 변형·VMbuddies 배분 변형·FPTA 할당을 비교하고 CAMIG는 후보 목적지 선택 단계에서 평가한다. 정식 855회·축소 반복 684회의 [결과](scheduler-comparison/results.md)가 있다. 아래 M1~M5는 FIFO의 조건 변화 실험으로 보존하며 정책별 비교와 구별한다.
+
+단일 이동 후속 단계로 여러 `Change`를 동시에 실행하는 scheduler를 구현했다. 실제 세 protocol을 다중 노드 메모리 저장소에서 호출한 정식 210회와 축소 반복 168회를 완료했다. 구현 위치·전체 설정·공식 run·해석 제한은 [다중 이동 안내](movement-scaling-comparison/README.md)와 [결과](movement-scaling-comparison/results.md)를 따른다. 아래 설계에서 M3는 노드 동시 상한 1/4를 함께 비교하고, M4는 Pre-copy 기준, M5는 세 방식의 동일 조건 비교로 실행했다.
 
 B1·B2가 만든 `Change` 목록은 고정하고, B3 scheduler가 동시에 몇 개를 실행하고 전송 예산을 어떻게 나누는지만 바꾼다. 목적은 재배치 결과의 품질이 아니라 **이동 workload가 커질 때 migration 실행 자체가 어떻게 확장되는지** 확인하는 것이다.
 
@@ -347,7 +349,7 @@ B1·B2가 만든 `Change` 목록은 고정하고, B3 scheduler가 동시에 몇 
 | M2 동시성 | jobs = 16, cluster 전송 예산 고정 | maxConcurrentJobs ∈ {1, 2, 4, 8} | M1 + 전송 예산 사용률 |
 | M3 endpoint 경합 | jobs = 16, 동시성 = 4 | endpoint 형태 ∈ {서로 다름, source 공유, destination 공유} | node별 throughput, p50/p99 대기 시간, starvation |
 | M4 write 부하 | jobs = 16, 동시성 = 4 | ρ ∈ {0, 0.5, 0.9, 1.2} | 완료율, job별 downtime, 거절 write, 전송량 증폭 |
-| M5 variant | M2·M4 반복 | `stop-and-copy`, `pre-copy`, Post-Copy 확장 뒤 `post-copy` | makespan, 요청 영향, aggregate throughput |
+| M5 variant | M2·M4 반복 | `stop-and-copy`, `pre-copy`, `post-copy` | makespan, 요청 영향, aggregate throughput |
 
 #### 측정 정의
 
@@ -369,13 +371,13 @@ Rocksteady의 758 MB/s와 tail latency 수치는 측정 항목을 고르는 근�
 - in-process로 실행한다. 서버·네트워크·실제 시계를 쓰지 않는다. `time_domain=virtual`, 단위는 tick이다.
 - 단일 이동은 tick당 byte 예산으로 모델링한다. 여러 job은 node별·cluster 전체 예산을 scheduler가 활성 job에 나눈다. ACK와 framing의 비용 포함 범위를 manifest에 명시한다.
 - seed 1~5를 사용한다. 설정·입력·생성기 버전이 같아야 같은 요청열로 판단하며, seed만 같은 것을 동일 입력으로 간주하지 않는다.
-- 실험의 정식 진입점은 config를 읽는 공통 `experiment-runner`다. B3 main과 최소 adapter는 `cache-core/src/test/java/io/openkache/core/migration/experiment/`에 있으며 연구 backend로 실행한다. 현재 Baseline·S1~S5·S3 민감도·S6·선행 메커니즘 비교 backend의 config 기반 호출이 구현됐다. 실제 노드 증감 통합·M backend는 후속이다. 연결 계약은 §6.6을 따른다. main 전체 실험은 JUnit에서 자동 실행하지 않고 대표 경로와 계약을 검증한다.
-- 모든 실험 결과는 실험 폴더의 `runs/<execution_id>/`에 실행별로 둔다. §6.1·§6.2는 `migration-comparison/`, §6.3은 `scaling-decision/`, §6.4는 `movement-scaling-comparison/`이다. 현재 §6.1 Baseline의 [실행 보고서](migration-comparison/runs/run-2026-10-22T04-48-53.944252700Z-a4354ce4/repeat-001/results.md)와 조건별 요약을 보관한다. Migration의 공식 run은 실험별 입구 문서에서 지정한다. 선행 메커니즘 결과는 scaling-decision 입구에서 정식 run을 지정하며 M은 결과가 없다. 저장 계약과 결과 문서 계층은 §6.6을 따른다.
+- 실험의 정식 진입점은 config를 읽는 공통 `experiment-runner`다. B3 main과 최소 adapter는 `cache-core/src/test/java/io/openkache/core/migration/experiment/`에 있으며 연구 backend로 실행한다. 현재 Baseline·S1~S5·S3 민감도·S6·선행 메커니즘 비교 backend의 config 기반 호출이 구현됐다. M1~M5의 MovementResearchMain도 공통 Runner로 실행하며 실제 노드 증감 통합은 후속이다. 연결 계약은 §6.6을 따른다. main 전체 실험은 JUnit에서 자동 실행하지 않고 대표 경로와 계약을 검증한다.
+- 모든 실험 결과는 실험 폴더의 `runs/<execution_id>/`에 실행별로 둔다. §6.1·§6.2는 `migration-comparison/`, §6.3은 `scaling-decision/`, §6.4는 `movement-scaling-comparison/`이다. 현재 §6.1 Baseline의 [실행 보고서](migration-comparison/runs/run-2026-10-22T04-48-53.944252700Z-a4354ce4/repeat-001/results.md)와 조건별 요약을 보관한다. Migration의 공식 run은 실험별 입구 문서에서 지정한다. 선행 메커니즘 결과는 scaling-decision 입구에서 정식 run을 지정하며 M의 공식 run과 결과는 movement-scaling-comparison/results.md에서 지정한다. 저장 계약과 결과 문서 계층은 §6.6을 따른다.
 - 서버 실측(p99, MOVED 재시도 수, 실제 downtime)은 B1 소유권 전파와 multi-node Runner가 구현된 뒤 별도로 수행한다. virtual 결과와 같은 비교군으로 합산하지 않는다.
 
 ### 6.6 비교·확장 실험의 실행 및 저장 계약
 
-**상태: 공통 Runner의 config 기반 B3 Baseline 호출·반복·제한 시간·JSON 원본·CSV/보고서 생성은 구현됐다(`b3-baseline-json-1`). 2026-10-22 전체 설정 실행의 반복별 요약·보고서를 Git에 보관한다. S1~S5·S3 민감도·S6 비교도 각 전용 backend와 schema로 구현됐다. 선행 메커니즘은 b3-literature-algorithms-json-1로 별도 실행한다. 아래 통합 b3-research-v2와 실제 E 통합·M backend는 후속 설계다.**
+**상태: 공통 Runner의 config 기반 B3 Baseline 호출·반복·제한 시간·JSON 원본·CSV/보고서 생성은 구현됐다(`b3-baseline-json-1`). 2026-10-22 전체 설정 실행의 반복별 요약·보고서를 Git에 보관한다. S1~S5·S3 민감도·S6 비교도 각 전용 backend와 schema로 구현됐다. 선행 메커니즘은 b3-literature-algorithms-json-1로 별도 실행한다. M1~M5는 b3-movement-json-1 backend로 구현·실행했다. 아래 통합 b3-research-v2와 실제 노드 증감 통합은 후속 설계다.**
 
 #### 실험 단위와 동일 입력
 
@@ -425,7 +427,7 @@ S 비교를 위한 후속 구현은 test의 experiment 내부에서 먼저 일�
 | 출력 adapter | 공통 Runner의 결과 계약으로 metric/detail 전달, 파생 CSV·보고서 연결 | common/ExperimentOutput |
 | 단일 이동 suite | S1~S6 × 조건 × seed × variant | comparison/MigrationComparison |
 | 노드 증감 suite(후속) | 선정한 선행 알고리즘·관측·provisioner/membership | 재현 범위 확정 후 결정 |
-| 여러 job suite | 다중 노드·Tablet fixture, job별 예산·scheduler 진행 | movement/MovementScalingExperiment |
+| 여러 job suite | 다중 노드·Tablet fixture, job별 예산·scheduler 진행 | MovementExperiment·MultiMigrationFixture·MovementResearchMain (구현 완료) |
 
 이는 클래스 책임·배치 계획이며 빈 Java 클래스나 공용 framework를 선행 생성하지 않는다. `MigrationDriver`의 최소 연산은 begin, 요청 처리, step, cancel, 불변 관측 snapshot이다. commit의 readiness·CAS·완료 통지는 adapter가 연결한다. 비교 보고서가 구체 protocol을 직접 조회하지 않게 한다.
 
@@ -444,7 +446,7 @@ stop-and-copy와 pre-copy는 source-owned 계약을 공유한다. post-copy는 �
 
 #### JSON 원본과 파생 요약 · B3 후속 형식
 
-공통 Runner의 **JSON 원본·CSV 요약** 원칙을 따른다. 후속 B3 결과도 JSON이 재분석의 기준이며, CSV·Markdown은 JSON에서 다시 만들 수 있어야 한다. `b3-research-v2`는 비교용 후속 형식의 제안 식별자이며 프로젝트 전체의 schema v2 합의를 의미하지 않는다. 현재 구현된 Baseline JSON은 `b3-baseline-json-1`로 구별하며, 아래 cases/runs/rounds 및 S/E/M 상세 schema는 아직 미구현이다.
+공통 Runner의 **JSON 원본·CSV 요약** 원칙을 따른다. 후속 B3 결과도 JSON이 재분석의 기준이며, CSV·Markdown은 JSON에서 다시 만들 수 있어야 한다. `b3-research-v2`는 비교용 후속 형식의 제안 식별자이며 프로젝트 전체의 schema v2 합의를 의미하지 않는다. 현재 구현된 Baseline JSON은 `b3-baseline-json-1`로 구별하며, M은 별도 b3-movement-json-1로 cases/runs/jobs/budgets/phase-rounds와 원본 재검증을 구현했다. 아래 통합 v2의 dirty generation 등 전체 상세 schema는 후속이다.
 
 과거 SC v1은 CSV가 원본인 형식이었다. 기존 원본과 보고서는 모두 삭제했다. 당시 관측하지 않은 코드·환경 metadata를 추정해 채운 JSON을 사후 원본으로 만들지 않는다. 새 형식은 새 실행부터 적용하며, 공식 run을 대체할 때 공통 조건의 수치·정합성을 비교한다.
 
@@ -570,9 +572,9 @@ experiments/b3-live-migration/
 │   ├── results.md                  (첫 공식 run 후 생성) 입구
 │   └── runs/<execution_id>/        (후속 생성) 정책·설정 비교 원본과 보고서
 └── movement-scaling-comparison/
-    ├── README.md                   M1~M5 안내(준비됨)
+    ├── README.md                   M1~M5 안내(구현·실험 완료)
     ├── results.md                  (첫 공식 run 후 생성) 입구
-    └── runs/<execution_id>/        (후속 생성) job·scheduler·variant 결과
+    └── runs/<execution_id>/        job·scheduler·variant 정식 결과
 ```
 
 규칙:

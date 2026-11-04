@@ -3,6 +3,7 @@ package io.openkache.core.migration.stopcopy;
 import io.openkache.core.migration.JobState;
 import io.openkache.core.migration.MigrationJob;
 import io.openkache.core.migration.MigrationProtocol;
+import io.openkache.core.migration.MigrationPublication;
 import io.openkache.core.migration.TransferBatch;
 import io.openkache.core.migration.TransferProgress;
 import io.openkache.core.model.OwnershipEpoch;
@@ -198,14 +199,13 @@ public final class StopAndCopyProtocol implements MigrationProtocol {
      * 실행기는 CAS와 이 확인 사이에 다른 작업을 끼워 넣으면 안 된다.
      */
     public void committed(RoutingTable publishedTable) {
-        Objects.requireNonNull(publishedTable, "publishedTable");
+        committed(expectedTable, publishedTable);
+    }
+
+    /** 다른 Tablet의 전환을 보존하는 실제 CAS 전·후 표를 받는다. 같은 controller 작업에서 호출한다. */
+    public void committed(RoutingTable before, RoutingTable publishedTable) {
         if (!readyToCommit()) throw new IllegalStateException("not ready to commit");
-        RoutingTable planned = expectedTable.apply(job.change());
-        if (!publishedTable.version().equals(planned.version())
-                || !publishedTable.tablets().equals(planned.tablets())
-                || publishedTable.nextTabletId() != planned.nextTabletId()) {
-            throw new IllegalArgumentException("ownership was not committed as planned");
-        }
+        MigrationPublication.verify(job, expectedTable, before, publishedTable);
         update(JobState.CLEANING_UP, job.progress());
     }
 
