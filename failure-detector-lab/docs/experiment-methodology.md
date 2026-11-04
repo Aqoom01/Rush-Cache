@@ -54,5 +54,29 @@ target `node1`의 container `eth0`에만 loss/delay qdisc를 적용하고 호스
 않는다. smoke 파라미터는 실행 시간을 줄인 값이므로 P2 simulation 수치와 직접 합치지 않는다.
 
 F5/F6의 5·8노드 crash run은 동작 경로 확인을 위한 각 1회 smoke다. 통계적 순위 근거가
-아니다. F7c 실제 UDP adapter, 제품 `cache-server`, GET/SET health, CPU/GC, 자동 failover는
-미구현이다.
+아니다. F7c 실제 UDP adapter, 제품 `cache-server`, GET/SET health, 실제 GC 유발 pause,
+자동 failover는 미구현이다.
+
+### Pre-EC2 자원 장애 계층
+
+자원 장애 runner는 각 컨테이너를 기본 1 CPU·512MiB·128MiB JVM heap으로 제한하고,
+`docker pause`, runtime CPU quota 변경, 동일 cgroup의 `stress-ng` CPU/HDD stressor를
+사용한다. observer와 target stall은 별도 fault로 실행한다. 결과에는 observer monotonic
+fault start/end, host wall-clock applied/released, Docker stats, cgroup `cpu.stat`/`io.stat`,
+모든 노드와 GC 로그가 포함된다.
+
+`io-contention-target`은 Docker Desktop Linux VM의 overlay storage 경합이다. 실제 SSD의
+고정 read/write/flush latency가 아니며 `dm-delay` 결과로 표기하지 않는다. 네이티브 Linux
+전용 block device의 `dm-delay`와 OpenKache GET/SET workload는 EC2 이전 다음 검증 단계다.
+자세한 계약은 `pre-ec2-realistic-experiment.md`를 따른다.
+
+## 운영 제품 기반 5종 행렬
+
+별도 `fdBenchmark` 경로는 5 profiles × 10 scenarios × 30 seeds × 8 nodes로 1,500 runs를
+구성한다. 기존 모듈형 F0~F7c 결과를 덮거나 같은 통계로 합치지 않는다. Redis PFAIL/FAIL,
+Cassandra local DOWN, Ignite topology removal, Aerospike heartbeat/agreement처럼 서로 다른
+최종 상태를 정규화 이벤트에 그대로 보존하며 해당 단계가 없는 경우 N/A로 남긴다.
+
+현재 네트워크 결과는 seeded loss/delay를 통과한 detector state transition의
+`simulation-observed` 시간과 선언 frame 크기의 `model-estimated` 비용이다. Docker 기반
+native product 결과나 실제 TCP wire 계측으로 해석하지 않는다.

@@ -58,7 +58,8 @@ public record UdpWireMessage(
         EXPERIMENT_FINISH(7),
         PROCESS_CRASH(8),
         SUSPECT(9),
-        ALIVE(10);
+        ALIVE(10),
+        FAULT_END(11);
 
         private final byte code;
 

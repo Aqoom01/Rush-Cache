@@ -41,6 +41,7 @@ public final class UdpExperimentNodeMain {
     private static final int TARGET_ID = 1;
     private static final int HELPER_ID = 2;
     private static final long SWIM_PROTOCOL_WARMUP_MILLIS = 3_000;
+    private static final long UDP_STARTUP_WARMUP_MILLIS = 3_000;
 
     private UdpExperimentNodeMain() {
     }
@@ -54,11 +55,19 @@ public final class UdpExperimentNodeMain {
     }
 
     private static void sendFaultControl(String[] args) throws IOException {
-        if (args.length != 3) {
-            throw new IllegalArgumentException("control requires host and port");
+        if (args.length < 3 || args.length > 4) {
+            throw new IllegalArgumentException("control requires host, port, and optional start|end");
+        }
+        UdpWireMessage.Type type = args.length == 3 || args[3].equals("start")
+                ? UdpWireMessage.Type.FAULT_START
+                : args[3].equals("end")
+                        ? UdpWireMessage.Type.FAULT_END
+                        : null;
+        if (type == null) {
+            throw new IllegalArgumentException("control phase must be start or end");
         }
         UdpWireMessage message = new UdpWireMessage(
-                UdpWireMessage.Type.FAULT_START, 0, -1, OBSERVER_ID, TARGET_ID);
+                type, 0, -1, OBSERVER_ID, TARGET_ID);
         byte[] payload = message.encode();
         try (DatagramSocket socket = new DatagramSocket()) {
             socket.send(new DatagramPacket(
@@ -94,6 +103,7 @@ public final class UdpExperimentNodeMain {
         private final long startedAtNanos = System.nanoTime();
         private long sequence;
         private Long faultAtNanos;
+        private Long faultEndAtNanos;
         private long nextVerificationAtNanos;
         private long verificationRoundSuccesses;
         private long verificationRoundFailures;
@@ -157,7 +167,7 @@ public final class UdpExperimentNodeMain {
                                 Duration.ofMillis(HEARTBEAT_INTERVAL_MILLIS),
                                 Duration.ofMillis(600),
                                 Duration.ofMillis(400),
-                                Duration.ofMillis(600),
+                                Duration.ofMillis(UDP_STARTUP_WARMUP_MILLIS),
                                 FixedDeadlineConfig.PeerSelectionMode.FULL_MESH,
                                 UdpWireMessage.WIRE_BYTES
                         )
@@ -176,7 +186,7 @@ public final class UdpExperimentNodeMain {
                                 Duration.ofSeconds(2),
                                 Duration.ofSeconds(2),
                                 Duration.ofMillis(400),
-                                Duration.ofMillis(600),
+                                Duration.ofMillis(UDP_STARTUP_WARMUP_MILLIS),
                                 UdpWireMessage.WIRE_BYTES
                         )
                 );
@@ -367,8 +377,16 @@ public final class UdpExperimentNodeMain {
                 case FAULT_START -> {
                     if (config.nodeId() == OBSERVER_ID && faultAtNanos == null) {
                         faultAtNanos = elapsedNanos();
-                        System.out.println("EVENT_JSON={\"kind\":\"fault\",\"atNanos\":"
+                        System.out.println("EVENT_JSON={\"kind\":\"fault-start\",\"atNanos\":"
                                 + faultAtNanos + ",\"target\":\"node-1\"}");
+                    }
+                }
+                case FAULT_END -> {
+                    if (config.nodeId() == OBSERVER_ID && faultAtNanos != null
+                            && faultEndAtNanos == null) {
+                        faultEndAtNanos = elapsedNanos();
+                        System.out.println("EVENT_JSON={\"kind\":\"fault-end\",\"atNanos\":"
+                                + faultEndAtNanos + ",\"target\":\"node-1\"}");
                     }
                 }
                 case SUSPECT -> onSuspect(message);
@@ -708,10 +726,16 @@ public final class UdpExperimentNodeMain {
             if (!running.compareAndSet(true, false)) {
                 return;
             }
+            long runDurationNanos = elapsedNanos();
             Long suspectAt = firstEventAtOrAfterFault("SUSPECT");
             Long deadAt = firstEventAtOrAfterFault("DEAD");
+            Long recoveredAt = firstEventAtOrAfter(faultEndAtNanos, "ALIVE");
             long preFaultDeadEvents = detectorEvents.stream()
                     .filter(event -> event.newStatus().name().equals("DEAD"))
+                    .filter(event -> faultAtNanos == null || event.atNanos() < faultAtNanos)
+                    .count();
+            long preFaultSuspectEvents = detectorEvents.stream()
+                    .filter(event -> event.newStatus().name().equals("SUSPECT"))
                     .filter(event -> faultAtNanos == null || event.atNanos() < faultAtNanos)
                     .count();
             System.out.println("RESULT_JSON={"
@@ -744,10 +768,16 @@ public final class UdpExperimentNodeMain {
                     + configuredSuspicionMaxConfirmations() + ","
                     + "\"timeSource\":\"observer-monotonic\","
                     + "\"wireSource\":\"real-udp-observed\","
+                    + "\"runDurationNanos\":" + runDurationNanos + ","
                     + "\"faultAtNanos\":" + nullable(faultAtNanos) + ","
+                    + "\"faultEndAtNanos\":" + nullable(faultEndAtNanos) + ","
+                    + "\"preFaultSuspectEvents\":" + preFaultSuspectEvents + ","
                     + "\"preFaultDeadEvents\":" + preFaultDeadEvents + ","
                     + "\"suspectLatencyNanos\":" + latency(suspectAt) + ","
                     + "\"deadLatencyNanos\":" + latency(deadAt) + ","
+                    + "\"recoveredAtNanos\":" + nullable(recoveredAt) + ","
+                    + "\"recoveryLatencyNanos\":"
+                    + latencyFrom(faultEndAtNanos, recoveredAt) + ","
                     + "\"sentFrames\":" + sentFrames.get() + ","
                     + "\"sentBytes\":" + sentBytes.get() + ","
                     + "\"receivedFrames\":" + receivedFrames.get() + ","
@@ -759,13 +789,17 @@ public final class UdpExperimentNodeMain {
         }
 
         private Long firstEventAtOrAfterFault(String status) {
-            if (faultAtNanos == null) {
+            return firstEventAtOrAfter(faultAtNanos, status);
+        }
+
+        private Long firstEventAtOrAfter(Long threshold, String status) {
+            if (threshold == null) {
                 return null;
             }
             return detectorEvents.stream()
                     .filter(event -> event.newStatus().name().equals(status))
                     .map(DetectorEvent::atNanos)
-                    .filter(atNanos -> atNanos >= faultAtNanos)
+                    .filter(atNanos -> atNanos >= threshold)
                     .findFirst()
                     .orElse(null);
         }
@@ -775,6 +809,13 @@ public final class UdpExperimentNodeMain {
                 return "null";
             }
             return Long.toString(eventAt - faultAtNanos);
+        }
+
+        private static String latencyFrom(Long startAt, Long eventAt) {
+            if (startAt == null || eventAt == null || eventAt < startAt) {
+                return "null";
+            }
+            return Long.toString(eventAt - startAt);
         }
 
         @Override

@@ -116,3 +116,10 @@ tasks.register<JavaExec>("udpDistributedMembershipMatrixReport") {
     classpath = sourceSets.main.get().runtimeClasspath
     mainClass.set("com.openkache.failuredetector.cli.UdpDistributedMembershipMatrixReportMain")
 }
+
+tasks.register<JavaExec>("fdBenchmark") {
+    group = "verification"
+    description = "Runs the five product-inspired failure-detector benchmark profiles."
+    classpath = sourceSets.main.get().runtimeClasspath
+    mainClass.set("com.openkache.failuredetector.cli.FailureDetectorBenchmarkMain")
+}

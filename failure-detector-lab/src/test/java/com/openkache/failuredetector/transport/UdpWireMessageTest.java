@@ -67,6 +67,20 @@ class UdpWireMessageTest {
     }
 
     @Test
+    void faultStartAndEndControlsUseTheSameVersionedWireFrame() {
+        for (UdpWireMessage.Type type : java.util.List.of(
+                UdpWireMessage.Type.FAULT_START,
+                UdpWireMessage.Type.FAULT_END)) {
+            UdpWireMessage source = new UdpWireMessage(type, 0, -1, 0, 1);
+
+            byte[] encoded = source.encode();
+
+            assertEquals(UdpWireMessage.WIRE_BYTES, encoded.length);
+            assertEquals(source, UdpWireMessage.decode(encoded, encoded.length));
+        }
+    }
+
+    @Test
     void swimSuspicionAndAliveGossipUseTheSameVersionedWireFrame() {
         for (UdpWireMessage.Type type : java.util.List.of(
                 UdpWireMessage.Type.SUSPECT,

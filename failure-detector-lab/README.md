@@ -3,6 +3,10 @@
 OpenKache 본체와 분리된 Java 17 기반 Failure Detector 비교 실험 프로젝트다. v2 명세에 따라
 판단(A), 관측·전파(B), 보정(C)을 구분하고, 구현 가능한 조합만 프로필로 선언한다.
 
+운영 제품 구조 5종(SWIM+Lifeguard, Redis Cluster, Cassandra Phi, Ignite TCP Ring,
+Aerospike Mesh)의 별도 비교 경로도 제공한다. 구현 범위와 원본 제품과의 차이는
+`docs/product-fd5-benchmark.md`를 따른다.
+
 ## 비교 프로필
 
 | 코드 | ID | A: 판단 | B: 관측·전파 | C: 보정 |
@@ -68,6 +72,61 @@ DOCKER_BIN='/mnt/c/Program Files/Docker/Docker/resources/bin/docker.exe' \
   F6 crash failure-detector-lab/results-udp-f6-new 8
 ```
 
-실제 harness는 detector의 UDP 감지 경로를 확인하는 smoke다. 제품 `cache-server` 통합,
-GET/SET workload, CPU/GC, 자동 failover는 측정하지 않는다. 자세한 해석과 제한은
+실제 harness는 detector의 UDP 감지 경로를 확인한다. 제품 `cache-server` 통합,
+GET/SET workload와 자동 failover는 측정하지 않는다. 자세한 해석과 제한은
 `docs/experiment-methodology.md`, 검증 이력은 `docs/verification.md`를 따른다.
+
+### EC2 이전 자원 장애 행렬
+
+동일한 실제 UDP 경로에서 target/observer CPU pause, CPU quota 제한, CPU contention,
+Docker 가상 디스크 I/O contention을 주입할 수 있다. 모든 노드는 기본 1 CPU·512MiB,
+고정 128MiB heap으로 실행하며 Docker stats, cgroup cpu/io, GC 로그와 fault 시각을 보존한다.
+
+```bash
+DOCKER_BIN=docker \
+  failure-detector-lab/scripts/experiments/run-udp-pre-ec2-matrix.sh \
+  failure-detector-lab/results-pre-ec2-full 30 8
+
+python3 failure-detector-lab/scripts/analyze-udp-pre-ec2.py \
+  --input failure-detector-lab/results-pre-ec2-full \
+  --output failure-detector-lab/results-pre-ec2-full/report
+```
+
+자원 경합 실험은 host 간 네트워크나 실제 SSD 고정 지연을 재현하지 않는다. 전체 범위와
+EC2 승격 기준은 `docs/pre-ec2-realistic-experiment.md`에 기록한다.
+
+운영 제품 inspired 5종을 동일한 Docker 계층에서 실행할 때는 다음 wrapper를 사용한다.
+SWIM/Redis/Phi는 실제 UDP, Ignite는 persistent TCP, Aerospike는 TCP heartbeat+UDP agreement를
+사용한다.
+
+```bash
+DOCKER_BIN=docker \
+  failure-detector-lab/scripts/experiments/run-product-udp-pre-ec2-matrix.sh \
+  failure-detector-lab/results-product-pre-ec2-full 30 8
+```
+
+중단된 행렬은 같은 설정과 출력 디렉터리로 재개할 수 있다. `passed` sequence는 건너뛰고,
+중단·실패 sequence는 기존 증거를 덮어쓰지 않는 `-retry-N` 디렉터리에서 다시 실행한다.
+
+```bash
+FD_MATRIX_RESUME=1 DOCKER_BIN=docker \
+  failure-detector-lab/scripts/experiments/run-product-udp-pre-ec2-matrix.sh \
+  failure-detector-lab/results-product-pre-ec2-full 30 8
+```
+
+모든 결과는 `inspired-real-socket-adapter`이며 제품 native benchmark로 표기하지 않는다.
+
+## 운영 제품 기반 5종 벤치마크
+
+```bash
+failure-detector-lab/scripts/run-fd-benchmark.sh \
+  --algorithm all --nodes 8 --scenario all --seeds 1-30 \
+  --output failure-detector-lab/results-fd5-new
+
+python3 failure-detector-lab/scripts/analyze-fd-results.py \
+  --input failure-detector-lab/results-fd5-new \
+  --output failure-detector-lab/results-fd5-new/report
+```
+
+출력은 5개 프로필 모두 `implementation_type=inspired`로 기록한다. 감지 지연은
+`simulation-observed`, 통신 비용은 `model-estimated`이며 실제 UDP 결과와 합치지 않는다.
