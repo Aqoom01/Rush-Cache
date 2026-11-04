@@ -9,6 +9,13 @@
 | [design.md](design.md) | B2 전체 설계: 범위, 경계, 공통 입력·출력 모델, 불변식, 지표, 실험 계획 |
 | [references/](references/) | 참고 논문·시스템별 정리. 읽은 내용과 프로젝트 적용 방식을 분리해 적는다 |
 
+## 실험
+
+| 폴더 | 내용 |
+|---|---|
+| [split-comparison/](split-comparison/) | in-process. 같은 입력에서 정책별 분할 지점과 다음 window의 요청 분배 |
+| [cluster-split/](cluster-split/) | EC2 cache-server 2대. 정책별 분할 지점으로 라우팅했을 때 노드별 부하·p99·처리량(memory·nvme) |
+
 ## 정책(variant) 목록
 
 정책 하나는 참고 문헌 하나에 대응한다. 실험 결과의 `variant` 값으로 이 이름을 쓴다.
