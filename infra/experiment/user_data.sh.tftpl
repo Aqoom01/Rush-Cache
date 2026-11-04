@@ -1,0 +1,49 @@
+#!/bin/bash
+# 진행 상황은 /var/log/cloud-init-output.log, 완료 표시는 /opt/openkache/STATUS.
+# role=node는 cache-server 컨테이너를, role=loadgen은 experiment-runner 배포본만 준비한다.
+set -euxo pipefail
+
+mkdir -p /opt/openkache
+echo "booting" > /opt/openkache/STATUS
+trap 'echo "failed" > /opt/openkache/STATUS' ERR
+
+%{ if role == "loadgen" ~}
+dnf install -y git java-21-amazon-corretto-devel
+%{ else ~}
+dnf install -y docker git
+systemctl enable --now docker
+%{ endif ~}
+
+cd /opt/openkache
+aws s3 cp --region ap-northeast-2 "s3://${results_bucket}/bundles/${source_commit}.bundle" repo.bundle
+git init -q src
+cd src
+git fetch -q ../repo.bundle HEAD
+git checkout -q --detach FETCH_HEAD
+test "$(git rev-parse HEAD)" = "${source_commit}"
+
+echo "building" > /opt/openkache/STATUS
+%{ if role == "loadgen" ~}
+# 연구 backend 준비(prepareResearchBackends)는 TCP 실험에 필요 없고 전체 테스트 컴파일이라 뺀다.
+export GRADLE_USER_HOME=/opt/openkache/gradle
+./gradlew --no-daemon :experiment-runner:installDist -x :experiment-runner:prepareResearchBackends
+echo "ready" > /opt/openkache/STATUS
+%{ else ~}
+docker build -f deploy/docker/Dockerfile -t openkache-server .
+
+sed -i "s/^node.id=.*/node.id=${node_id}/" deploy/docker/server.properties
+docker run -d --name openkache-server --restart unless-stopped \
+  -p 7000:7000 -p 7001:7001 -p 9091:9091 \
+  -v /opt/openkache/src/deploy/docker/server.properties:/app/config/server.properties:ro \
+  openkache-server
+
+for _ in $(seq 1 30); do
+  if curl -fsS http://127.0.0.1:9091/metrics > /dev/null; then
+    echo "ready" > /opt/openkache/STATUS
+    exit 0
+  fi
+  sleep 2
+done
+echo "failed" > /opt/openkache/STATUS
+exit 1
+%{ endif ~}

@@ -1,0 +1,2 @@
+# terraform.tfvars로 복사해 실제 값을 넣는다. source_commit은 scripts/up.sh가 넘긴다.
+account_id = "123456789012"
