@@ -1,0 +1,10 @@
+{
+  "run": "runs\\run-2026-10-29T00-42-37.370281300Z-5b8d5890\\repeat-001",
+  "files": {
+    "summary.csv": "E3A84FEC1ED945571F2A2955A1D8C8E78C9404AD526512EE9919335DB00AB176",
+    "position-summary.csv": "B68E01FB453E8C26A75BA5E9BA0B126CA09C455DD296AA2D0AF41479960B52D8"
+  },
+  "commonConditions": 288,
+  "positionConditions": 24,
+  "timeDomain": "virtual"
+}

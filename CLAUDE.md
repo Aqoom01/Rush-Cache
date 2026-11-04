@@ -23,14 +23,24 @@ OpenStd(OpenKache)는 고성능 NVMe SSD 기반 분산 캐시의 가용성과 �
 
 - **`cache-core`** (`io.openkache.core`): 순수 Java 라이브러리. production 의존성은 JDK 표준 API만 허용하며 `verifyNoProductionDependencies` task가 `check`에서 검사한다.
   - `api`, `model`, `spi`, `runtime`: 공통 계약 구현 완료 (`CacheEngine`, `Command`, `Result`, `Bytes`, ID 타입, `Transport`, `MetricsSink`, `TimeSource`, `EpochStore`, `OwnerWorker` 등)
-  - `kv`: `KvEngine`이 단일 노드 인메모리 GET/SET/DELETE를 구현한다(`CacheEngine` 구현체). Key마다 고정 worker로 샤딩하고 그 worker thread에서만 저장소를 바꾼다. TTL·eviction·영속화·EXISTS/COUNT·복제·라우팅은 미구현.
-  - `balance`: B2. Split 정책의 공통 입출력 타입(`KeyRange`, `TabletLoad`, `SplitPolicy`, `SplitDecision`)과 Baseline `MidpointSplitPolicy`만 구현했다. `split-for-heat`, 분할 시작 조건, Merge, 재배치는 미구현. 설계는 `experiments/b2-load-balancing/design.md`를 따른다.
-  - `replication`, `failure`, `tablet`, `migration`: 연구 패키지. `package-info.java`로 책임만 적혀 있고 **미구현**이다.
+  - `kv`: `KvEngine`이 단일 노드 인메모리 GET/SET/DELETE/EXISTS/COUNT를 구현한다(`CacheEngine` 구현체). Key마다 고정 worker로 샤딩하고 그 worker thread에서만 저장소에 접근한다. COUNT는 모든 worker에 보내 합산한다. SCAN/RANGE는 `Command`가 아닌 `KvEngine.scan`/`range` 메서드(`ScanResult` 반환)다. 오류 처리 규칙은 `kv/package-info.java`에 있다. TTL·eviction·영속화·복제·라우팅은 미구현이고, EXISTS/COUNT/SCAN/RANGE의 wire opcode도 아직 없다(core에서만 호출 가능).
+  - `balance`: B2. B1 `TabletRange`(hash 구간) 위의 Split 정책 입출력 타입(`TabletLoad`, `SplitPolicy`, `SplitDecision`)과 정책 2개(Baseline `MidpointSplitPolicy`, `HeatSplitPolicy`)를 구현했다. 분할 시작 조건(`SplitTrigger`), 시나리오 실험, Merge, 재배치는 미구현. 설계는 `experiments/b2-load-balancing/design.md`를 따른다.
+  - `migration`: B3 stop-and-copy baseline과 pre-copy·post-copy in-process 프로토콜을 구현했다. pre-copy는 dirty generation·delta seq/tombstone·수렴 조건·final ACK, post-copy는 별도 상태·소유권 선전환·priority/background pull·late-pull 쓰기 보호·실패 후 재개를 제공한다. 상세와 테스트 실행은 `experiments/b3-live-migration/protocols.md`를 따른다. S1~S5 세 방식 비교 backend·finite Zipf·JSON/요약 생성, S3 종료 설정 민감도, S6 취소·장애 비교를 구현했다. S6 extended profile은 delta 일부 적용·ACK 후 취소를 포함한 10경계로, 실제 90회·미지원 60행을 기록한다. 기존 full/quick 135행의 재생성도 유지한다. 실제 KvEngine/peer 연계, E/M scaling과 schema v2 dirty 상세 생성기는 후속이다. 기존 SC1~SC6 실행·결과는 stop-and-copy 단독 결과로 유지한다. 후속 비교 계약은 `experiments/b3-live-migration/design.md` §6.6에 있다.
+  - `replication`: A1·A2 연구 패키지. `primarybackup`(A1)은 SET 동기 복제와 `CrashOnlyPrimaryBackupEngine`의 단일 영구 crash 감지·고정 승계·쓰기 재개를 구현했다. `vr/VrEngine`은 고정 3노드 과반수 로그·view change·미완료 쓰기 복구·중복 요청 처리·읽기 로그 경유를 구현했다. 기본 INCREMENTAL 모드는 증분 PREPARE·작은 COMMIT·확인 기반 재전송을 사용하며 FULL_LOG는 개선 전 재현용이다. 전송 개선과 정책·216조건 비교는 `experiments/a1-active-passive-failover/network-optimization/README.md`, 기존 분단 비교는 `protocol-comparison/README.md`를 따른다. PB의 분단 안전성, 실제 TCP 연결, 재시작 recovery, membership 변경은 미구현이다. `ionia`(A2)는 골격만 있다. 테스트용 `InMemoryTransport`·`VirtualTimeSource`·`DirectMailbox`는 `core.replication` 테스트 패키지에 있다.
+  - `failure`, `tablet`: 연구 패키지. 구현 현황은 각 `package-info.java`를 따른다.
 - **`cache-server`** (`io.openkache.server`): Netty 실행 애플리케이션. 설정 검증, client·peer listener, TCP frame codec, PING, `/metrics`(Prometheus), GET/SET/DELETE의 `KvEngine` 연결까지 구현했다. peer 프로토콜(복제·장애 감지·마이그레이션 메시지)은 PING 외에는 `NOT_IMPLEMENTED`로 응답한다.
 - **`experiment-runner`** (`io.openkache.runner`): Workload Generator + Experiment Runner 최소 구현. `cache-core`에만 의존하고(production), Netty 없이 `protocol-v1`을 직접 구현한 TCP client로 단일 노드 `cache-server`에 GET/SET/DELETE를 보낸다. warm-up/측정 구간 분리, HIT/MISS/실패 분리 집계, reservoir 기반 p50/p99, JSON(원본)+CSV(요약) 결과 기록까지 구현했다. 3-node, 장애 주입, Zipfian 분포는 미구현. 통합 테스트에서만(test 전용 의존성) `cache-server`를 띄워 end-to-end로 검증한다.
 - 의존 방향은 `cache-server → cache-core`, `experiment-runner → cache-core`(+ 테스트 전용 `cache-server`)만 허용한다. Netty·Prometheus·logging 구현은 server에만 둔다. 연구별 Gradle 모듈은 만들지 않는다(`experiment-runner`는 연구가 아닌 공통 모듈이다).
 - `monitoring/`(Prometheus, Grafana), `deploy/`(Dockerfile, compose): linux/amd64에서 이미지 빌드, compose 실행, PING, 호스트 `experiment-runner`로 GET/SET/DELETE 실행, Prometheus 수집, Grafana 대시보드까지 확인했다. 이미지에는 서버 배포본만 들어가지만 `settings.gradle.kts`가 `experiment-runner`를 include하므로 빌드 단계에서 그 디렉터리도 복사해야 한다. linux/arm64 실행은 아직 확인하지 않았다.
 - `infra/`는 비어 있다.
+
+### A1 추가 구현 (2026-10-29)
+
+`cache-core/.../replication/raft/RaftEngine`에 고정 3노드 Raft를 구현했다. seed별 선거 timeout·투표·AppendEntries·충돌 suffix 교체·현재 term commit·읽기 로그 경유를 제공한다. term/vote/log는 메모리에만 있고 재시작 recovery는 지원하지 않는다. PB/VR/Raft 216조건의 별도 비교·결과는 `experiments/a1-active-passive-failover/election-comparison/`에 있다. 기존 pipeline·느린 replica 정책·checkpoint의 멘토 질문은 유지한다.
+
+`replication/chain/ChainEngine`은 head 쓰기·tail 읽기/확정·역방향 Sent Ack·미완료 suffix 복구를 제공한다. 신뢰하는 외부 master가 정확한 영구 crash만 제외하고 전 생존자를 freeze/복구/open한다. 분단된 생존자를 강제 제외하지 않는다. 네 방식 288조건과 위치별 crash 24조건은 `experiments/a1-active-passive-failover/chain-comparison/`에 있다. CRAQ·master 합의·신규 노드 추가·재시작은 미구현이다.
+
+`replication/rose/RoseEngine`은 Rosé에서 착안한 **단일 파티션·op 상한 변형**이다. 다중 파티션 coordinated apply·snapshot·지역 복제·영속 WAL은 재현하지 않았다. L별 예약 lag·성공 쓰기 유실, 대기 deadline·prefix 복구 240조건은 `experiments/a1-active-passive-failover/rose-comparison/`에 있다. 외부 master가 정확한 원래 Primary crash를 알고 최장 생존 prefix를 선택하므로 PB의 고정 승계와 전제가 다르다. 최신 종합 보고·멘토 질문은 `experiments/a1-active-passive-failover/mentoring/2026-10-29-*.md`다.
 
 ## 공통 모듈 명세 요약
 
@@ -55,8 +65,8 @@ OpenStd(OpenKache)는 고성능 NVMe SSD 기반 분산 캐시의 가용성과 �
   - GET: 값의 복사본을 반환하고, 없는 Key는 오류가 아닌 정상 MISS로 처리한다.
   - SET: 같은 Key면 덮어쓴다.
   - DELETE: 삭제 여부를 반환한다.
-  - EXISTS, COUNT를 제공한다. **미구현** — `core.api.Command`(sealed interface)에 연산을 추가해야 해서 팀 확인 후 진행한다.
-  - SCAN/RANGE는 선택이다. B1·B3 요구 확정 후 구현한다.
+  - EXISTS, COUNT를 제공한다. `core.api.Command`에 `Exists`, `Count`를 추가하고 `KvEngine`이 구현했다(B3 확인 후 `WireClient` switch에 case 추가). COUNT 개수는 `Result.value()`에 8-byte big-endian으로 담는다. TCP wire opcode는 **미구현**(B1 영역, `protocol-v1`에 정의 필요).
+  - SCAN/RANGE는 선택이다. B1은 불필요(해시 범위로 Tablet을 나눠 Key를 훑지 않음), B3 요구로 구현했다. `Command`/`Result`가 값 하나만 다루므로 `KvEngine.scan(Predicate<Bytes>, limit)`/`range(start, end, limit)` 메서드로 제공하고 `ScanResult`(상태 + `KvEntry` 목록, Key 바이트 순서 정렬)를 돌려준다. Tablet 해시 범위 선택은 호출자가 predicate로 넣는다(KV는 `core.tablet`을 참조하지 않는다). wire opcode는 **미구현**.
   - 오류 처리 규칙을 문서화한다.
 - **Workload** (`experiment-runner`의 `WorkloadGenerator`/`RunnerConfig`로 구현 완료)
   - 요청: GET/SET/DELETE Operation 자료형(`core.api.Command`를 그대로 쓴다. 재사용). Key 개수·Key 길이·Value 크기를 조절한다.
@@ -85,7 +95,7 @@ OpenStd(OpenKache)는 고성능 NVMe SSD 기반 분산 캐시의 가용성과 �
   - 반복(N회): **미구현**. Execution ID(UUID)는 실행마다 하나 발급한다.
   - 종료 판정: 요청 단위로 TIMEOUT/BUSY/UNAVAILABLE/CLIENT_FAILURE를 구분해 집계한다. Runner 프로세스 자체의 비정상 종료 판정(예: 반복 실행 중 일부 실행만 실패)은 반복 기능이 없어 **미구현**.
   - 결과 수집: JSON/CSV를 직접 쓴다. 여러 실행을 모아 형식 검증·누락 감지하는 것은 **미구현**(현재는 한 번에 한 실행).
-  - Manifest: Git Commit과 dirty 여부는 JSON에 있다. Config 스냅샷(Workload 설정 전체)과 결과 경로는 JSON에 없다(결과 경로는 실행 시 stdout으로만 출력). "실행 명령"·"호스트 환경"은 Runner 쪽 JVM/OS만 기록하고 서버 쪽은 운영자가 `server.workers.hint`/`server.jvm.opts.note`로 적어 넣는 참고값이다(Runner가 서버를 직접 관측하지 않는다).
+  - Manifest: Git Commit은 JSON에 있다. Config 스냅샷(Workload 설정 전체)과 결과 경로는 JSON에 없다(결과 경로는 실행 시 stdout으로만 출력). "실행 명령"·"호스트 환경"은 Runner 쪽 JVM/OS만 기록하고 서버 쪽은 운영자가 `server.workers.hint`/`server.jvm.opts.note`로 적어 넣는 참고값이다(Runner가 서버를 직접 관측하지 않는다).
 
 **연구별 공통 모듈 사용**:
 
@@ -145,3 +155,7 @@ experiment-runner/build/install/openkache-experiment-runner/bin/openkache-experi
 - 브랜치: `master`(검증된 결과물·마일스톤), `develop`(통합). 작업 브랜치는 `develop`에서 `<type>/<영문 요약>`으로 만들고 MR로 `develop`에 병합한다(Squash 권장). 마일스톤 완료 시 `develop` → `master` MR(Squash 금지).
 - 커밋: `<type>: <한국어 설명>` (예: `feat: KV Store GET/SET 구현`)
 - MR 제목: `[Type] 작업 내용 (S15P31D111-<번호>)`. 본문은 `.gitlab/merge_request_templates/Default.md`를 쓰고 `Closes S15P31D111-<번호>`(작업이 남으면 `Refs`)로 Jira 이슈를 연결한다.
+
+## B3 선행 증감·재배치 실험 추가 (2026-11-02)
+
+선행 메커니즘 8개의 연구 prototype은 `experiments/b3-live-migration/scaling-decision/backend/`의 Python 코드로 구현했다. 공통 Runner가 test의 `LiteratureResearchMain`을 통해 실행한다. 가상 요청·대기열·준비·전송 모형이며 실제 OpenKache 노드 실행·원 논문 시스템의 재현은 아니다. 구현 변경점·실행·결과는 해당 폴더의 `README.md`·`results.md`를 따른다. 기존 자체 비교 정책 세 개는 사용하지 않는다. production 노드 증감 controller와 실제 migration 연계·M scheduler는 후속이다.

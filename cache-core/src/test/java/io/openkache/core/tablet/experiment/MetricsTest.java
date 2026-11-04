@@ -61,6 +61,45 @@ class MetricsTest {
     }
 
     @Test
+    void groupMetricsOnHandMadeTable() {
+        RoutingTable t = halves(N1, N2);
+        long[] hashes = {1, 2, Long.MIN_VALUE, Long.MIN_VALUE + 1, 3}; // 노드1, 노드1, 노드2, 노드2, 노드1
+
+        // 묶음 0 = {key0, key1} 전부 노드1, 묶음 1 = {key2, key3} 전부 노드2, 묶음 2 = {key4} 혼자
+        int[] together = {0, 0, 1, 1, 2};
+        assertEquals(0.0, Metrics.groupsSplitRatio(t, hashes, together, 3), 1e-12);
+        assertEquals(1.0, Metrics.sameNodePairRatio(t, hashes, together, 3), 1e-12);
+
+        // 묶음 0 = {key0, key2} 노드1+노드2, 묶음 1 = {key1, key3} 노드1+노드2, 묶음 2 = {key4}
+        int[] apart = {0, 1, 0, 1, 2};
+        assertEquals(1.0, Metrics.groupsSplitRatio(t, hashes, apart, 3), 1e-12);
+        assertEquals(0.0, Metrics.sameNodePairRatio(t, hashes, apart, 3), 1e-12);
+
+        // 묶음 0 = {key0, key1, key2}: 노드1 둘, 노드2 하나 → 순서쌍 6개 중 같은 노드 2개. 묶음 1 = {key3, key4}: 노드2+노드1 → 0개
+        int[] mixed = {0, 0, 0, 1, 1};
+        assertEquals(1.0, Metrics.groupsSplitRatio(t, hashes, mixed, 2), 1e-12);
+        assertEquals(2 / 8.0, Metrics.sameNodePairRatio(t, hashes, mixed, 2), 1e-12);
+
+        assertEquals(3 / 5.0, Metrics.largestGroupShare(mixed, 2), 1e-12);
+    }
+
+    @Test
+    void taggedKeysAreGroupedAndReproducible() {
+        Workload.Tagged a = Workload.taggedKeys(10, 1000, 0.0, 5);
+        Workload.Tagged b = Workload.taggedKeys(10, 1000, 0.0, 5);
+
+        assertEquals(1000, a.keys().length);
+        assertArrayEquals(a.groupOf(), b.groupOf());
+        assertEquals(a.keys()[0], b.keys()[0]);
+        for (int i = 0; i < a.keys().length; i++) {
+            String key = new String(a.keys()[i].toByteArray(), java.nio.charset.StandardCharsets.UTF_8);
+            assertTrue(key.startsWith("{g" + a.groupOf()[i] + "}:"), key);
+        }
+        assertEquals(0.1, Metrics.largestGroupShare(a.groupOf(), 10), 0.05);
+        assertTrue(Metrics.largestGroupShare(Workload.taggedKeys(10, 1000, 0.99, 5).groupOf(), 10) > 0.25);
+    }
+
+    @Test
     void greedyBoundIsLptOnUnitLoads() {
         // 단위 부하 7, 6, 5, 4 를 노드 2대에: 7+4=11, 6+5=11 → 완벽 균형 1.0
         assertEquals(1.0, Metrics.greedyBound(new long[] {7, 6, 5, 4}, 2), 1e-12);

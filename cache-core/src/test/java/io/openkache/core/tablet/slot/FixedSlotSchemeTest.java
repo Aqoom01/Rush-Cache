@@ -26,15 +26,17 @@ class FixedSlotSchemeTest extends DistributionSchemeContract {
     }
 
     @Test
-    void initialAssignsSlotsRoundRobin() {
+    void initialAssignsContiguousBlocks() {
         RoutingTable t = scheme().initial(nodes(3));
 
         assertEquals(SLOTS, t.size());
         assertEquals(SLOTS, t.nextTabletId());
+        // 64 = 21·3 + 1 → 노드1이 22개(0~21), 노드2가 21개(22~42), 노드3이 21개(43~63)
         for (int i = 0; i < SLOTS; i++) {
             Tablet tablet = t.tablets().get(i);
             assertEquals(i, tablet.id().value());
-            assertEquals(new NodeId(1 + i % 3), tablet.owner());
+            NodeId expected = i < 22 ? new NodeId(1) : i < 43 ? new NodeId(2) : new NodeId(3);
+            assertEquals(expected, tablet.owner(), "slot " + i);
         }
         assertEquals(22, t.ownedBy(new NodeId(1)).size());
         assertEquals(21, t.ownedBy(new NodeId(2)).size());
@@ -97,11 +99,14 @@ class FixedSlotSchemeTest extends DistributionSchemeContract {
     @Test
     void metadataShrinksWhenOwnersAreContiguous() {
         FixedSlotScheme s = new FixedSlotScheme(SLOTS);
-        RoutingTable roundRobin = s.initial(nodes(2)); // 주인이 번갈아 가므로 구간 64개
+        RoutingTable two = s.initial(nodes(2)); // 연속 블록이라 구간 2개
         RoutingTable single = s.initial(nodes(1)); // 구간 1개
 
-        assertEquals(16 + 64 * 20, s.metadataBytes(roundRobin));
+        assertEquals(16 + 2 * 20, s.metadataBytes(two));
         assertEquals(16 + 20, s.metadataBytes(single));
+        // 노드 하나 추가: 각 donor의 마지막 슬롯부터 떼므로 블록 끝이 잘려 나가고 구간은 노드 수 + α만 늘어난다
+        RoutingTable three = s.onNodeAdded(two, new NodeId(3)).applyAll();
+        assertTrue(s.metadataBytes(three) <= 16 + 6 * 20, "bytes=" + s.metadataBytes(three));
     }
 
     @Test

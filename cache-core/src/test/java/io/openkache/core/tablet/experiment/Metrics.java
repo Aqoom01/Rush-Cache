@@ -4,10 +4,13 @@ import io.openkache.core.model.NodeId;
 import io.openkache.core.model.TabletId;
 import io.openkache.core.tablet.RoutingTable;
 import io.openkache.core.tablet.Tablet;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * 분배 지표. 전부 {@link RoutingTable}의 공개 연산만 쓰므로 variant와 무관하다.
@@ -114,6 +117,31 @@ final class Metrics {
         return total == 0 ? 0 : (double) max / total;
     }
 
+    /** {@code hashes[from, to)}의 key가 각 Tablet에 몇 개씩 있는지. 요청 수 대신 key 수를 부하로 볼 때 쓴다. */
+    static long[] keyLoads(RoutingTable table, long[] hashes, int from, int to) {
+        int[] ones = new int[to - from];
+        Arrays.fill(ones, 1);
+        return unitLoads(table, Arrays.copyOfRange(hashes, from, to), ones);
+    }
+
+    /**
+     * key 순서로 이어진 {@code window}개를 한 번에 읽을 때(범위 조회) 거치는 Tablet(또는 노드)의 평균 수. {@code orderedHashes}는 key 순서여야
+     * 한다. 순서 보존 variant는 1에 가깝고, 해시 variant는 min(window, 단위 수)에 가깝다.
+     */
+    static double distinctPerWindow(RoutingTable table, long[] orderedHashes, int window, boolean byNode) {
+        int windows = orderedHashes.length / window;
+        long total = 0;
+        for (int w = 0; w < windows; w++) {
+            Set<Object> seen = new HashSet<>();
+            for (int i = w * window; i < (w + 1) * window; i++) {
+                Tablet t = table.lookup(orderedHashes[i]);
+                seen.add(byNode ? t.owner() : t.id());
+            }
+            total += seen.size();
+        }
+        return windows == 0 ? 0 : (double) total / windows;
+    }
+
     /** 가장 많이 요청된 key 하나의 비율. 어떤 분배로도 이 key는 쪼갤 수 없다. */
     static double hottestKeyShare(int[] requests) {
         long total = 0;
@@ -138,6 +166,79 @@ final class Metrics {
         long elapsed = System.nanoTime() - start;
         double perLookup = (double) elapsed / hashes.length;
         return sink == Long.MIN_VALUE ? -1 : perLookup; // sink 사용 (JIT가 루프를 지우지 못하게)
+    }
+
+    /**
+     * key가 두 노드 이상에 흩어진 묶음의 비율. key가 하나뿐인 묶음은 흩어질 수 없으므로 분모에서 뺀다. 해시 태그 variant는 0이어야 하고,
+     * key 전체를 해시하는 variant는 묶음 크기가 노드 수보다 크면 거의 1이다.
+     */
+    static double groupsSplitRatio(RoutingTable table, long[] hashes, int[] groupOf, int groups) {
+        long[] counts = groupNodeCounts(table, hashes, groupOf, groups);
+        int stride = counts.length / groups;
+        long eligible = 0;
+        long split = 0;
+        for (int g = 0; g < groups; g++) {
+            long size = 0;
+            int nodesHit = 0;
+            for (int n = 0; n < stride; n++) {
+                long c = counts[g * stride + n];
+                size += c;
+                if (c != 0) {
+                    nodesHit++;
+                }
+            }
+            if (size >= 2) {
+                eligible++;
+                if (nodesHit > 1) {
+                    split++;
+                }
+            }
+        }
+        return eligible == 0 ? 0 : (double) split / eligible;
+    }
+
+    /**
+     * 같은 묶음의 서로 다른 두 key가 같은 노드에 있을 확률(묶음 크기로 가중한 순서쌍 기준). multi-key 요청이 한 노드에서 끝날 확률이다.
+     * 해시 태그 variant는 1.0, key 전체를 해시하면 노드 수 n에 대해 약 1/n.
+     */
+    static double sameNodePairRatio(RoutingTable table, long[] hashes, int[] groupOf, int groups) {
+        long[] counts = groupNodeCounts(table, hashes, groupOf, groups);
+        int stride = counts.length / groups;
+        double pairs = 0;
+        double samePairs = 0;
+        for (int g = 0; g < groups; g++) {
+            long size = 0;
+            for (int n = 0; n < stride; n++) {
+                long c = counts[g * stride + n];
+                size += c;
+                samePairs += (double) c * (c - 1);
+            }
+            pairs += (double) size * (size - 1);
+        }
+        return pairs == 0 ? 0 : samePairs / pairs;
+    }
+
+    /** 가장 큰 묶음의 key 비율. 해시 태그 variant에서는 이 값 × 노드 수가 key 균형의 하한이다. */
+    static double largestGroupShare(int[] groupOf, int groups) {
+        long[] size = new long[groups];
+        for (int g : groupOf) {
+            size[g]++;
+        }
+        long max = 0;
+        for (long s : size) {
+            max = Math.max(max, s);
+        }
+        return groupOf.length == 0 ? 0 : (double) max / groupOf.length;
+    }
+
+    /** 묶음 × 노드별 key 수. 인덱스 {@code g * (maxNodeId + 1) + nodeId}. */
+    private static long[] groupNodeCounts(RoutingTable table, long[] hashes, int[] groupOf, int groups) {
+        int stride = maxId(new ArrayList<>(table.nodes())) + 1;
+        long[] counts = new long[Math.multiplyExact(groups, stride)];
+        for (int i = 0; i < hashes.length; i++) {
+            counts[groupOf[i] * stride + (int) table.lookup(hashes[i]).owner().value()]++;
+        }
+        return counts;
     }
 
     private static double maxMean(long[] perNode, List<NodeId> nodes) {

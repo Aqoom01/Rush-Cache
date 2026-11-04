@@ -1,0 +1,10 @@
+{
+  "model": "sustained-primary-crash-1",
+  "sha256": {
+    "experiments/a1-active-passive-failover/load-crash/runs/run-2026-10-28T08-10-13.129127300Z-c4191cbd/repeat-001/summary.csv": "e010df24ef20154ccd31e7249d98d3290942919402074cef4bbb93c035ff1fad",
+    "experiments/a1-active-passive-failover/load-crash/plot_results.py": "1004ba7ee852235037832d96afd72ff7fd87f1cc958077cefc6ee8c98a3979d4",
+    "experiments/a1-active-passive-failover/load-crash/figures/failover-matrix.png": "dea0e236036e6bced9d360ae431c7bfb21f7fa3a11ef22ecadae6d6ff8e54270",
+    "experiments/a1-active-passive-failover/load-crash/figures/large-values.png": "b73dccec6076f085bd543ebc17f06e581f9d17806d1a72df98f9445d17cca64f",
+    "experiments/a1-active-passive-failover/load-crash/figures/small-values.png": "d3738d630a44d2626761b95fa489a82fd6a073a58043e320da0fcedd76bd63c3"
+  }
+}

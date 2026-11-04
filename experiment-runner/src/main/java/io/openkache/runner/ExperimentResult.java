@@ -46,5 +46,4 @@ record ExperimentResult(
         long latencyTotalObserved,
         Map<Outcome, Long> outcomeCounts,
         String faultScenario,
-        Optional<String> gitCommit,
-        Optional<Boolean> workingTreeDirty) {}
+        Optional<String> gitCommit) {}

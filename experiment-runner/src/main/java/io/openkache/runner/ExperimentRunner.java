@@ -289,7 +289,6 @@ final class ExperimentRunner {
                 accumulator.latencyTotalObserved(),
                 outcomeCounts,
                 "none",
-                git.commit(),
-                git.workingTreeDirty());
+                git.commit());
     }
 }

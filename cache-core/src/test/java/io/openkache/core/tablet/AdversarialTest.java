@@ -181,7 +181,7 @@ class AdversarialTest {
         FixedSlotScheme s = new FixedSlotScheme(7); // 7 은 2 로 나누어떨어지지 않는다
 
         RoutingTable t = s.initial(List.of(max, zero));
-        assertEquals(4, t.ownedBy(max).size()); // 라운드로빈은 목록 순서. 첫 노드가 하나 더
+        assertEquals(4, t.ownedBy(max).size()); // 블록 배치는 목록 순서. 나머지 1개는 첫 노드가 받는다
         assertEquals(3, t.ownedBy(zero).size());
 
         RoutingTable t3 = s.onNodeAdded(t, new NodeId(5)).applyAll();

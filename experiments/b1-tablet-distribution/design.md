@@ -1,6 +1,6 @@
 # B1 설계
 
-상태: 공통 타입·인터페이스·`fixed-slot`까지 구현(§7). 소유권 판정, 전파, 나머지 variant, §6 실험은 미구현.
+상태: 공통 타입·인터페이스·`fixed-slot`·`hash-range-tablet`·`ring-vnode`·`hash-tag-tablet`·`resizable-slot`·`key-order-tablet`·표 전파·소유권 판정(in-process)까지 구현(§7). wire 인코딩, §6 실험의 split 시나리오(S6)는 미구현. 2026-10-28부터 표 계열 variant를 늘려 비교하는 방향(§8).
 
 ## 1. 목표와 범위
 
@@ -28,7 +28,7 @@ B1은 **표를 만들고 바꾸는 연산을 제공**한다. 무엇을 옮기고
 | experiment-runner (B3) | 클라이언트 라우팅(표 캐시, `MOVED` 재시도) | 단일 노드 전용 | 1단계는 in-process 실험만. 2단계에서 runner 안에 B1 소유 client 패키지를 두는 것을 B3와 합의한다 |
 | Metrics | 실험 결과 기록 | 결과 Schema 합의 전 | 1단계 결과는 테스트 출력과 CSV. Schema 확정 후 JSON으로 옮긴다 |
 
-**B2의 질문에 대한 답 (B2 design.md §2):** Tablet은 **key hash(64비트)의 범위**다. key 바이트 순서 범위가 아니다. 이유는 §3. 따라서 순차 증가 key의 쓰기는 여러 Tablet에 흩어지며, B2의 "순차 쓰기" 시나리오(S4)와 `SEQUENTIAL_WRITES` 보류 규칙은 hash 범위에서는 발생하지 않는다. key 순서 범위 variant(Bigtable 계열)는 범위 조회가 선택 사항인 캐시에 실용 가치가 낮아 구현 대상에서 제외했다. B2가 그 시나리오를 꼭 보려면 variant 추가를 다시 논의한다.
+**B2의 질문에 대한 답 (B2 design.md §2):** Tablet은 **64비트 점 공간의 범위**이고, 기본 variant들은 그 점이 key hash다. key 바이트 순서 범위가 아니다. 이유는 §3. 따라서 순차 증가 key의 쓰기는 여러 Tablet에 흩어지며, B2의 "순차 쓰기" 시나리오(S4)와 `SEQUENTIAL_WRITES` 보류 규칙은 hash 범위에서는 발생하지 않는다. 처음에는 key 순서 범위 variant(Bigtable 계열)를 실용 가치가 낮다고 제외했으나, 2026-10-29에 비교 폭을 위해 `key-order-tablet`(§4.7)으로 추가했다. 점이 key의 앞 8바이트(순서 보존)라 표 구조는 같고, B2의 순차 쓰기 시나리오는 이 variant 위에서만 나타난다(비교 실험 S8). B2의 `KeyRange`는 이 variant에서만 뜻이 있다.
 
 ## 3. 공통 모델
 
@@ -53,6 +53,7 @@ variant가 구현하는 계약이다. B2·B3는 이 인터페이스만 호출하
 
 ```
 name()                                    실험 결과의 variant 값
+keyHash(key)                  → long      key → 해시 공간의 점. 기본은 key 전체의 KeyHash (hash-tag-tablet만 hash tag)
 initial(nodes)                → RoutingTable   첫 표. 버전 1, epoch 1
 onNodeAdded(table, node)      → Plan      새 노드가 받을 Tablet. 이동 실행은 B3
 onNodeRemoved(table, node)    → Plan      떠나는 노드의 Tablet을 받을 노드
@@ -65,7 +66,7 @@ metadataBytes(table)          → int       표를 이 variant의 형식으로 �
   `withSplit(id, at)`, `withMerge(a, b)`, `withOwner`, `apply(Change)`를 variant와 무관하게 공통으로 쓴다. variant는 표를 처음 만드는 규칙과
   노드 증감 시 계획만 정한다. 그 결과 B2·B3가 만지는 타입은 `RoutingTable`, `Tablet`, `Change`, `Plan`뿐이고 `DistributionScheme`은
   Controller와 실험 코드만 쓴다.
-- `lookup`의 입력은 key가 아니라 **64비트 해시값**이다. 세 variant 모두 해시 공간 위에서 동작하므로 key 바이트열을 받을 이유가 없다.
+- `lookup`의 입력은 key가 아니라 **64비트 해시값**이다. 모든 variant가 해시 공간 위에서 동작하므로 표가 key 바이트열을 받을 이유가 없다. key → 해시값은 `keyHash(key)`가 정하고(기본 구현은 `KeyHash.of`), 이것을 바꾸는 variant는 `hash-tag-tablet`뿐이다(§4.5). 클라이언트와 서버는 같은 variant의 `keyHash`를 써야 한다.
 - Tablet 식별자는 variant마다 다른 타입을 두지 않고 **`TabletId` 하나로 통일**한다(슬롯 번호, 토큰 번호도 `TabletId`). B2·B3 코드가 variant마다 갈라지지 않게 하기 위해서다.
 - `TabletId`는 Controller만 발급한다. split 자식의 id가 노드마다 다르게 매겨지는 일을 막는다.
 - 인터페이스를 지금 두는 이유: 구현이 처음부터 셋이라 근거 없는 추상화가 아니다. 사전 실험의 `Partitioner`(5종 구현)를 정리한 것이다.
@@ -78,11 +79,97 @@ metadataBytes(table)          → int       표를 이 variant의 형식으로 �
 |---|---|---|
 | 슬롯 수 S | 4096 | Redis 16384는 노드 1000대 가정(하트비트 비트맵 2KB). 노드 ≤ 10대면 4096으로 노드당 400개 이상이라 정수 나눗셈 편차가 0.3% 이하. 1024·16384와 비교 실험(§6) |
 | 슬롯 번호 | 공통 `KeyHash`의 균등 구간 번호 (`hash / (2^64 / S)`) | Redis는 `CRC16(key) mod 16384`. 상위 비트를 쓰면 분포는 같고 `RoutingTable.lookup`을 그대로 쓸 수 있다. 해시 자체는 variant 간 공정 비교를 위해 공통으로 고정 |
-| 초기 배치 | 슬롯 i → 노드 (i mod n) | 최대·최소 차이 1 |
+| 초기 배치 | 연속 블록: 노드 j → 슬롯 [j·S/n, (j+1)·S/n), 나머지는 앞 노드부터 1개씩 | 최대·최소 차이 1. 연속 슬롯의 주인이 같아 표를 구간으로 압축하면 크기가 노드 수에 비례(176 B). 라운드로빈이면 G × 20 B (비교 실험 AUX) |
 | 노드 추가 | 가장 많이 가진 노드에서 하나씩, 새 노드가 S/(n+1)에 닿을 때까지 | 이동 수가 이론 최소 S/(n+1). 기존 노드끼리는 이동 없음 |
 | 노드 제거 | 떠나는 노드의 슬롯을 가장 적게 가진 노드에 하나씩 | 이동 수 = 그 노드의 슬롯 수 |
 | hash tag | 없음 | 단일 key 연산만 |
 | 이동 중 라우팅 | `ASK` 없음. 표상 주인이 끝까지 처리하고 핸드오프 순간에만 `MOVED` | Valkey 9.0 atomic slot migration과 같은 모양. 세 variant의 전파 방식을 하나로 고정하기 위해 |
+
+### 4.2 `hash-range-tablet`의 결정 (2단계)
+
+참고 자료: [Google Slicer와 ScyllaDB Tablets](references/slicer-scylla-tablets.md). fixed-slot과 표·조회·이동 연산은 같고, **구간 수와 길이가 split·merge로 바뀐다**는 점만 다르다. split·merge를 **언제·어디서** 할지는 B2가 정하고, 이 variant는 그 결정을 받아 적용할 수 있게 `supportsSplit() = true`를 돌려준다.
+
+| 파라미터 | 기본값 | 근거 |
+|---|---|---|
+| 초기 Tablet 수 | 노드당 T개, 기본 T = 64 (비교 실험은 T = G / 8) | Slicer는 서버당 50~150개 유지(§4.4.1). 사전 실험 3에서 노드당 32~64개면 노드 추가 직후 균형 1.03 이내, 표 5~10 KB |
+| 초기 배치 | 해시 공간을 n·T개로 균등 분할, 연속 블록 배치 | Slicer 처음 할당이 균등 분할(§4.4). 배치는 fixed-slot과 같은 연속 블록(표 압축) |
+| 노드 추가 | 가장 긴 노드의 마지막 Tablet부터, 받고 나서 그 donor의 받기 전 길이 이상이 되면 멈춘다. Tablet 하나뿐인 노드는 donor 제외 | 새 노드 길이는 [평균 − 가장 긴 Tablet, 추가 전 최대] 안. 큰 Tablet은 B2가 먼저 split해야 균형이 잡힌다. B2의 재배치 계획이 있으면 그것을 쓴다 |
+| 노드 제거 | 떠나는 노드의 Tablet을 가장 적게 가진 노드에 하나씩 | 위와 같음 |
+| split | `RoutingTable.withSplit(id, at)`. `at`은 해시값. 자식 둘 다 부모의 주인·epoch 승계, 뒤쪽 자식은 새 id | 쪼개기만 하고 주인은 안 바꾼다(Slicer phase 5 "Split hot slices without changing their task assignments"). 옮기는 건 별도 `Change` |
+| merge | `RoutingTable.withMerge(left, right)`. 인접하고 주인이 같을 때만. epoch는 둘 중 큰 값 | Slicer phase 3도 먼저 같은 서버로 옮긴 뒤 합친다 |
+| 노드 균형 기준 | Tablet **개수**가 아니라 해시 공간 **길이** 기준으로 donor를 고른다 | split 후에는 Tablet마다 길이가 달라 개수로 세면 key 균형이 틀어진다. fixed-slot과 다른 유일한 규칙 |
+
+### 4.3 표 전파·소유권 판정의 결정 (2단계)
+
+variant와 무관하게 하나다. 세 참여자(Controller, 노드, 클라이언트)가 각자 표 사본을 들고, 원본은 Controller 하나다. 사본이 낡아도 서비스는 멈추지 않고, 낡은 사본으로 온 요청은 `MOVED`로 바로잡는다. 코드는 `core.tablet.routing`.
+
+| 규칙 | 결정 | 근거 |
+|---|---|---|
+| 전파 | Controller가 변경 직후 모든 노드에 push 1회(실패해도 재시도 없음) + 모든 응답에 응답자의 표 버전(피기백) + 낡은 요청에 `MOVED` | 사전 실험(표 전파 전략 비교)에서 push+피기백+리다이렉트가 수렴 2 ms, Controller 분할 중 실패 0. push를 놓친 노드는 피기백으로 알고 `GetTable`로 받아 간다 |
+| 버전 | `RoutingVersion`은 Controller만 올린다. 노드·클라이언트는 더 큰 버전만 받아들인다 | 늦게 도착한 옛 push로 표가 뒤로 가지 않는다 |
+| 변경 | `Controller.apply(expectedVersion, 변경)`. 요청자가 본 버전이 현재와 다르면 거절(CAS) | B2·B3가 서로 모르고 같은 Tablet을 건드리는 사고 방지. B3 `MigrationCommitter.commit(job, expectedTable)` = `move(expectedTable.version(), job.change())` |
+| 노드 판정 | 내 표에서 내가 주인이면 OK. 아니면 `MOVED` + 새 주인. 요청 epoch < 내 epoch면 `STALE_EPOCH`. 요청 epoch > 내 epoch면 내 표가 낡은 것이므로 redirect 없는 `MOVED`로 거절하고 표를 받아 온다. epoch 0은 검사 안 함 | Redis Cluster MOVED. `ASK`는 쓰지 않는다(§4.1) |
+| 두 주인 방지 | 표가 아니라 노드 로컬에 거절 플래그(`LocalRouting.stopServing`). cutover 순서: (1) 옛 주인 거절 시작 → (2) 마지막 복사 → (3) `Controller.move` → (4) 새 주인 서비스. 플래그는 그때 epoch에 묶이고, 주인이 바뀐 표를 받으면 자동으로 풀린다 | 사전 실험의 stale serve(0.3~1.1건)는 (1) 없이 라우팅만으로 할 때의 수치. 순서는 B3 설계(§3)와 같다. 거절 중인 Tablet이 split되면(같은 주인·같은 epoch로 범위만 나뉨) 새 id의 조각에도 거절이 승계된다 |
+| 클라이언트 | `MOVED`면 표를 받아 오고, 못 받으면 redirect 힌트로 바로 재시도. 최대 3회, 넘으면 `UNAVAILABLE`. 피기백으로 더 새 버전을 보면 다음 호출 전에 갱신 | redis-py 등 Redis 클라이언트의 관례(3회). 응답을 기다리는 경로에서 표를 동기로 받지 않기 위해 |
+| Controller 장애 | 서비스는 계속(노드가 표를 들고 있음), 표 변경만 멈춤. 복제·버전 영속화는 범위 밖 | 보고서에 한계로 명시 |
+| push 수신 확인 | 없음. 못 받은 노드는 `check` 뒤 `needsRefresh()`를 보고 `requestTable`을 부르는 것이 엔진(서버 연동)의 책임 | 피기백이 메우므로 Controller가 확인·재시도하지 않는다 |
+
+### 4.4 `ring-vnode`의 결정 (3단계)
+
+참고 자료: [Dynamo와 Cassandra vnode](references/dynamo-cassandra-vnode.md). 표 없이 토큰 목록만으로 분배하는 **Dynamo Strategy 1**(순수 링)을 재현한다. Strategy 3(균등 구간 Q개 고정)는 fixed-slot과 같으므로 따로 두지 않는다. 구간의 주인이 토큰 위치로 정해지므로 임의 재배치가 없고(`supportsMove() = false`), "표를 두면 무엇을 얻는가"의 기준선이다.
+
+| 파라미터 | 기본값 | 근거 |
+|---|---|---|
+| 토큰 수 V | 노드당 V개. 기본값 16(`DEFAULT_TOKENS_PER_NODE`, 계산 배치 기준), 비교 실험은 V = G / 8 | ketama 100~200, Cassandra 무작위 256 / 알고리즘 배치 16. Karger는 노드당 Θ(log n)개면 균형 |
+| 토큰 위치 | `hash(nodeId, i)`, i = 0..V−1. 결정적 | 불변식 2(난수 없음). 무작위 배치의 균형 문제를 재현하면서 실험은 재현 가능 |
+| 배치 규칙 옵션 | `RANDOM`(위) / `BALANCED`(토큰마다 가장 많이 맡은 노드의 가장 긴 호 앞부분을, 새 노드가 공정 몫 1/(n+1)에 가까워질 만큼 잘라 옴) | Cassandra 2.x 무작위 vs 4.0 allocator의 차이를 재는 실험 변수. allocator는 노드별 소유량 균형이 목표라 "가장 긴 호의 중점"(호 길이만 고름)으로는 안 된다(구현 중 확인: 노드 균형 1.25, 새 노드 몫 0.085). 복제 인식 부분은 복제가 없어 생략 |
+| 초기 표 | 모든 노드의 토큰을 정렬, 토큰 사이가 Tablet, 주인은 시계 방향 다음 토큰의 노드 | Dynamo §4.2. 첫 토큰 앞 구간은 마지막 토큰에서 wrap |
+| 노드 추가 | `prepared` = 새 토큰 V개 자리에서 `withSplit`(주인 그대로). `moves` = 그 앞쪽 조각 V개를 새 노드로 | `prepared`가 입력과 다른 유일한 variant(§3 `Plan`). 기존 노드끼리 이동 없음(monotone) |
+| 노드 제거 | 떠나는 노드의 Tablet 각각을 시계 방향 다음 토큰의 주인에게. 토큰(경계)은 지우지 않고 받는 노드가 물려받는다 | 받는 노드를 고를 수 없다. 표에 토큰 생사를 적지 않으므로 "경계 = 토큰"을 유지한다(Dynamo Strategy 3의 토큰 재분배와 같은 모양). 토큰을 지운 링이 필요하면 이동 완료 후 `RingScheme.compact`(같은 주인의 이웃 Tablet 합치기) |
+| split / move | 없음 | 비교 실험의 그리디 한계는 `NA`(임의 이동이 없으므로) |
+| `metadataBytes` | 16 + 토큰 수 × 16 (8 B 토큰 + 8 B NodeId, 다른 variant와 같은 크기) | 표가 아니라 토큰 목록 크기 |
+
+### 4.5 `hash-tag-tablet`의 결정 (4단계, 표 계열 확장 1)
+
+참고 자료: [Hash tag와 partition key](references/hash-tag-partition-key.md). 표·조회·노드 증감·split은 `hash-range-tablet`과 완전히 같고, **key → 해시값 함수만** key 전체가 아니라 key 안의 hash tag(`{...}`)로 바꾼다. 같은 tag의 key는 해시값이 같아 언제나 한 Tablet, 한 노드에 있다. 분배 단위가 key에서 "tag 묶음"으로 커지는 대가로 multi-key 요청을 한 노드에서 끝낼 수 있다.
+
+| 파라미터 | 기본값 | 근거 |
+|---|---|---|
+| 구현 | `HashTagScheme`이 `HashRangeScheme`에 위임, `keyHash`만 override | 표 모양이 같으므로 코드를 복제하지 않는다. tag 없는 key만 있으면 결과가 `hash-range-tablet`과 같다(테스트로 확인) |
+| tag 규칙 | Redis Cluster 명세: 첫 `{`와 그 뒤 첫 `}` 사이가 비어 있지 않으면 그 부분, 아니면 key 전체 | 가장 널리 쓰이고 명세가 분명하다. OpenKache key는 바이트열이라 구분자 규칙이 따로 없다 |
+| 묶음과 split | 묶음은 해시값이 하나라 split으로도 나눌 수 없다 | 묶음 하나가 크거나 뜨거우면 그 노드의 불균형은 어떤 재배치로도 못 푼다. DynamoDB의 hot partition 지침과 같은 한계. 응용이 tag 설계를 책임진다 |
+| 비교 실험 | S7 태그 묶음(§6). S1~S5는 tag 없는 key라 `hash-range-tablet`과 같은 값이어야 한다 | 묶음 크기 쏠림에 따른 key 균형 손실 vs 같은 묶음 두 key가 한 노드에 있을 확률(1.0 vs 약 1/n) |
+
+### 4.6 `resizable-slot`의 결정 (5단계, 표 계열 확장 2)
+
+참고 자료: [ScyllaDB tablet resize](references/scylla-tablet-resize.md). `fixed-slot`처럼 균등 슬롯이되 슬롯 수를 운영 중에 **전체 2배 / 절반**으로만 바꾼다. 슬롯 하나만 쪼개는 `hash-range-tablet`과 슬롯 수가 영원히 고정인 `fixed-slot`의 중간이다. ScyllaDB는 평균 tablet 크기로 결정하지만 우리는 데이터 크기를 모르므로 **노드당 슬롯 수**로 바꿨다.
+
+| 파라미터 | 기본값 | 근거 |
+|---|---|---|
+| 슬롯 수 | 2의 거듭제곱. 처음은 노드 수 × T 이상인 가장 작은 2의 거듭제곱, T = 512(비교 실험은 T = G / 8, 노드 8대면 S = G) | ScyllaDB tablet 수가 2의 거듭제곱(쌍으로 split/merge). 노드 8대에서 fixed-slot과 같은 표가 되어 S1·S5·S7이 비교 가능 |
+| 2배 조건 | 노드당 슬롯 수 S/n < T/2 | ScyllaDB "평균 크기 > 목표의 2배"의 개수판. 2배 직후 S/n ≥ T |
+| 절반 조건 | S/n > 2T (그리고 S/2 ≥ n) | "평균 크기 < 목표의 절반"의 개수판. 절반 직후 S/n ≤ T. 상한이 하한의 2배 이상이라 2배↔절반이 진동하지 않는다 |
+| 2배 연산 | `doubled(table)`: 모든 슬롯을 한가운데서 쪼갬. 왼쪽은 id 유지, 오른쪽은 `nextTabletId`부터 새 id. 주인·epoch 유지, 버전 +1 | `RoutingTable.withSplit`과 같은 id 규칙이라 B2·B3가 들고 있는 `TabletId`가 유효하다(왼쪽 조각). 데이터 이동 없음 |
+| 2배 시점 | 노드 추가 계획의 `prepared`에서 자동 | 주인이 안 바뀌는 변경이므로 `Plan.prepared`의 뜻에 맞다. 노드 추가 직후 S/(n+1)이 하한 아래로 떨어지는 때가 곧 2배가 필요한 때 |
+| 절반 연산 | 두 단계. `halving(table)` = 이웃한 쌍(표의 2k, 2k+1번째)의 주인이 다르면 "지금 쌍이 적은 노드"로 모으는 이동(쌍마다 1건) + 노드 간 쌍 수 차이가 1을 넘으면 쌍 단위 이동. 이동이 끝나면 `merged(table)` = 메타데이터만 합침(왼쪽 id, 큰 epoch, 버전 +1) | ScyllaDB도 sibling을 같은 복제 집합에 모은 뒤 합친다. 노드 제거 계획 안에서 하지 않는 이유: 계획의 이동은 모두 떠나는 노드에서 나가야 한다(불변식 6). 호출자(Controller·실험)가 `decide(table)`를 보고 따로 한다 |
+| 노드 추가 | 2배(필요 시) 뒤 "가장 많이 가진 노드의 마지막 슬롯"을 새 노드가 그 노드와 같아지기 직전까지 | hash-range의 길이 규칙을 개수로 옮긴 것. fixed-slot의 "정확히 S/(n+1)개"와 달리 2배 직후 차이 2인 표에서도 결과가 차이 1 이하가 된다(2배 전 차이 1 → 2배 후 2) |
+| 노드 제거 | 떠나는 노드의 슬롯을 가장 적게 가진 노드에 하나씩. 동률이면 그 슬롯의 쌍을 가진 노드 우선, 그다음 작은 NodeId | 뒤따르는 절반의 이동을 줄인다. 균형이 먼저이므로 동률일 때만 |
+| split / move | `supportsSplit() = false`, `supportsMove() = true` | 슬롯 하나만 쪼개면 균등 분할이 깨진다. B2는 이 variant에서 개별 split 대신 전체 resize를 쓴다 |
+| `metadataBytes` | 24 + 구간 수 × 20 (fixed-slot 압축 + 슬롯 수·resize 이력 8 B) | 경계는 균등이라 보낼 필요가 없고, id는 resize 규칙(왼쪽 유지·오른쪽 새 번호)이 정해져 있어 위치에서 복원된다 |
+| 비교 실험 | S4에 `size_max`·`metadata_bytes_max` 추가, 새 시나리오 S9(16 → 2 → 16)에서 절반·2배 횟수와 그 이동량 | "슬롯 수를 조절해서 얻는 것(노드당 슬롯 수 유지)"과 "절반에 드는 이동"을 한 번에 본다 |
+
+### 4.7 `key-order-tablet`의 결정 (6단계, 표 계열 확장 3)
+
+참고 자료: [Bigtable·HBase·TiKV의 키 순서 범위](references/bigtable-key-order-tablet.md). key를 해시하지 않고 **바이트 순서 그대로** 범위로 나눈다. 표·조회·노드 증감·split은 `hash-range-tablet`과 같고, 다른 것은 key → 점 변환(순서 보존)과 데이터를 보고 경계를 정하는 pre-split뿐이다. "해시 대신 순서"의 이득(범위 조회·접두사 묶음)과 대가(순차 key hot spot)를 재기 위해 둔다.
+
+| 파라미터 | 기본값 | 근거 |
+|---|---|---|
+| key → 점 | 앞 8바이트 big-endian 부호 없는 정수, 짧으면 0 채움 (`KeyOrderScheme.pointOf`) | 모든 variant가 같은 64비트 `RoutingTable`을 쓰기 위한 타협. 앞 8바이트 안에서 B2 `KeyRange.ORDER`와 순서가 같다. 앞 8바이트가 같은 key는 같은 점이라 더 못 쪼갠다(테스트·문서로 명시). Bigtable은 경계가 실제 key라 이 제한이 없다 |
+| 처음 표 (기본) | 순서 공간 균등 분할, 노드당 T개 (`hash-range`와 동일) | 데이터 분포를 모를 때의 기본값. 순차 key면 전부 한 구간에 들어간다(S8로 수치화) |
+| 처음 표 (pre-split) | `initial(nodes, sampleKeys)`: 표본의 분위수에 경계. 서로 다른 경계가 모자라면 구간 수가 줄고, 노드 수보다 적으면 거절 | HBase pre-splitting. 기존 데이터의 균형은 잡지만 표본 밖(더 큰 key)은 마지막 구간으로 간다 |
+| 노드 증감·split·move | `HashRangeScheme`에 위임. `supportsSplit = true` | 표 모양이 같으므로 복제하지 않는다 |
+| `metadataBytes` | hash-range와 같은 32 B/Tablet | 경계가 8바이트 점이라서. Bigtable처럼 실제 key를 경계로 두면 key 길이만큼 더 든다 |
+| 비교 실험 | S8 순차 key(§6): 기본 표·pre-split·split 64회 뒤의 hot spot과 균형, 범위 조회 창 100개가 거치는 Tablet·노드 수. S1~S5는 난수 key라 hash-range와 같고, S7은 `{g<i>}:<j>`의 앞 8바이트가 겹쳐 점이 적어진다(순서 variant에 문자열 key를 넣었을 때의 한계 그대로 기록) | 해시 variant들과 같은 key로 돌려 "순서를 보존하면 무엇이 달라지는가"만 남긴다 |
 
 ## 5. 불변식
 
@@ -92,7 +179,7 @@ variant 구현은 모두 아래를 지켜야 하며, 단위 테스트로 검증�
 2. 같은 표, 같은 해시에는 같은 `locate` 결과를 낸다. 난수와 실제 시각을 쓰지 않는다.
 3. 변경 연산(`withOwner`, `split`, `merge`, `onNodeAdded`의 결과 적용)은 입력 표를 바꾸지 않고 새 표를 돌려주며, `RoutingVersion`은 정확히 1 증가한다.
 4. `withOwner`는 그 Tablet의 `OwnershipEpoch`만 1 올리고 다른 Tablet의 epoch는 바꾸지 않는다.
-5. `onNodeAdded`가 돌려준 `Change`를 모두 적용하면 새 노드를 포함한 모든 노드의 Tablet 수 차이가 1 이하다(`fixed-slot`, `hash-range-tablet`). `ring-vnode`는 토큰 수만 보장한다.
+5. `onNodeAdded`가 돌려준 `Change`를 모두 적용하면: `fixed-slot`은 새 노드를 포함한 모든 노드의 Tablet 수 차이가 1 이하다. `hash-range-tablet`은 길이 기준이다. 추가 시 새 노드 길이가 [평균 − 가장 긴 Tablet, 추가 전 최대] 안이고, 제거 시 노드 간 길이 차이가 max(이전 차이, 가장 긴 Tablet) 이하다(길이가 모두 같으면 fixed-slot과 같은 결과). `ring-vnode`는 토큰 수만 보장한다.
 6. `onNodeAdded`의 `Change`는 `to`가 모두 새 노드다(기존 노드끼리 이동 없음). `onNodeRemoved`의 `Change`는 `from`이 모두 떠나는 노드다.
 7. `split`의 두 자식 범위는 부모 범위를 빈틈·겹침 없이 덮고, `merge`는 인접하고 owner가 같은 두 Tablet만 합친다.
 
@@ -106,6 +193,9 @@ variant 구현은 모두 아래를 지켜야 하며, 단위 테스트로 검증�
 2. 노드 증감 시 이동량은 이론 최소 1/(n+1)에 붙는가? 반복 증감에도 누적 손실이 없는가?
 3. 요청이 쏠릴 때, 단위를 통째로 옮기는 것만으로 도달할 수 있는 균형의 한계는 G에 따라 어떻게 달라지는가? (split이 필요한 영역과 분배로는 못 푸는 영역을 가른다)
 4. (variant가 늘면) 표를 두는 방식(fixed-slot, hash-range)과 두지 않는 방식(ring-vnode)의 균형·이동량·표 크기 차이는?
+5. key 대신 태그 묶음을 분배 단위로 삼으면(hash-tag-tablet) 묶음 크기 쏠림에 따라 key 균형과 쏠림 한계가 얼마나 나빠지고, 그 대가로 같은 묶음 두 key가 한 노드에 있을 확률은 얼마나 오르는가?
+6. 슬롯 수를 전체 2배/절반으로 조절하면(resizable-slot) 노드 수가 움직일 때 노드당 슬롯 수와 표 크기가 어떻게 유지되고, 절반(merge)에 드는 이동은 노드 증감 자체의 이동에 비해 얼마나 되는가?
+7. key를 해시하지 않고 순서대로 나누면(key-order-tablet) 순차 key 삽입이 얼마나 한 Tablet·한 노드에 몰리고, pre-split과 split으로 얼마나 회복되며, 그 대가로 범위 조회가 거치는 Tablet·노드 수는 얼마나 주는가?
 
 ### 동일 조건
 
@@ -120,7 +210,12 @@ variant마다 잘게 자르는 손잡이가 다르므로(fixed-slot은 전체 S,
 | S3 노드 제거 | 8 → 7대 | G 4종 | 이동 비율, 제거 후 균형 | ≈ 1/8 |
 | S4 연속 증감 | 1 → 16대 한 대씩, 다시 16 → 8 | G = 4096 | 누적 이동 비율 vs Σ 1/n, 매 단계 균형 | 누적 = 이론(여분 churn 0), 매 단계 max−min ≤ 1 |
 | S5 쏠림 한계 | 노드 8대, Zipf θ ∈ {0.9, 0.99, 1.2} 요청 100만 | G 4종 | 그대로 max/mean, 단위 이동 그리디 한계, 가장 뜨거운 단위·key 비중 | 그대로 ~1.7(θ=0.99, 실험 2: 1.73). 한계는 G 클수록 1.0에 접근, θ=1.2는 hot key 하나 때문에 ~1.5 바닥(실험 2: 1.516) |
+| S7 태그 묶음 | 노드 8대, key 100만 개를 tag 묶음 P개에 나눠 담음(`{g<i>}:<j>`), 요청 Zipf θ=0.99 | P ∈ {100, 1천, 1만, 10만} × 묶음 크기 Zipf θ_g ∈ {0, 0.99}, G = 4096 | key 균형, 가장 큰 묶음 비율, 흩어진 묶음 비율, 같은 묶음 두 key 같은 노드 확률, 요청 max/mean·그리디 한계, 노드 추가 이동 비율 | hash-tag만 흩어진 묶음 0·같은 노드 확률 1.0. key 균형은 θ_g=0.99·P=100에서 가장 큰 묶음(≈19%) × 8 ≈ 1.5 이상, P ≥ 1만이면 표 방식과 비슷. 나머지 variant는 같은 노드 확률 ≈ 1/8 |
+| S8 순차 key | 노드 8대, 순차 key 100만 개(앞 8바이트 big-endian 번호 + 난수 꼬리 8바이트). 앞 절반은 기존 데이터, 뒤 절반은 순서대로 삽입. key-order만 기존 데이터로 pre-split한 표도 만들고, split 되는 variant는 삽입 앞 절반을 보고 가장 뜨거운 Tablet을 중앙값에서 64회 쪼갠다 | G = 4096 | 전체 key 균형, 기존·삽입 key의 가장 뜨거운 Tablet 비중, 삽입 key의 노드 균형, 범위 조회 창 100개가 거치는 Tablet·노드 수, pre-split 뒤 같은 지표, split 뒤 본 데이터의 hot spot·그리디 한계와 다음 삽입의 hot spot | key-order 기본 표는 삽입 100%가 Tablet 하나(노드 균형 8.0), pre-split하면 기존 데이터는 1.0x지만 삽입은 여전히 마지막 Tablet, split 64회면 본 데이터는 그리디로 1.0까지 내려가지만 다음 삽입은 다시 끝 Tablet 100%. 범위 조회는 key-order 1 Tablet·1 노드, 해시 variant ~99 Tablet·8 노드 |
+| S9 크기 조절 | 노드 16 → 2대 한 대씩 줄이고 다시 16대로. resizable-slot은 매 단계 뒤 `decide`가 절반이면 `halving` 이동 + `merged`, 추가 시 2배는 계획 안에서 | G = 4096 (T = 512) | 누적 이동 비율(절반 이동 포함)·절반 이동만의 비율 vs Σ 1/n, 절반·2배 횟수, 슬롯 수 최소·최대, 표 크기 최대, 최악 단위·key 균형 | resizable-slot은 절반 2회(7대·3대)·2배 1회(9대). 절반 이동은 "섞인 쌍 비율 / 2"(쌍마다 슬롯 하나). 나머지 variant는 슬롯 수 불변(ring은 split로 늘기만). 결과: 절반 1회 0.24, 누적 4.25 vs 이론 3.76 (results.md 5차) |
 | 보조 | 표 크기(초기 / 추가 후), `lookup` ns | G 4종 | | 표 크기는 구간 수 × 20B, ns는 log G |
+
+S4에는 2026-10-29부터 `size_max`·`size_final`·`metadata_bytes_max`를 함께 기록한다(resizable-slot이 1 → 16대 동안 언제 2배 하는지 보기 위해. 다른 variant는 값이 상수거나 ring처럼 split 누적).
 
 "가설"은 실행 전에 적은 것이고 결과가 다르면 그대로 기록한다.
 
@@ -129,19 +224,20 @@ variant마다 잘게 자르는 손잡이가 다르므로(fixed-slot은 전체 S,
 - 단위 수 max/mean: `ownedBy(n).size()` 노드별 최대 / (G/n)
 - key 수 max/mean: key마다 `lookup(KeyHash.of(key)).owner()` 집계, 최대 / (K/n)
 - 이동 비율: 전·후 표에서 owner가 바뀐 key 수 / K (단위 기준은 `Plan.moves().size()` / 단위 수)
-- 그리디 한계: 단위별 요청 수를 LPT(큰 것부터 가장 한가한 노드에)로 재배치했을 때의 max/mean. 표는 안 바꾼다. "어떤 재배치도 이 아래로는 못 간다". `supportsMove()`가 false인 variant는 참고값
+- 그리디 한계: 단위별 요청 수를 LPT(큰 것부터 가장 한가한 노드에)로 재배치했을 때의 max/mean. 표는 안 바꾼다. "단위 이동만으로 내릴 수 있는 값"이지 하한은 아니다. 하한은 가장 뜨거운 단위 비중 × 노드 수이고, 둘이 같으면 LPT가 최적이다. `supportsMove()`가 false인 variant는 `NA`
 - Zipf: 순위 r의 확률 ∝ 1/r^θ, 누적분포 이진 탐색, seed 고정
+- S7 묶음 지표: 흩어진 묶음 비율 = key가 두 노드 이상에 있는 묶음 / key 2개 이상인 묶음. 같은 노드 확률 = 같은 묶음의 서로 다른 두 key가 같은 노드에 있는 순서쌍 / 전체 순서쌍(묶음 크기로 가중). key → 해시는 variant의 `keyHash`
 
 ### 실행 환경
 
-- in-process. 서버·네트워크·실제 시계 없음. seed 5개 × 시나리오. 전체 1분 안쪽
+- in-process. 서버·네트워크·실제 시계 없음. seed 5개 × 시나리오. variant 7개 전체 약 25분(`ring-vnode-alloc`의 S4·S9가 각 5분)
 - 코드: `cache-core/src/test/java/io/openkache/core/tablet/experiment/` (`main`이 있는 러너 + 틀 검증 `MetricsTest`). `./gradlew test`에서는 돌지 않는다
-- 결과: `distribution-comparison/summary.csv` (long 형식: `variant, scenario, G, nodes, keys, theta, seed, metric, value`)
+- 결과: `distribution-comparison/summary.csv` (long 형식: `variant, scenario, G, nodes, keys, theta, groups, seed, metric, value`)
 - 표 전파 시간, `MOVED` 재시도율, Controller 장애 시 실패 수는 2단계(실제 노드·클라이언트)에서 측정한다
 
 ### 1차 결과 요약 (fixed-slot, 2026-10-20)
 
-G는 균형에 거의 영향이 없고(key 균형은 노드당 key 수가 정함, 이동 비율은 G ≥ 1024면 이론 최소), 증감 직후 정수 나눗셈 불균형·표 크기·조회 비용만 바꾼다. θ ≤ 0.99의 쏠림은 단위 이동만으로 1.01 이하까지 내려가고, θ = 1.2는 hot key 하나(19%) 때문에 G와 무관하게 1.52가 바닥이다. S 기본값 4096 유지, 초기 배치는 라운드로빈 → 연속 블록으로 바꿀 것(표 크기 82 KB → 수백 B). 상세는 results.md.
+G는 균형에 거의 영향이 없고(key 균형은 노드당 key 수가 정함, 이동 비율은 G ≥ 1024면 이론 최소), 증감 직후 정수 나눗셈 불균형·표 크기·조회 비용만 바꾼다. θ ≤ 0.99의 쏠림은 단위 이동만으로 1.01 이하까지 내려가고, θ = 1.2는 hot key 하나(19%) 때문에 G와 무관하게 1.52가 바닥이다. S 기본값 4096 유지, 초기 배치는 라운드로빈 → 연속 블록으로 변경 반영(표 크기 82 KB → 176 B). 상세는 results.md.
 
 ## 7. 코드 구조
 
@@ -155,15 +251,37 @@ cache-core/src/main/java/io/openkache/core/tablet/
 ├── Change.java                    (unit, from, to)
 ├── Plan.java                      (prepared, moves)
 ├── DistributionScheme.java        §4 인터페이스
-└── slot/
-    └── FixedSlotScheme.java       fixed-slot
-(이후) range/HashRangeScheme.java, ring/RingScheme.java, OwnershipCheck.java, Controller
+├── slot/
+│   └── FixedSlotScheme.java       fixed-slot
+├── range/
+│   └── HashRangeScheme.java       hash-range-tablet (길이 기준 균형)
+├── ring/
+│   └── RingScheme.java            ring-vnode (토큰 사이 구간, 배치 RANDOM / BALANCED, compact)
+├── tag/
+│   └── HashTagScheme.java      hash-tag-tablet (hash-range에 위임, keyHash만 hash tag)
+├── resize/
+│   └── ResizableSlotScheme.java   resizable-slot (균등 슬롯, 전체 2배 doubled / 절반 halving+merged, decide)
+├── order/
+│   └── KeyOrderScheme.java        key-order-tablet (hash-range에 위임, keyHash는 앞 8바이트 순서 보존, 표본 pre-split)
+└── routing/                       표 전파·소유권 판정 (variant 무관, §4.3)
+    ├── TableMessage.java          TablePush / GetTable / TableReply (PeerMessage)
+    ├── OwnershipCheck.java        순수 판정: OK / MOVED(redirect) / STALE_EPOCH, 피기백 버전
+    ├── LocalRouting.java          노드 로컬: 표 사본(버전 더 클 때만 교체) + 거절 플래그(B3 cutover 1단계)
+    ├── Controller.java            표 원본. apply(expectedVersion, 변경) = CAS, 성공 시 push
+    └── RoutingClient.java         클라이언트: 표 캐시, MOVED 따라가기(최대 3회), 피기백으로 갱신
+(이후) wire 인코딩(MOVED redirect 필드, 표 메시지 opcode)
 
 cache-core/src/test/java/io/openkache/core/tablet/
 ├── KeyHashTest.java, TabletRangeTest.java
 ├── RoutingTableTest.java               §5 불변식 1~4·7 (표 자체)
 ├── DistributionSchemeContract.java     §5 불변식 5·6 + 인터페이스 계약. 모든 variant 테스트가 상속
 ├── slot/FixedSlotSchemeTest.java       계약 상속 + fixed-slot 고유 규칙
+├── range/                              계약 상속 + 길이 기준 균형, 무작위 split/merge/증감
+├── ring/                               계약 상속 + 링 오라클(토큰 → 시계 방향)과 lookup 일치, 무작위 증감
+├── tag/                             계약 상속 + tag 규칙, 같은 tag는 한 Tablet, 표·계획이 hash-range와 동일
+├── resize/                          계약 상속 + 2배/절반 규칙(id·주인·epoch 유지, 쌍 모으기, 차이 1 복원), 무작위 증감 + 자동 resize
+├── order/                           계약 상속 + 점 변환(앞 8바이트, KeyRange.ORDER와 순서 일치), 순차 key 한 Tablet, pre-split 분위수
+├── routing/                            판정·클라이언트·Controller 단위 + PropagationScenarioTest(Controller 1 + 노드 3 + 클라이언트, FakeTransport)
 └── experiment/                         §6 실험 러너(DistributionComparison, main), Workload, Metrics, Variants, MetricsTest
 
 experiments/b1-tablet-distribution/
@@ -175,7 +293,7 @@ experiments/b1-tablet-distribution/
 
 규칙:
 
-- **패키지는 variant별로 나눈다** (`slot`, `range`, `ring`). B2가 기능별로 나누는 것과 다른데, B1은 "같은 기능의 다른 구현"이 아니라 "분배 방식 자체"가 비교 대상이기 때문이다. 공통 타입은 `tablet` 바로 아래에 둔다.
+- **패키지는 variant별로 나눈다** (`slot`, `range`, `ring`, `tag`, `resize`, `order`). B2가 기능별로 나누는 것과 다른데, B1은 "같은 기능의 다른 구현"이 아니라 "분배 방식 자체"가 비교 대상이기 때문이다. 공통 타입은 `tablet` 바로 아래에 둔다.
 - **variant 하나는 클래스 하나**가 된다. 클래스 Javadoc에 참고 문헌을 적고, `references/`의 정리 문서와 이름을 맞춘다.
 - **B2·B3가 쓰는 공통 타입(`Tablet`, `TabletRange`, `RoutingTable`, `Change`)은 영향받는 담당자 리뷰를 받는다.** `core.model`에는 올리지 않고 `core.tablet`에 둔다. `model`에 올릴 필요가 생기면 그때 팀 확인.
 - **실험 폴더는 비교하는 질문 기준으로 만든다.** `distribution-comparison/`은 모든 variant를 같은 시나리오로 비교한다.
@@ -204,3 +322,11 @@ experiments/b1-tablet-distribution/
 | 이동 중 라우팅 | `ASK` 없음 | §4.1 |
 | `fixed-slot` S 기본값 | 4096 유지. 1차 실험으로 확인(1024도 충분, 16384는 이득 없음) | §4.1, §6 |
 | 인터페이스 모양 | 조회·split/merge·이동 반영은 `RoutingTable` 공통. variant는 `initial`, `onNodeAdded/Removed → Plan`, `supportsSplit/Move`, `metadataBytes`만 | §4 |
+| `ring-vnode` 재현 대상 | Dynamo Strategy 1(토큰이 구간을 정하는 순수 링). Strategy 3는 fixed-slot과 같아 제외. 토큰 배치는 결정적 해시, 배치 규칙 2종을 실험 변수로 (2026-10-27) | §4.4 |
+| 방향 전환: 표 계열 확장 | 처음 3개를 끝낸 뒤 "표를 두는" variant를 더 넣어 비교 폭을 넓힌다: 해시 태그(`hash-tag-tablet`, 완료) → 크기 조절 슬롯(ScyllaDB식 전체 2배/절반) → key 순서 범위(Bigtable 계열). jump/rendezvous 같은 계산식 해시는 B2·B3가 끼어들 자리(`supportsMove`)가 없어 **제외 유지** (2026-10-28) | README, §4.5 |
+| `keyHash` 인터페이스 | key → 해시값을 `DistributionScheme.keyHash(key)`로 variant가 정한다(default = `KeyHash.of`). 표는 여전히 해시값만 받는다 (2026-10-28) | §4 |
+| `ring-vnode` 토큰 되찾기 | 새 토큰이 이미 있는 경계와 같으면(떠났던 NodeId 재합류) 한 칸 밀어 쪼개지 않고 그 경계에서 끝나는 Tablet을 통째로 새 노드가 맡는다. 밀면 폭 1짜리 Tablet만 받는 퇴화가 있었다(4차 리뷰에서 발견, 2026-10-28) | §4.4 |
+| 표 크기의 NodeId 크기 | 모든 variant가 NodeId를 8 B로 센다. `ring-vnode`만 4 B로 세어 토큰당 12 B였던 것을 16 B로 통일 (2026-10-28) | §4.4, §6 |
+| 그리디 한계의 뜻 | LPT로 도달 가능한 값(상한)이지 "어떤 재배치도 못 내려가는" 하한이 아니다. 하한은 가장 뜨거운 단위 비중 × 노드 수. 문서 문구를 고쳤고 지표 이름(`greedy_bound`)은 유지 (2026-10-28) | §6 |
+| `resizable-slot` 절반은 계획 밖에서 | 2배는 노드 추가 계획의 `prepared`로 자동이지만, 절반은 쌍을 모으는 이동이 필요해 `onNodeRemoved` 안에 넣으면 불변식 6(이동은 모두 떠나는 노드에서)이 깨진다. `decide` → `halving` → `merged`를 호출자가 한다. ScyllaDB의 "크기" 기준은 "노드당 슬롯 수"로 바꿈 (2026-10-29) | §4.6 |
+| key 순서 variant 추가, 점은 앞 8바이트 | 10-19에 제외했던 Bigtable 계열을 `key-order-tablet`으로 추가. `RoutingTable`을 바꾸지 않기 위해 key → 점을 앞 8바이트 순서 보존 변환으로 두고(앞 8바이트가 같은 key는 못 쪼갬), 경계 타입은 `TabletRange` 하나로 유지. B2 `KeyRange`는 이 variant에서만 뜻이 있다. 계약 테스트의 "tag 없는 key는 `KeyHash`와 같다" 검사는 해시 variant에만 적용 (2026-10-29) | §2, §4.7 |

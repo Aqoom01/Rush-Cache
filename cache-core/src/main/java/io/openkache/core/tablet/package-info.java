@@ -9,7 +9,8 @@
  * 분배 방식(variant)은 {@link io.openkache.core.tablet.DistributionScheme}으로 바꿔 끼운다. 표 조회와 변경 연산은 variant와
  * 무관하게 {@code RoutingTable}이 맡고, variant는 표를 처음 만드는 규칙과 노드 증감 시 이동 계획만 정한다.
  *
- * <p>상태: 공통 타입과 인터페이스까지 구현. variant 구현({@code slot}, {@code range}, {@code ring} 하위 패키지), 소유권 판정,
- * 표 전파는 미구현. 설계는 {@code experiments/b1-tablet-distribution/design.md}를 따른다.
+ * <p>상태: 공통 타입과 인터페이스, variant {@code slot}(fixed-slot)·{@code range}(hash-range-tablet)·{@code ring}(ring-vnode)·
+ * {@code tag}(hash-tag-tablet), 표 전파·소유권 판정({@code routing}, in-process)까지 구현. wire 인코딩은 미구현. 설계는
+ * {@code experiments/b1-tablet-distribution/design.md}를 따른다.
  */
 package io.openkache.core.tablet;

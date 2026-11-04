@@ -39,7 +39,12 @@ final class ResultWriter {
             Path studyDir = resultsDir.resolve(sanitize(result.study()));
             Files.createDirectories(studyDir);
             Path file = studyDir.resolve("summary.csv");
-            boolean writeHeader = Files.notExists(file);
+            boolean writeHeader = Files.notExists(file) || Files.size(file) == 0;
+            if (!writeHeader) {
+                try (var reader = Files.newBufferedReader(file, StandardCharsets.UTF_8)) {
+                    if (!csvHeader().equals(reader.readLine())) throw new IOException("기존 CSV 열 구성이 다릅니다. 새 결과 폴더를 사용하세요: " + file);
+                }
+            }
             try (var writer =
                     Files.newBufferedWriter(
                             file, StandardCharsets.UTF_8, StandardOpenOption.CREATE, StandardOpenOption.APPEND)) {
@@ -69,7 +74,7 @@ final class ResultWriter {
                         "warmupRequests", "warmupElapsedNanos", "measuredRequests", "measuredElapsedNanos",
                         "throughputPerSecond", "p50Nanos", "p99Nanos", "latencySampleCount",
                         "latencyTotalObserved", "hit", "miss", "writeOk", "busy", "timeout", "unavailable",
-                        "serverError", "clientFailure", "gitCommit", "workingTreeDirty",
+                        "serverError", "clientFailure", "gitCommit",
                         "resultSchemaVersion"));
     }
 
@@ -108,7 +113,6 @@ final class ResultWriter {
                         Long.toString(counts.getOrDefault(Outcome.SERVER_ERROR, 0L)),
                         Long.toString(counts.getOrDefault(Outcome.CLIENT_FAILURE, 0L)),
                         csvField(r.gitCommit().orElse("")),
-                        r.workingTreeDirty().map(String::valueOf).orElse(""),
                         csvField(r.resultSchemaVersion())));
     }
 
@@ -157,8 +161,6 @@ final class ResultWriter {
         entries.add(entryOutcomeCounts(r.outcomeCounts()));
         entries.add(entry("faultScenario", r.faultScenario()));
         entries.add(entryNullableString("gitCommit", r.gitCommit().orElse(null)));
-        entries.add(
-                entryNullableString("workingTreeDirty", r.workingTreeDirty().map(String::valueOf).orElse(null)));
 
         return "{\n  " + String.join(",\n  ", entries) + "\n}\n";
     }
