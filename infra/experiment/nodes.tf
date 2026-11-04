@@ -2,6 +2,8 @@ locals {
   # 교보재 조건: cache-server 8대 + 부하 생성 1대.
   max_project_instances = 9
   results_bucket        = "openstd-s15p31d111-results"
+  # m6gd.medium instance store(약 59GB) 중 KV 저장소로 쓸 용량.
+  nvme_capacity_bytes = 40 * 1024 * 1024 * 1024
 }
 
 # 상한 검사: 이 state 밖의 프로젝트 인스턴스(종료되지 않은 것)와 합쳐 9대를 넘으면 plan이 실패한다.
@@ -29,10 +31,12 @@ resource "aws_instance" "node" {
   iam_instance_profile   = "openkache-node"
 
   user_data = templatefile("${path.module}/user_data.sh.tftpl", {
-    results_bucket = local.results_bucket
-    source_commit  = var.source_commit
-    node_id        = count.index + 1
-    role           = "node"
+    results_bucket         = local.results_bucket
+    source_commit          = var.source_commit
+    node_id                = count.index + 1
+    role                   = "node"
+    storage_engine         = var.storage_engine
+    storage_capacity_bytes = local.nvme_capacity_bytes
   })
   user_data_replace_on_change = true
 
@@ -71,10 +75,12 @@ resource "aws_instance" "loadgen" {
   iam_instance_profile   = "openkache-node"
 
   user_data = templatefile("${path.module}/user_data.sh.tftpl", {
-    results_bucket = local.results_bucket
-    source_commit  = var.source_commit
-    node_id        = 0
-    role           = "loadgen"
+    results_bucket         = local.results_bucket
+    source_commit          = var.source_commit
+    node_id                = 0
+    role                   = "loadgen"
+    storage_engine         = var.storage_engine
+    storage_capacity_bytes = local.nvme_capacity_bytes
   })
   user_data_replace_on_change = true
 

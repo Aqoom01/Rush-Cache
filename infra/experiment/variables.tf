@@ -14,6 +14,17 @@ variable "iam_user_name" {
   default     = "OpenStd"
 }
 
+variable "storage_engine" {
+  description = "cache-server KV 저장소. nvme면 instance store를 포맷해 쓴다(docs/storage-nvme.md)."
+  type        = string
+  default     = "memory"
+
+  validation {
+    condition     = contains(["memory", "nvme"], var.storage_engine)
+    error_message = "storage_engine은 memory 또는 nvme여야 한다."
+  }
+}
+
 variable "node_count" {
   description = "cache-server 노드 수. 교보재 조건상 최대 8대(부하 생성 1대는 별도)."
   type        = number
