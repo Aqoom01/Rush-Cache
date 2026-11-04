@@ -1,0 +1,91 @@
+name: openkache-fd-udp
+
+x-node: &node
+  build:
+    context: ..
+    dockerfile: docker/Dockerfile.udp
+  image: openkache-fd-udp:local
+  init: true
+  cpus: ${FD_NODE_CPUS:-1.0}
+  mem_limit: ${FD_NODE_MEMORY:-512m}
+  pids_limit: ${FD_NODE_PIDS_LIMIT:-256}
+  entrypoint:
+    - java
+    - -cp
+    - /app/lab.jar
+    - ${FD_MAIN_CLASS:-com.openkache.failuredetector.transport.UdpExperimentNodeMain}
+  environment: &node-environment
+    FD_PROFILE: ${FD_PROFILE:-swim-base}
+    FD_PRODUCT_ALGORITHM: ${FD_PRODUCT_ALGORITHM:-swim-lifeguard}
+    FD_PORT: "19000"
+    FD_TCP_PORT: "19001"
+    FD_DURATION_SECONDS: ${FD_PEER_DURATION_SECONDS:-20}
+    FD_PEERS: "${FD_PEERS:-0=node0:19000,1=node1:19000,2=node2:19000}"
+    FD_VERIFY_HELPER_COUNT: ${FD_VERIFY_HELPER_COUNT:-1}
+    FD_VERIFY_FAILURE_QUORUM: ${FD_VERIFY_FAILURE_QUORUM:-1}
+    FD_VERIFY_FAILED_ROUNDS: ${FD_VERIFY_FAILED_ROUNDS:-2}
+    FD_RING_NEIGHBOR_COUNT: ${FD_RING_NEIGHBOR_COUNT:-2}
+    FD_MEMBERSHIP_LOSS_PERCENT: ${FD_MEMBERSHIP_LOSS_PERCENT:-0}
+    FD_MEMBERSHIP_DELAY_MILLIS: ${FD_MEMBERSHIP_DELAY_MILLIS:-0}
+    FD_MEMBERSHIP_REORDER_MILLIS: ${FD_MEMBERSHIP_REORDER_MILLIS:-0}
+    FD_MEMBERSHIP_COPIES: ${FD_MEMBERSHIP_COPIES:-1}
+    FD_MEMBERSHIP_FAULT_SEED: ${FD_MEMBERSHIP_FAULT_SEED:-1}
+    JAVA_TOOL_OPTIONS: "${FD_JAVA_TOOL_OPTIONS:--Xms128m -Xmx128m -XX:+UseG1GC -Xlog:gc*:file=/tmp/gc.log:time,uptime,level,tags}"
+  networks:
+    - fd-lab
+
+services:
+  node0:
+    <<: *node
+    environment:
+      <<: *node-environment
+      FD_NODE_ID: "0"
+      FD_DURATION_SECONDS: ${FD_OBSERVER_DURATION_SECONDS:-15}
+
+  node1:
+    <<: *node
+    environment:
+      <<: *node-environment
+      FD_NODE_ID: "1"
+    cap_add:
+      - NET_ADMIN
+
+  node2:
+    <<: *node
+    environment:
+      <<: *node-environment
+      FD_NODE_ID: "2"
+
+  node3:
+    <<: *node
+    environment:
+      <<: *node-environment
+      FD_NODE_ID: "3"
+
+  node4:
+    <<: *node
+    environment:
+      <<: *node-environment
+      FD_NODE_ID: "4"
+
+  node5:
+    <<: *node
+    environment:
+      <<: *node-environment
+      FD_NODE_ID: "5"
+
+  node6:
+    <<: *node
+    environment:
+      <<: *node-environment
+      FD_NODE_ID: "6"
+
+  node7:
+    <<: *node
+    environment:
+      <<: *node-environment
+      FD_NODE_ID: "7"
+
+networks:
+  fd-lab:
+    internal: true
