@@ -69,7 +69,8 @@ public final class ServerApplication implements AutoCloseable {
         try {
             app.startComponents();
             return app;
-        } catch (InterruptedException | RuntimeException e) {
+        } catch (Exception e) {
+            // Netty bind().sync()는 BindException 같은 checked 예외를 선언 없이 던지므로 Exception으로 받아 정리한다.
             app.close();
             throw e;
         }
