@@ -1,5 +1,6 @@
 package io.openkache.server.config;
 
+import io.openkache.core.kv.KvStorage;
 import io.openkache.core.model.NodeId;
 import java.io.IOException;
 import java.io.InputStream;
@@ -29,6 +30,8 @@ import java.util.Set;
  * @param adminPort {@code /metrics} port ({@code admin.port})
  * @param workers core worker 수 ({@code workers}, 1-256)
  * @param requestTimeout 요청 기본 timeout ({@code request.timeout.ms}). GET·SET·DELETE 구현 시 사용한다
+ * @param storage KV 저장소 ({@code storage.*}). 기본은 메모리. {@code storage.engine=nvme}이면 {@code storage.path}와
+ *     {@code storage.capacity.bytes}가 필요하다({@code docs/storage-nvme.md})
  */
 public record ServerConfig(
         NodeId nodeId,
@@ -39,9 +42,27 @@ public record ServerConfig(
         int peerPort,
         int adminPort,
         int workers,
-        Duration requestTimeout) {
+        Duration requestTimeout,
+        KvStorage storage) {
 
     public static final int MAX_WORKERS = 256;
+
+    private static final long DEFAULT_SEGMENT_BYTES = 64L * 1024 * 1024;
+    private static final long DEFAULT_WRITE_BUFFER_BYTES = 64L * 1024;
+
+    /** 메모리 저장소 설정. */
+    public ServerConfig(
+            NodeId nodeId,
+            String clusterId,
+            String bindHost,
+            String adminHost,
+            int clientPort,
+            int peerPort,
+            int adminPort,
+            int workers,
+            Duration requestTimeout) {
+        this(nodeId, clusterId, bindHost, adminHost, clientPort, peerPort, adminPort, workers, requestTimeout, KvStorage.memory());
+    }
 
     private static final String DEFAULT_RESOURCE = "/application.properties";
     private static final Set<String> KEYS =
@@ -54,7 +75,13 @@ public record ServerConfig(
                     "peer.port",
                     "admin.port",
                     "workers",
-                    "request.timeout.ms");
+                    "request.timeout.ms",
+                    "storage.engine",
+                    "storage.path",
+                    "storage.capacity.bytes",
+                    "storage.segment.bytes",
+                    "storage.write.buffer.bytes",
+                    "storage.direct.io");
 
     /** {@code path}가 있으면 그 파일을, 없으면 classpath의 {@code application.properties}를 읽는다. */
     public static ServerConfig load(Path path) {
@@ -105,6 +132,8 @@ public record ServerConfig(
             }
         }
 
+        KvStorage storage = storage(p, workers);
+
         if (!p.errors.isEmpty()) {
             throw new ConfigException("invalid config: " + String.join("; ", p.errors));
         }
@@ -117,7 +146,44 @@ public record ServerConfig(
                 peerPort,
                 adminPort,
                 workers,
-                Duration.ofMillis(timeoutMs));
+                Duration.ofMillis(timeoutMs),
+                storage);
+    }
+
+    /** {@code storage.*}를 읽는다. 오류는 {@code p.errors}에 모으고 그때는 메모리 저장소를 돌려준다. */
+    private static KvStorage storage(Parser p, int workers) {
+        String engine = p.optionalText("storage.engine", "memory");
+        if (engine.equals("memory")) {
+            for (String key : List.of("storage.path", "storage.capacity.bytes", "storage.segment.bytes", "storage.write.buffer.bytes", "storage.direct.io")) {
+                if (p.properties.getProperty(key) != null) {
+                    p.errors.add("'" + key + "' is only used with storage.engine=nvme");
+                }
+            }
+            return KvStorage.memory();
+        }
+        if (!engine.equals("nvme")) {
+            p.errors.add("'storage.engine' must be memory or nvme: " + engine);
+            return KvStorage.memory();
+        }
+        String path = p.text("storage.path");
+        long capacity = p.longValue("storage.capacity.bytes", 1, Long.MAX_VALUE);
+        long segment = p.optionalLongValue("storage.segment.bytes", DEFAULT_SEGMENT_BYTES, 4096, 1L << 40);
+        long buffer = p.optionalLongValue("storage.write.buffer.bytes", DEFAULT_WRITE_BUFFER_BYTES, 4096, 1L << 30);
+        String directIo = p.optionalText("storage.direct.io", "true");
+        if (!directIo.equals("true") && !directIo.equals("false")) {
+            p.errors.add("'storage.direct.io' must be true or false: " + directIo);
+        }
+        if (buffer > segment) {
+            p.errors.add("'storage.write.buffer.bytes' must be <= storage.segment.bytes");
+        }
+        if (!p.errors.isEmpty()) {
+            return KvStorage.memory();
+        }
+        KvStorage.Nvme nvme = new KvStorage.Nvme(Path.of(path), capacity, segment, (int) buffer, directIo.equals("true"));
+        if (nvme.segmentsPerWorker(workers) < 2) {
+            p.errors.add("'storage.capacity.bytes' / workers must hold at least 2 segments of storage.segment.bytes");
+        }
+        return nvme;
     }
 
     private static final class Parser {
@@ -135,6 +201,15 @@ public record ServerConfig(
                 return "";
             }
             return value.trim();
+        }
+
+        String optionalText(String key, String defaultValue) {
+            String value = properties.getProperty(key);
+            return value == null || value.isBlank() ? defaultValue : value.trim();
+        }
+
+        long optionalLongValue(String key, long defaultValue, long min, long max) {
+            return properties.getProperty(key) == null ? defaultValue : longValue(key, min, max);
         }
 
         long longValue(String key, long min, long max) {

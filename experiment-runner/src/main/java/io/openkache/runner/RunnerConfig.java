@@ -46,6 +46,8 @@ import java.util.TreeMap;
  *     기록하지 않으면 -1(미측정)
  * @param serverJvmOptsNote 서버 JVM 실행 옵션에 대한 참고용 자유 기술. Runner는 서버 JVM을 직접 관측하지 않는다. 기록하지
  *     않으면 빈 문자열(미측정)
+ * @param serverStorageNote 서버 KV 저장소 종류에 대한 참고값({@code server.storage.note}). Runner는 서버 저장소를 관측하지
+ *     않는다. 기록하지 않으면 {@link #DEFAULT_SERVER_STORAGE}
  */
 public record RunnerConfig(
         String targetHost,
@@ -72,7 +74,11 @@ public record RunnerConfig(
         Map<String, String> configSnapshot,
         Path resultsDir,
         int serverWorkerCountHint,
-        String serverJvmOptsNote) {
+        String serverJvmOptsNote,
+        String serverStorageNote) {
+
+    /** {@code server.storage.note}가 없을 때 기록하는 저장소. 서버 기본값(메모리 저장소)이다. */
+    public static final String DEFAULT_SERVER_STORAGE = "in-memory (io.openkache.core.kv.KvEngine)";
 
     private static final Set<String> KEYS =
             Set.of(
@@ -100,7 +106,8 @@ public record RunnerConfig(
                     "execution.timeout.ms",
                     "results.dir",
                     "server.workers.hint",
-                    "server.jvm.opts.note");
+                    "server.jvm.opts.note",
+                    "server.storage.note");
 
     /** {@code path}의 properties 파일을 읽어 검증한다. */
     public static RunnerConfig load(Path path) {
@@ -162,6 +169,7 @@ public record RunnerConfig(
         String resultsDirText = p.text("results.dir");
         int serverWorkerCountHint = (int) p.optionalLongValue("server.workers.hint", "-1", -1, 10_000);
         String serverJvmOptsNote = p.optionalText("server.jvm.opts.note", "");
+        String serverStorageNote = p.optionalText("server.storage.note", DEFAULT_SERVER_STORAGE);
 
         if (!p.errors.isEmpty()) {
             throw new ConfigException("invalid config: " + String.join("; ", p.errors));
@@ -197,7 +205,8 @@ public record RunnerConfig(
                 Map.copyOf(configSnapshot),
                 Path.of(resultsDirText),
                 serverWorkerCountHint,
-                serverJvmOptsNote);
+                serverJvmOptsNote,
+                serverStorageNote);
     }
 
     private static final long ONE_HOUR_MS = 3_600_000;
