@@ -89,6 +89,17 @@ public final class Main {
                     result.p50Nanos() / 1_000.0,
                     result.p99Nanos() / 1_000.0);
             System.out.printf(Locale.ROOT, "outcomes: %s%n", result.outcomeCounts());
+            for (TargetResult target : result.targets()) {
+                System.out.printf(
+                        Locale.ROOT,
+                        "target %s %s: requests=%d share=%.3f p50us=%.1f p99us=%.1f%n",
+                        target.address(),
+                        target.hashRange(),
+                        target.requests(),
+                        (double) target.requests() / result.measuredRequests(),
+                        target.p50Nanos() / 1_000.0,
+                        target.p99Nanos() / 1_000.0);
+            }
             System.out.printf(Locale.ROOT, "result json: %s%n", jsonFile);
             System.out.printf(Locale.ROOT, "result csv: %s%n", csvFile);
         }

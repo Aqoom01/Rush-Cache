@@ -161,6 +161,7 @@ final class ResultWriter {
         entries.add(entryOutcomeCounts(r.outcomeCounts()));
         entries.add(entry("faultScenario", r.faultScenario()));
         entries.add(entryNullableString("gitCommit", r.gitCommit().orElse(null)));
+        entries.add(entryTargets(r.targets()));
 
         return "{\n  " + String.join(",\n  ", entries) + "\n}\n";
     }
@@ -171,6 +172,25 @@ final class ResultWriter {
             parts.add(quote(outcome.name()) + ": " + counts.getOrDefault(outcome, 0L));
         }
         return quote("outcomeCounts") + ": {" + String.join(", ", parts) + "}";
+    }
+
+    /** 서버별 측정 결과. 단일 서버 실행도 원소 하나로 쓴다. */
+    private static String entryTargets(List<TargetResult> targets) {
+        List<String> objects = new ArrayList<>();
+        for (TargetResult t : targets) {
+            objects.add(
+                    "{"
+                            + String.join(
+                                    ", ",
+                                    entry("address", t.address()),
+                                    entry("hashRange", t.hashRange()),
+                                    entry("requests", t.requests()),
+                                    entry("p50Nanos", t.p50Nanos()),
+                                    entry("p99Nanos", t.p99Nanos()),
+                                    entryOutcomeCounts(t.outcomeCounts()))
+                            + "}");
+        }
+        return quote("targets") + ": [" + String.join(", ", objects) + "]";
     }
 
     private static String entryStringArray(String key, List<String> values) {

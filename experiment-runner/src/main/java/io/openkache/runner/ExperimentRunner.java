@@ -1,6 +1,8 @@
 package io.openkache.runner;
 
 import io.openkache.core.api.Command;
+import io.openkache.core.model.Bytes;
+import io.openkache.core.tablet.KeyHash;
 import java.io.IOException;
 import java.lang.management.ManagementFactory;
 import java.time.Instant;
@@ -65,26 +67,33 @@ final class ExperimentRunner {
         checkConnectivity();
 
         long warmupStart = System.nanoTime();
-        runPhase(config.warmupRequests(), null);
+        runPhase(config.warmupRequests(), null, null);
         long warmupElapsed = System.nanoTime() - warmupStart;
 
         ResultAccumulator accumulator = new ResultAccumulator(LATENCY_RESERVOIR_CAPACITY, config.seed());
+        ResultAccumulator[] perTarget = new ResultAccumulator[config.routedTargetCount()];
+        for (int t = 0; t < perTarget.length; t++) {
+            perTarget[t] = new ResultAccumulator(LATENCY_RESERVOIR_CAPACITY, config.seed() + t);
+        }
         long measuredStart = System.nanoTime();
-        runPhase(config.measuredRequests(), accumulator);
+        runPhase(config.measuredRequests(), accumulator, perTarget);
         long measuredElapsed = System.nanoTime() - measuredStart;
 
-        return buildResult(accumulator, warmupElapsed, measuredElapsed);
+        return buildResult(accumulator, perTarget, warmupElapsed, measuredElapsed);
     }
 
-    /** 대상 서버가 살아 있는지 PING으로 먼저 확인한다. 실패하면 thread pool을 띄우지 않고 바로 알린다. */
+    /** 요청을 받을 서버가 모두 살아 있는지 PING으로 먼저 확인한다. 실패하면 thread pool을 띄우지 않고 바로 알린다. */
     private void checkConnectivity() throws IOException {
-        try (WireClient client =
-                new WireClient(config.targetHost(), config.targetPort(), config.requestTimeoutMs())) {
-            client.ping();
+        for (int t = 0; t < config.routedTargetCount(); t++) {
+            RunnerConfig.Target target = config.targets().get(t);
+            try (WireClient client = new WireClient(target.host(), target.port(), config.requestTimeoutMs())) {
+                client.ping();
+            }
         }
     }
 
-    private void runPhase(long totalRequests, ResultAccumulator accumulator) throws InterruptedException {
+    private void runPhase(long totalRequests, ResultAccumulator accumulator, ResultAccumulator[] perTarget)
+            throws InterruptedException {
         if (totalRequests == 0) {
             return;
         }
@@ -107,6 +116,7 @@ final class ExperimentRunner {
                                                 threadRequests,
                                                 threadSeed,
                                                 accumulator,
+                                                perTarget,
                                                 control)));
             }
             for (Future<?> future : futures) {
@@ -131,11 +141,13 @@ final class ExperimentRunner {
             long requestCount,
             long threadSeed,
             ResultAccumulator accumulator,
+            ResultAccumulator[] perTarget,
             PhaseControl control) {
         WorkloadGenerator generator = new WorkloadGenerator(config, new Random(threadSeed));
         long clientId = 1000 + threadIndex;
         long operationId = 0;
-        WireClient client = null;
+        // 서버마다 연결 하나. 처음 그 서버로 보낼 때 연다.
+        WireClient[] clients = new WireClient[config.routedTargetCount()];
         try {
             for (long i = 0; i < requestCount && !control.stopRequested(); i++) {
                 if (Thread.currentThread().isInterrupted()) {
@@ -143,17 +155,20 @@ final class ExperimentRunner {
                 }
                 Command command = generator.next();
                 operationId++;
-                if (client == null) {
+                int t = config.targetIndex(KeyHash.of(keyOf(command)));
+                if (clients[t] == null) {
+                    RunnerConfig.Target target = config.targets().get(t);
                     try {
-                        client =
+                        clients[t] =
                                 new WireClient(
-                                        config.targetHost(),
-                                        config.targetPort(),
+                                        target.host(),
+                                        target.port(),
                                         config.requestTimeoutMs() + SOCKET_TIMEOUT_MARGIN_MS);
-                        control.register(client);
+                        control.register(clients[t]);
                     } catch (IOException e) {
                         if (accumulator != null && !control.stopRequested()) {
                             accumulator.recordFailure(Outcome.CLIENT_FAILURE);
+                            perTarget[t].recordFailure(Outcome.CLIENT_FAILURE);
                         }
                         continue;
                     }
@@ -161,26 +176,41 @@ final class ExperimentRunner {
                 long startNanos = System.nanoTime();
                 try {
                     WireClient.Response response =
-                            client.send(command, clientId, operationId, 0, config.requestTimeoutMs());
+                            clients[t].send(command, clientId, operationId, 0, config.requestTimeoutMs());
                     long elapsedNanos = System.nanoTime() - startNanos;
                     if (accumulator != null) {
-                        accumulator.recordCompleted(outcomeOf(command, response.status()), elapsedNanos);
+                        Outcome outcome = outcomeOf(command, response.status());
+                        accumulator.recordCompleted(outcome, elapsedNanos);
+                        perTarget[t].recordCompleted(outcome, elapsedNanos);
                     }
                 } catch (IOException e) {
                     if (accumulator != null && !control.stopRequested()) {
                         accumulator.recordFailure(Outcome.CLIENT_FAILURE);
+                        perTarget[t].recordFailure(Outcome.CLIENT_FAILURE);
                     }
-                    client.close();
-                    control.unregister(client);
-                    client = null;
+                    clients[t].close();
+                    control.unregister(clients[t]);
+                    clients[t] = null;
                 }
             }
         } finally {
-            if (client != null) {
-                control.unregister(client);
-                client.close();
+            for (WireClient client : clients) {
+                if (client != null) {
+                    control.unregister(client);
+                    client.close();
+                }
             }
         }
+    }
+
+    private static Bytes keyOf(Command command) {
+        return switch (command) {
+            case Command.Get get -> get.key();
+            case Command.Set set -> set.key();
+            case Command.Delete delete -> delete.key();
+            case Command.Exists exists -> exists.key();
+            case Command.Count count -> throw new IllegalArgumentException("workload does not generate COUNT");
+        };
     }
 
     private static void stopWorkers(ExecutorService pool, List<Future<?>> futures, PhaseControl control) {
@@ -244,15 +274,28 @@ final class ExperimentRunner {
     }
 
     private ExperimentResult buildResult(
-            ResultAccumulator accumulator, long warmupElapsedNanos, long measuredElapsedNanos) {
+            ResultAccumulator accumulator,
+            ResultAccumulator[] perTarget,
+            long warmupElapsedNanos,
+            long measuredElapsedNanos) {
         GitInfo git = GitInfo.capture();
         Runtime runtime = Runtime.getRuntime();
         double seconds = measuredElapsedNanos / 1_000_000_000.0;
         double throughput = seconds > 0 ? config.measuredRequests() / seconds : 0.0;
 
-        Map<Outcome, Long> outcomeCounts = new EnumMap<>(Outcome.class);
-        for (Outcome outcome : Outcome.values()) {
-            outcomeCounts.put(outcome, accumulator.count(outcome));
+        Map<Outcome, Long> outcomeCounts = counts(accumulator);
+        List<TargetResult> targets = new ArrayList<>();
+        for (int t = 0; t < perTarget.length; t++) {
+            long start = t == 0 ? 0 : config.routingBoundaries().get(t - 1);
+            String end = t == perTarget.length - 1 ? "2^64" : Long.toUnsignedString(config.routingBoundaries().get(t));
+            targets.add(
+                    new TargetResult(
+                            config.targets().get(t).toString(),
+                            "[" + Long.toUnsignedString(start) + ", " + end + ")",
+                            perTarget[t].totalRequests(),
+                            perTarget[t].p50Nanos(),
+                            perTarget[t].p99Nanos(),
+                            counts(perTarget[t])));
         }
 
         return new ExperimentResult(
@@ -267,7 +310,7 @@ final class ExperimentRunner {
                 config.repeatCount(),
                 config.configSnapshot(),
                 invocation,
-                1, // nodeCount: 단일 노드 baseline
+                perTarget.length, // nodeCount: 요청을 받은 서버 수
                 config.concurrency(),
                 config.serverWorkerCountHint(),
                 config.serverStorageNote(),
@@ -289,6 +332,15 @@ final class ExperimentRunner {
                 accumulator.latencyTotalObserved(),
                 outcomeCounts,
                 "none",
-                git.commit());
+                git.commit(),
+                List.copyOf(targets));
+    }
+
+    private static Map<Outcome, Long> counts(ResultAccumulator accumulator) {
+        Map<Outcome, Long> counts = new EnumMap<>(Outcome.class);
+        for (Outcome outcome : Outcome.values()) {
+            counts.put(outcome, accumulator.count(outcome));
+        }
+        return counts;
     }
 }

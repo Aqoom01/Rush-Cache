@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.openkache.core.api.Command;
 import io.openkache.core.model.Bytes;
+import io.openkache.core.tablet.KeyHash;
 import java.nio.charset.StandardCharsets;
 import java.util.HashSet;
 import java.util.Properties;
@@ -109,5 +110,36 @@ class WorkloadGeneratorTest {
 
         // hot.key.fraction=0.9 + 나머지 균등(1/50) 중 일부도 index 0을 고를 수 있어 0.9보다 약간 높게 나온다.
         assertTrue(hotCount / (double) total > 0.85);
+    }
+
+    @Test
+    void hotRangeSendsConfiguredShareToLowestHashKeys() {
+        Properties p = new Properties();
+        RunnerConfig base = config("HOT_RANGE", 100, 0, 0);
+        p.putAll(base.configSnapshot());
+        p.setProperty("hot.range.key.fraction", "0.2");
+        p.setProperty("hot.range.request.fraction", "0.8");
+        RunnerConfig cfg = RunnerConfig.from(p);
+
+        int[] order = WorkloadGenerator.hashOrder(cfg);
+        for (int i = 1; i < order.length; i++) {
+            long previous = KeyHash.of(WorkloadGenerator.key(order[i - 1], cfg.keyLength()));
+            long current = KeyHash.of(WorkloadGenerator.key(order[i], cfg.keyLength()));
+            assertTrue(Long.compareUnsigned(previous, current) < 0);
+        }
+        Set<Bytes> hot = new HashSet<>();
+        for (int i = 0; i < 10; i++) { // key.count=50의 20%
+            hot.add(WorkloadGenerator.key(order[i], cfg.keyLength()));
+        }
+
+        WorkloadGenerator generator = new WorkloadGenerator(cfg, new Random(11));
+        int hotCount = 0;
+        int total = 50_000;
+        for (int i = 0; i < total; i++) {
+            if (hot.contains(((Command.Get) generator.next()).key())) {
+                hotCount++;
+            }
+        }
+        assertEquals(0.8, hotCount / (double) total, 0.01);
     }
 }
