@@ -2,8 +2,9 @@
 # 프로젝트 인스턴스 대수·상태와, 실행 중인 노드의 기동 단계(STATUS)를 보여 준다.
 source "$(dirname "$0")/common.sh"
 
+# 교보재 한도는 계정 전체 기준이라 태그 없는 인스턴스(팀원 수동 생성)도 함께 보여 준다.
 aws ec2 describe-instances \
-  --filters "Name=tag:Project,Values=openkache" "Name=instance-state-name,Values=pending,running,stopping,stopped" \
+  --filters "Name=instance-state-name,Values=pending,running,stopping,stopped" \
   --query 'Reservations[].Instances[].[InstanceId, Tags[?Key==`Name`]|[0].Value, State.Name, InstanceType, LaunchTime]' \
   --output table
 

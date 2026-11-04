@@ -12,6 +12,10 @@ variables:
   CONFIG:
     value: "experiments/baseline-single-node/config.properties"
     description: "실행할 실험 config 경로입니다. 결과 위치는 job 로그 끝에 나옵니다."
+  STORAGE:
+    value: "memory"
+    options: ["memory", "nvme"]
+    description: "cache-server의 KV 저장소입니다. nvme는 노드의 NVMe SSD에 저장합니다."
   # git bundle을 만들려면 전체 이력이 필요하다.
   GIT_DEPTH: "0"
   # after_script 기본 제한(5분)은 노드가 많을 때 destroy에 부족하다.
@@ -35,13 +39,14 @@ aws-experiment:
   script:
     # 자동 정지 시각을 실험 제한 시간 + 30분(기동·업로드 여유)으로 잡는다.
     - t=$(sed -n 's/^execution.timeout.ms=//p' "$CONFIG" | tr -d '\r'); export TF_VAR_max_lifetime_minutes=$(( ${t:-3600000} / 60000 + 30 ))
+    - export TF_VAR_storage_engine="$STORAGE"
     # 로컬에서 띄운 클러스터가 있으면 최대 60분 기다린다. 끝나지 않으면 지우지 않고 실패한다.
     - infra/scripts/up.sh --wait 3600 "$NODES"
     # up.sh가 기존 클러스터 없음을 확인한 뒤에만 표시한다. apply가 중간에 실패해도 지울 수 있게 apply 전에 남긴다.
     - touch .ci-owns-cluster
     - infra/scripts/up.sh --apply
     - infra/scripts/wait.sh 900
-    # 결과는 s3://openstd-s15p31d111-results/results/<study>/<UTC 시각>-<commit 8자리>/
+    # 결과는 s3://openstd-s15p31d111-results/results/<study>/<KST 날짜>/<KST 시각>_<저장소>_n<대수>_<variant>_<실행자>_<commit>/
     - infra/scripts/run.sh "$CONFIG"
   # 이 job이 만든 클러스터만 성공·실패·취소와 관계없이 지운다. 로컬에서 띄운 클러스터는 건드리지 않는다.
   after_script:

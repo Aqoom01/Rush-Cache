@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.openkache.core.kv.KvStorage;
 import io.openkache.core.model.NodeId;
 import io.openkache.server.config.ServerConfig;
 import io.openkache.server.netty.Protocol;
@@ -26,11 +27,11 @@ import org.junit.jupiter.api.Test;
 /** 실제 TCP로 서버를 띄워 확인한다. */
 class ServerApplicationTest {
 
-    private ServerConfig config;
+    ServerConfig config;
     private ServerApplication app;
 
     /** 응답 frame에서 테스트가 확인하는 필드. */
-    private record Response(
+    record Response(
             int messageClass,
             int opcode,
             int status,
@@ -45,8 +46,13 @@ class ServerApplicationTest {
     void start() throws Exception {
         config = new ServerConfig(
                 new NodeId(1), "test", "127.0.0.1", "127.0.0.1",
-                freePort(), freePort(), freePort(), 2, Duration.ofSeconds(2));
+                freePort(), freePort(), freePort(), 2, Duration.ofSeconds(2), storage());
         app = ServerApplication.start(config);
+    }
+
+    /** 시험할 저장소. 하위 클래스가 바꿔 같은 테스트를 다시 돌린다. */
+    KvStorage storage() throws IOException {
+        return KvStorage.memory();
     }
 
     @AfterEach
@@ -215,7 +221,7 @@ class ServerApplicationTest {
         assertEquals(List.of(), remaining);
     }
 
-    private static Socket connect(int port) throws IOException {
+    static Socket connect(int port) throws IOException {
         Socket socket = new Socket("127.0.0.1", port);
         socket.setSoTimeout(5_000);
         return socket;
@@ -235,7 +241,7 @@ class ServerApplicationTest {
         out.flush();
     }
 
-    private static Response read(Socket socket) throws IOException {
+    static Response read(Socket socket) throws IOException {
         DataInputStream in = new DataInputStream(socket.getInputStream());
         int length = in.readInt();
         assertEquals(Protocol.MAGIC, in.readUnsignedShort());
@@ -265,7 +271,7 @@ class ServerApplicationTest {
                 value);
     }
 
-    private static void sendGet(Socket socket, long requestId, byte[] key) throws IOException {
+    static void sendGet(Socket socket, long requestId, byte[] key) throws IOException {
         sendCommand(socket, Protocol.OP_GET, requestId, key, null);
     }
 
@@ -273,7 +279,7 @@ class ServerApplicationTest {
         sendCommand(socket, Protocol.OP_DELETE, requestId, key, null);
     }
 
-    private static void sendSet(Socket socket, long requestId, byte[] key, byte[] value) throws IOException {
+    static void sendSet(Socket socket, long requestId, byte[] key, byte[] value) throws IOException {
         sendCommand(socket, Protocol.OP_SET, requestId, key, value);
     }
 
@@ -308,7 +314,7 @@ class ServerApplicationTest {
         out.flush();
     }
 
-    private static byte[] bytes(String text) {
+    static byte[] bytes(String text) {
         return text.getBytes(StandardCharsets.UTF_8);
     }
 

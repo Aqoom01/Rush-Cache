@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # 부하 생성 노드에서 experiment-runner를 실행하고 결과를 S3에 올린다. 요청 대상은 cache-server 1번 노드다.
 # 사용법: infra/scripts/run.sh <실험 config.properties, 저장소 루트 기준 경로>
-# config는 노드가 빌드한 commit에 들어 있어야 한다. target.host와 results.dir은 이 스크립트가 바꾼다.
+# config는 노드가 빌드한 commit에 들어 있어야 한다. target.host·results.dir·server.storage.note는 이 스크립트가 바꾼다.
 source "$(dirname "$0")/common.sh"
 
 config="${1:?실험 config 경로가 필요하다(예: experiments/baseline-single-node/config.properties)}"
@@ -16,11 +16,20 @@ if [ -n "$mode" ] && [ "$mode" != tcp ]; then
   exit 2
 fi
 study=$(prop study)
+variant=$(prop variant)
 exec_ms=$(prop execution.timeout.ms)
 exec_ms=${exec_ms:-3600000}
 
 loadgen=$(tf output -raw loadgen_instance_id)
 target=$(tf output -json node_private_ips | tr -d '[]" ' | cut -d, -f1)
+# Runner는 서버 저장소를 관측하지 않으므로 결과의 storageLayer에 적을 값을 넘긴다.
+storage=$(tf output -raw storage_engine)
+nodes=$(tf output -json node_instance_ids | tr -cd ',' | wc -c)
+nodes=$((nodes + 1))
+case "$storage" in
+  nvme) storage_note="nvme (instance store, O_DIRECT, docs/storage-nvme.md)" ;;
+  *) storage_note="in-memory (io.openkache.core.kv.KvEngine)" ;;
+esac
 
 # 자동 정지 전에 끝나지 못할 실험은 시작하지 않는다(5분 여유).
 remaining=$(( $(date -d "$(tf output -raw stops_at_utc)" +%s) - $(date +%s) ))
@@ -30,8 +39,12 @@ if [ "$remaining" -lt $(( exec_ms / 1000 + 300 )) ]; then
   exit 1
 fi
 
-run_id="$(date -u +%Y%m%dT%H%M%SZ)-${commit:0:8}"
-dest="s3://$RESULTS_BUCKET/results/$study/$run_id/"
+# 폴더 이름: <KST 날짜>/<KST 시각>_<저장소>_n<cache-server 수>_<variant>_<실행자>_<commit>. 컨테이너에 tzdata가 없어 +9시간으로 계산한다.
+kst_date=$(date -u -d '+9 hours' +%Y-%m-%d)
+kst_time=$(date -u -d '+9 hours' +%H%M%S)
+safe() { printf '%s' "$1" | tr -c 'A-Za-z0-9.-' '-'; }
+run_id="${kst_time}_${storage}_n${nodes}_$(safe "${variant:-none}")_$(safe "${GITLAB_USER_LOGIN:-local}")_${commit:0:8}"
+dest="s3://$RESULTS_BUCKET/results/$study/$kst_date/$run_id/"
 
 # 노드에서 실행할 스크립트. 결과 업로드는 실험이 실패해도 한다.
 remote=$(cat <<EOF
@@ -40,7 +53,8 @@ cd /opt/openkache/src
 out=/opt/openkache/results/$run_id
 mkdir -p "\$out"
 sed -e "s|^target.host=.*|target.host=$target|" -e "s|^results.dir=.*|results.dir=\$out|" \
-  "$config" > "\$out/config.properties"
+  -e "/^server.storage.note=/d" "$config" > "\$out/config.properties"
+echo "server.storage.note=$storage_note" >> "\$out/config.properties"
 experiment-runner/build/install/openkache-experiment-runner/bin/openkache-experiment-runner \
   "\$out/config.properties" > "\$out/runner.log" 2>&1
 rc=\$?

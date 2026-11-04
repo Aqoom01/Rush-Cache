@@ -3,7 +3,9 @@
  *
  * <p>책임: 한 노드 안에서 Key-Value를 저장·조회·삭제한다. 복제·라우팅은 다루지 않는다.
  *
- * <p>상태: {@link io.openkache.core.kv.KvEngine}이 단일 노드 인메모리 GET/SET/DELETE/EXISTS/COUNT를 구현한다. Key마다 고정
+ * <p>상태: {@link io.openkache.core.kv.KvEngine}이 단일 노드 GET/SET/DELETE/EXISTS/COUNT를 구현한다. 저장소는
+ * {@link io.openkache.core.kv.KvStorage}로 고른다: 메모리(기본) 또는 NVMe(worker별 segment 로그 + 메모리 색인, O_DIRECT,
+ * 용량이 차면 오래된 segment부터 축출. {@code docs/storage-nvme.md}). Key마다 고정
  * worker로 샤딩하고, 저장소는 그 owner worker thread에서만 접근한다는 {@code runtime} 규칙을 따른다. COUNT는 Key가 없어 모든
  * worker에 보내 합산한다.
  *
@@ -33,11 +35,14 @@
  *       아직 완료되지 않은 요청 모두 이 상태로 끝난다.
  * </ul>
  *
+ * <p>NVMe 저장소만 내는 상태: {@code CAPACITY_EXCEEDED}(기록이 segment보다 큼), {@code UNAVAILABLE}(디스크 I/O 오류, 색인과
+ * 기록 불일치). NVMe 저장소에서는 축출된 key의 GET·EXISTS도 {@code MISS}다.
+ *
  * <p>{@code BAD_REQUEST}(형식이 잘못된 요청)는 wire를 해석하는 server가 내며 이 패키지까지 오지 않는다. {@code MOVED},
- * {@code NOT_PRIMARY}, {@code STALE_EPOCH}, {@code CAPACITY_EXCEEDED}는 라우팅·복제·용량 한도가 없는 지금은 내지 않는다.
+ * {@code NOT_PRIMARY}, {@code STALE_EPOCH}는 라우팅·복제가 없는 지금은 내지 않는다.
  * routingVersion과 ownershipEpoch는 항상 0이다.
  *
- * <p>아직 구현하지 않은 것: TTL 만료, 저장 용량 한도(eviction), 영속화. EXISTS/COUNT/SCAN/RANGE의 wire opcode는
+ * <p>아직 구현하지 않은 것: TTL 만료, 메모리 저장소의 용량 한도(eviction), 재시작 복구(NVMe도 시작할 때 비운다). EXISTS/COUNT/SCAN/RANGE의 wire opcode는
  * {@code docs/protocol-v1.md}에 아직 없어 TCP로는 호출할 수 없다. 복제·Tablet 연동 시 필요한 epoch 검사는
  * {@link io.openkache.core.spi.EpochStore}와 함께 그 연구 패키지가 책임진다.
  */

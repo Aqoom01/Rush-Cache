@@ -12,8 +12,11 @@ import io.openkache.core.model.OwnershipEpoch;
 import io.openkache.core.model.RoutingVersion;
 import io.openkache.core.runtime.Mailbox;
 import io.openkache.core.runtime.TimerEvent;
+import io.openkache.core.spi.MetricsSink;
 import io.openkache.core.spi.PeerMessage;
 import io.openkache.core.spi.TimeSource;
+import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.List;
@@ -44,7 +47,7 @@ import java.util.function.Predicate;
  * <p>복제·라우팅·Tablet이 없으므로 {@link #snapshot()}의 routingVersion과 ownershipEpoch는 항상
  * {@link RoutingVersion#ZERO}, {@link OwnershipEpoch#ZERO}다. {@link #onPeerMessage}와 {@link #onTimer}는 아직
  * 정의된 동작이 없어 아무 일도 하지 않는다. SCAN/RANGE는 {@link Command}가 아니라 {@link #scan}·{@link #range}로 제공한다.
- * TTL, eviction, 영속화는 지원하지 않는다.
+ * TTL과 영속화는 지원하지 않는다. 저장소는 {@link KvStorage}로 고른다. {@link KvStorage.Nvme}만 용량이 차면 축출한다.
  */
 public final class KvEngine implements CacheEngine {
 
@@ -56,16 +59,41 @@ public final class KvEngine implements CacheEngine {
     private final Set<CompletableFuture<ScanResult>> pendingScans = ConcurrentHashMap.newKeySet();
     private final AtomicBoolean closed = new AtomicBoolean();
 
+    /** 메모리 저장소로 만든다. */
     public KvEngine(NodeId nodeId, List<? extends Mailbox> workers, TimeSource timeSource) {
+        this(nodeId, workers, timeSource, KvStorage.memory(), MetricsSink.noop());
+    }
+
+    /**
+     * {@code storage}로 worker마다 저장소를 연다. 호출한 thread에서 파일을 열므로 EventLoop에서 호출하지 않는다.
+     *
+     * @param metrics 저장소 지표(NVMe 읽기·쓰기 횟수 등)를 받는다. owner worker thread에서 호출된다
+     * @throws UncheckedIOException NVMe 저장소 디렉터리를 만들거나 파일을 열 수 없을 때(direct I/O 미지원 포함)
+     */
+    public KvEngine(
+            NodeId nodeId, List<? extends Mailbox> workers, TimeSource timeSource, KvStorage storage, MetricsSink metrics) {
         this.nodeId = Objects.requireNonNull(nodeId, "nodeId");
         this.workers = List.copyOf(Objects.requireNonNull(workers, "workers"));
         if (this.workers.isEmpty()) {
             throw new IllegalArgumentException("workers must not be empty");
         }
         this.timeSource = Objects.requireNonNull(timeSource, "timeSource");
+        Objects.requireNonNull(storage, "storage");
+        Objects.requireNonNull(metrics, "metrics");
         this.stores = new KvStore[this.workers.size()];
-        for (int i = 0; i < stores.length; i++) {
-            stores[i] = new KvStore();
+        try {
+            for (int i = 0; i < stores.length; i++) {
+                stores[i] = switch (storage) {
+                    case KvStorage.Memory memory -> new MemoryKvStore();
+                    case KvStorage.Nvme nvme -> NvmeKvStore.open(nvme, i, stores.length, metrics);
+                };
+            }
+        } catch (IOException e) {
+            closeStores();
+            throw new UncheckedIOException("failed to open storage " + storage, e);
+        } catch (RuntimeException e) {
+            closeStores();
+            throw e;
         }
     }
 
@@ -202,6 +230,9 @@ public final class KvEngine implements CacheEngine {
                                         }
                                         try {
                                             partials.add(stores[index].scan(keyFilter, limit));
+                                        } catch (StoreException e) {
+                                            future.complete(ScanResult.of(e.status()));
+                                            return;
                                         } catch (RuntimeException e) {
                                             future.completeExceptionally(e);
                                             return;
@@ -253,15 +284,23 @@ public final class KvEngine implements CacheEngine {
     }
 
     private Result doGet(KvStore store, Command.Get get) {
-        return store.get(get.key())
-                .map(entry -> Result.ok(entry.value(), entry.version(), RoutingVersion.ZERO, OwnershipEpoch.ZERO))
-                .orElseGet(() -> Result.of(ResultStatus.MISS, RoutingVersion.ZERO, OwnershipEpoch.ZERO));
+        try {
+            return store.get(get.key())
+                    .map(entry -> Result.ok(entry.value(), entry.version(), RoutingVersion.ZERO, OwnershipEpoch.ZERO))
+                    .orElseGet(() -> Result.of(ResultStatus.MISS, RoutingVersion.ZERO, OwnershipEpoch.ZERO));
+        } catch (StoreException e) {
+            return Result.of(e.status(), RoutingVersion.ZERO, OwnershipEpoch.ZERO);
+        }
     }
 
     private Result doSet(KvStore store, Command.Set set) {
-        long version = store.set(set.key(), set.value());
-        return new Result(
-                ResultStatus.OK, Optional.empty(), version, RoutingVersion.ZERO, OwnershipEpoch.ZERO, Optional.empty());
+        try {
+            long version = store.set(set.key(), set.value());
+            return new Result(
+                    ResultStatus.OK, Optional.empty(), version, RoutingVersion.ZERO, OwnershipEpoch.ZERO, Optional.empty());
+        } catch (StoreException e) {
+            return Result.of(e.status(), RoutingVersion.ZERO, OwnershipEpoch.ZERO);
+        }
     }
 
     private Result doDelete(KvStore store, Command.Delete delete) {
@@ -270,17 +309,21 @@ public final class KvEngine implements CacheEngine {
     }
 
     private Result doExists(KvStore store, Command.Exists exists) {
-        return store.get(exists.key())
-                .map(
-                        entry ->
-                                new Result(
-                                        ResultStatus.OK,
-                                        Optional.empty(),
-                                        entry.version(),
-                                        RoutingVersion.ZERO,
-                                        OwnershipEpoch.ZERO,
-                                        Optional.empty()))
-                .orElseGet(() -> Result.of(ResultStatus.MISS, RoutingVersion.ZERO, OwnershipEpoch.ZERO));
+        try {
+            return store.get(exists.key())
+                    .map(
+                            entry ->
+                                    new Result(
+                                            ResultStatus.OK,
+                                            Optional.empty(),
+                                            entry.version(),
+                                            RoutingVersion.ZERO,
+                                            OwnershipEpoch.ZERO,
+                                            Optional.empty()))
+                    .orElseGet(() -> Result.of(ResultStatus.MISS, RoutingVersion.ZERO, OwnershipEpoch.ZERO));
+        } catch (StoreException e) {
+            return Result.of(e.status(), RoutingVersion.ZERO, OwnershipEpoch.ZERO);
+        }
     }
 
     /** COUNT 결과. 개수를 8-byte big-endian으로 {@code value}에 담는다({@link Command.Count} 참고). */
@@ -304,7 +347,13 @@ public final class KvEngine implements CacheEngine {
         return new EngineSnapshot(nodeId, timeSource.monotonicNanos(), RoutingVersion.ZERO, OwnershipEpoch.ZERO);
     }
 
-    /** 새 요청을 거절하고, 아직 완료되지 않은 요청(대기 중·처리 중)을 UNAVAILABLE로 완료한다. 여러 번 호출해도 안전하다. */
+    /**
+     * 새 요청을 거절하고, 아직 완료되지 않은 요청(대기 중·처리 중)을 UNAVAILABLE로 완료한 뒤 저장소 파일을 닫는다. 여러 번
+     * 호출해도 안전하다.
+     *
+     * <p>저장소는 owner worker가 아닌 이 thread에서 닫는다. 그 순간 worker가 실행 중이던 연산은 I/O 오류로 끝나지만, 그 요청은
+     * 이미 UNAVAILABLE로 완료됐으므로 응답이 바뀌지 않는다.
+     */
     @Override
     public void close() {
         if (!closed.compareAndSet(false, true)) {
@@ -318,6 +367,15 @@ public final class KvEngine implements CacheEngine {
         for (CompletableFuture<ScanResult> future : pendingScans) {
             if (pendingScans.remove(future)) {
                 future.complete(ScanResult.of(ResultStatus.UNAVAILABLE));
+            }
+        }
+        closeStores();
+    }
+
+    private void closeStores() {
+        for (KvStore store : stores) {
+            if (store != null) {
+                store.close();
             }
         }
     }

@@ -120,4 +120,13 @@ class RunnerConfigTest {
 
         assertEquals(5000, RunnerConfig.from(p).runTimeoutMs());
     }
+
+    @Test
+    void serverStorageNoteDefaultsToInMemory() {
+        assertEquals(RunnerConfig.DEFAULT_SERVER_STORAGE, RunnerConfig.from(valid()).serverStorageNote());
+
+        Properties p = valid();
+        p.setProperty("server.storage.note", "nvme");
+        assertEquals("nvme", RunnerConfig.from(p).serverStorageNote());
+    }
 }
