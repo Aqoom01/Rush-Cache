@@ -46,7 +46,7 @@ aws-experiment:
     - touch .ci-owns-cluster
     - infra/scripts/up.sh --apply
     - infra/scripts/wait.sh 900
-    # 결과는 s3://openstd-s15p31d111-results/results/<study>/<UTC 시각>-<commit 8자리>/
+    # 결과는 s3://openstd-s15p31d111-results/results/<study>/<KST 날짜>/<KST 시각>_<저장소>_n<대수>_<variant>_<실행자>_<commit>/
     - infra/scripts/run.sh "$CONFIG"
   # 이 job이 만든 클러스터만 성공·실패·취소와 관계없이 지운다. 로컬에서 띄운 클러스터는 건드리지 않는다.
   after_script:

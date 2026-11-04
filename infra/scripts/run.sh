@@ -16,13 +16,17 @@ if [ -n "$mode" ] && [ "$mode" != tcp ]; then
   exit 2
 fi
 study=$(prop study)
+variant=$(prop variant)
 exec_ms=$(prop execution.timeout.ms)
 exec_ms=${exec_ms:-3600000}
 
 loadgen=$(tf output -raw loadgen_instance_id)
 target=$(tf output -json node_private_ips | tr -d '[]" ' | cut -d, -f1)
 # Runner는 서버 저장소를 관측하지 않으므로 결과의 storageLayer에 적을 값을 넘긴다.
-case "$(tf output -raw storage_engine)" in
+storage=$(tf output -raw storage_engine)
+nodes=$(tf output -json node_instance_ids | tr -cd ',' | wc -c)
+nodes=$((nodes + 1))
+case "$storage" in
   nvme) storage_note="nvme (instance store, O_DIRECT, docs/storage-nvme.md)" ;;
   *) storage_note="in-memory (io.openkache.core.kv.KvEngine)" ;;
 esac
@@ -35,8 +39,12 @@ if [ "$remaining" -lt $(( exec_ms / 1000 + 300 )) ]; then
   exit 1
 fi
 
-run_id="$(date -u +%Y%m%dT%H%M%SZ)-${commit:0:8}"
-dest="s3://$RESULTS_BUCKET/results/$study/$run_id/"
+# 폴더 이름: <KST 날짜>/<KST 시각>_<저장소>_n<cache-server 수>_<variant>_<실행자>_<commit>. 컨테이너에 tzdata가 없어 +9시간으로 계산한다.
+kst_date=$(date -u -d '+9 hours' +%Y-%m-%d)
+kst_time=$(date -u -d '+9 hours' +%H%M%S)
+safe() { printf '%s' "$1" | tr -c 'A-Za-z0-9.-' '-'; }
+run_id="${kst_time}_${storage}_n${nodes}_$(safe "${variant:-none}")_$(safe "${GITLAB_USER_LOGIN:-local}")_${commit:0:8}"
+dest="s3://$RESULTS_BUCKET/results/$study/$kst_date/$run_id/"
 
 # 노드에서 실행할 스크립트. 결과 업로드는 실험이 실패해도 한다.
 remote=$(cat <<EOF
