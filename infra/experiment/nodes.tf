@@ -7,6 +7,7 @@ locals {
 }
 
 # 상한 검사: 이 state 밖의 프로젝트 인스턴스(종료되지 않은 것)와 합쳐 9대를 넘으면 plan이 실패한다.
+# Project 태그가 있는 인스턴스만 센다. 태그 없는 수동 생성은 운영 규칙상 하지 않는다(infra/README.md §1).
 data "aws_instances" "project" {
   instance_tags        = { Project = "openkache" }
   instance_state_names = ["pending", "running", "stopping", "stopped"]

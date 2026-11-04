@@ -8,12 +8,14 @@
 
 교보재 신청 조건이다(신청은 8대, 부하 생성용 1대 추가는 2026-11-04 연구팀 확인). 실행 중·정지 상태를 합쳐 프로젝트 인스턴스는 **9대를 넘으면 안 되고, 그중 cache-server는 8대 이하**다. 다른 인스턴스 타입은 쓰지 않는다.
 
+인스턴스는 이 Terraform(CI)으로만 만든다. 아래 검사는 `Project=openkache` 태그가 있는 인스턴스만 세므로, 콘솔에서 태그 없이 만든 인스턴스는 대수에 잡히지 않는다. 테스트로 콘솔에서 띄워야 하면 CI를 돌리기 전에 `infra/scripts/status.sh`(태그 무관 전체 표시)로 계정 전체 대수를 확인한다.
+
 AWS IAM에는 "N대까지"를 막는 조건이 없으므로 여러 겹으로 막는다.
 
 | 단계 | 방법 | 막는 것 |
 |---|---|---|
 | plan | 변수 검증: `1 <= node_count <= 8`, `instance_type == "m6gd.medium"` | 설정 실수 |
-| apply | precondition: 태그 `Project=openkache`인 기존 인스턴스(종료되지 않은 것) + 새로 만들 대수 <= 9 | 다른 state·수동 생성분과 합쳐 넘는 경우 |
+| apply | precondition: 태그 `Project=openkache`인 기존 인스턴스(종료되지 않은 것) + 새로 만들 대수 <= 9 | 다른 state와 합쳐 넘는 경우 |
 | apply | state 하나(S3, `use_lockfile`로 S3 자체 lock) | 두 사람이 동시에 apply |
 | IAM | Terraform 사용자 정책: `m6gd.medium` 외 타입, `Project` 태그 없는 `RunInstances` 거부 | 다른 타입, 태그 없는 생성 |
 | 감시 | 인스턴스 시작 이벤트에서 대수를 세어 8대 이상이면 SNS 메일 | 위를 모두 우회한 경우 |
@@ -62,7 +64,9 @@ scripts/down.sh         terraform destroy
 
 ## 4. 결과 저장 (S3)
 
-- 경로: `s3://openstd-s15p31d111-results/results/<study>/<UTC 시각>-<commit 앞 8자리>/` 아래에 `results.dir` 전체, 실제 사용한 `config.properties`, `runner.log`
+- 경로: `s3://openstd-s15p31d111-results/results/<study>/<KST 날짜>/<KST 시각>_<저장소>_n<cache-server 수>_<variant>_<실행자>_<commit 8자리>/` 아래에 `results.dir` 전체, 실제 사용한 `config.properties`, `runner.log`
+  - 예: `results/baseline-single-node/2026-11-04/134752_memory_n1_uniform-70-20-10_hyunaeri_e9475041/`
+  - 실행자는 CI면 GitLab 사용자명, 로컬이면 `local`이다. 2026-11-04 13:48 이전 결과는 `<UTC 시각>-<commit>` 형식으로 남아 있다.
 - 받기: `aws s3 cp --recursive --profile openstd s3://openstd-s15p31d111-results/results/<study>/<실행>/ <로컬 경로>`
 - config는 노드가 빌드한 commit에 들어 있어야 한다(커밋하지 않은 config는 `run.sh`가 거절). `execution.mode=tcp`만 실행한다.
 - 버킷은 `bootstrap/`에 두어 실험 destroy와 분리하고 `prevent_destroy`, 버전 관리, 공개 접근 차단, SSE-S3를 켠다.
