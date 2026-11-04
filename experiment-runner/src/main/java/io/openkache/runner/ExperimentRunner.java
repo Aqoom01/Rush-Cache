@@ -270,7 +270,7 @@ final class ExperimentRunner {
                 1, // nodeCount: 단일 노드 baseline
                 config.concurrency(),
                 config.serverWorkerCountHint(),
-                "in-memory (io.openkache.core.kv.KvEngine)",
+                config.serverStorageNote(),
                 System.getProperty("java.vendor", "unknown"),
                 System.getProperty("java.version", "unknown"),
                 ManagementFactory.getRuntimeMXBean().getInputArguments(),
