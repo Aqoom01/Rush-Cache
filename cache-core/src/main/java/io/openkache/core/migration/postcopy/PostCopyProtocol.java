@@ -6,6 +6,7 @@ import io.openkache.core.api.Result;
 import io.openkache.core.api.ResultStatus;
 import io.openkache.core.migration.JobState;
 import io.openkache.core.migration.MigrationJob;
+import io.openkache.core.migration.MigrationPublication;
 import io.openkache.core.migration.TransferProgress;
 import io.openkache.core.model.Bytes;
 import io.openkache.core.model.OwnershipEpoch;
@@ -106,13 +107,13 @@ public final class PostCopyProtocol {
 
     /** readyToCommit 확인 → 외부 CAS → 이 호출을 하나의 controller 작업으로 실행한다. */
     public void committed(RoutingTable published) {
-        Objects.requireNonNull(published, "publishedTable");
+        committed(expectedTable, published);
+    }
+
+    /** 다른 Tablet의 전환을 보존하는 실제 CAS 전·후 표를 받는다. 같은 controller 작업에서 호출한다. */
+    public void committed(RoutingTable before, RoutingTable published) {
         if (!readyToCommit()) throw new IllegalStateException("not ready to commit");
-        RoutingTable planned = expectedTable.apply(session.change());
-        if (!planned.version().equals(published.version()) || !planned.tablets().equals(published.tablets())
-                || planned.nextTabletId() != published.nextTabletId()) {
-            throw new IllegalArgumentException("ownership was not committed as planned");
-        }
+        MigrationPublication.verify(session, expectedTable, before, published);
         publishedTable = published;
         committed = true;
         state = PostCopyState.PULLING;

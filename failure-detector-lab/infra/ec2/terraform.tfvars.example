@@ -1,0 +1,10 @@
+aws_region     = "ap-northeast-2"
+experiment_id  = "openkache-fd-ec2-20261104"
+instance_type  = "c7i.large"
+repetitions    = 10
+
+# Keep empty to expose no SSH ingress. Management uses Systems Manager.
+allowed_admin_cidr = ""
+
+# Stop, but do not terminate, all eight nodes after validation and S3 upload.
+auto_stop_on_completion = true

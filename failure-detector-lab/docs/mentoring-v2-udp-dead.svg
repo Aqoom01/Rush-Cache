@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="500" viewBox="0 0 1100 500" role="img" aria-labelledby="title desc">
+  <title id="title">F5와 F6 실제 UDP crash smoke DEAD 지연</title>
+  <desc id="desc">5노드와 8노드에서 F5 Ring과 F6 Ring Verify의 단회 실제 UDP DEAD 지연 비교.</desc>
+  <rect width="1100" height="500" fill="#ffffff"/>
+  <text x="48" y="48" font-family="Arial, sans-serif" font-size="26" font-weight="700" fill="#172033">F5/F6 실제 UDP Crash Smoke</text>
+  <text x="48" y="76" font-family="Arial, sans-serif" font-size="14" fill="#667085">observer monotonic · real-udp-observed · 각 조건 1회</text>
+  <line x1="110" y1="390" x2="1010" y2="390" stroke="#98a2b3"/>
+  <line x1="110" y1="110" x2="110" y2="390" stroke="#98a2b3"/>
+  <g font-family="Arial, sans-serif" font-size="12" fill="#667085" text-anchor="end">
+    <line x1="110" y1="390" x2="1010" y2="390" stroke="#e4e7ec"/><text x="100" y="394">0ms</text>
+    <line x1="110" y1="297" x2="1010" y2="297" stroke="#e4e7ec"/><text x="100" y="301">400ms</text>
+    <line x1="110" y1="203" x2="1010" y2="203" stroke="#e4e7ec"/><text x="100" y="207">800ms</text>
+    <line x1="110" y1="110" x2="1010" y2="110" stroke="#e4e7ec"/><text x="100" y="114">1,200ms</text>
+  </g>
+  <g font-family="Arial, sans-serif" text-anchor="middle">
+    <rect x="180" y="120" width="130" height="270" rx="6" fill="#7f56d9"/><text x="245" y="108" font-size="15" font-weight="700" fill="#344054">1,158.377ms</text><text x="245" y="420" font-size="14" fill="#344054">5노드 F5</text>
+    <rect x="390" y="163" width="130" height="227" rx="6" fill="#3478f6"/><text x="455" y="151" font-size="15" font-weight="700" fill="#344054">971.956ms</text><text x="455" y="420" font-size="14" fill="#344054">5노드 F6</text>
+    <rect x="600" y="144" width="130" height="246" rx="6" fill="#7f56d9"/><text x="665" y="132" font-size="15" font-weight="700" fill="#344054">1,055.769ms</text><text x="665" y="420" font-size="14" fill="#344054">8노드 F5</text>
+    <rect x="810" y="152" width="130" height="238" rx="6" fill="#3478f6"/><text x="875" y="140" font-size="15" font-weight="700" fill="#344054">1,019.305ms</text><text x="875" y="420" font-size="14" fill="#344054">8노드 F6</text>
+  </g>
+  <text x="550" y="468" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" font-weight="700" fill="#b54708">기능 경로 확인용 smoke — 반복 통계와 우열 판정에는 사용하지 않음</text>
+</svg>

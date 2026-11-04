@@ -1,0 +1,12 @@
+fault	output_dir
+normal	failure-detector-lab/results-product-normal-baseline-30seed-20261101
+crash	failure-detector-lab/results-product-crash-30seed-20261101
+loss45	failure-detector-lab/results-product-loss45-30seed-20261102
+delay	failure-detector-lab/results-product-delay-30seed-20261102
+cpu-pause-target	failure-detector-lab/results-product-cpu-pause-target-30seed-20261102
+cpu-pause-observer	failure-detector-lab/results-product-cpu-pause-observer-30seed-20261103
+loss15	failure-detector-lab/results-product-loss15-30seed-20261103
+cpu-throttle-target	failure-detector-lab/results-product-cpu-throttle-target-30seed-20261103
+cpu-throttle-observer	failure-detector-lab/results-product-cpu-throttle-observer-30seed-20261103
+cpu-contention-target	failure-detector-lab/results-product-cpu-contention-target-30seed-20261103
+io-contention-target	failure-detector-lab/results-product-io-contention-target-30seed-20261103

@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="520" viewBox="0 0 960 520" role="img" aria-labelledby="title desc">
+  <title id="title">정상 상태 통신 비용 비교</title>
+  <desc id="desc">노드당 초당 프로토콜 메시지와 바이트를 비교한 막대그래프</desc>
+  <rect width="960" height="520" fill="#ffffff"/>
+  <text x="56" y="48" font-family="Arial, sans-serif" font-size="26" font-weight="700" fill="#172033">정상 상태 통신 비용 비교</text>
+  <text x="56" y="77" font-family="Arial, sans-serif" font-size="15" fill="#596579">노드당 초당 비용 · 낮을수록 좋음</text>
+  <g font-family="Arial, sans-serif">
+    <text x="260" y="118" text-anchor="middle" font-size="18" font-weight="700" fill="#344054">메시지 / node / s</text>
+    <line x1="92" y1="408" x2="428" y2="408" stroke="#9aa5b5" stroke-width="1.5"/>
+    <rect x="155" y="230" width="78" height="178" rx="6" fill="#3478f6"/><rect x="285" y="141" width="78" height="267" rx="6" fill="#f59e42"/>
+    <text x="194" y="218" text-anchor="middle" font-size="15" font-weight="700" fill="#172033">2.044</text><text x="324" y="129" text-anchor="middle" font-size="15" font-weight="700" fill="#172033">3.067</text>
+    <text x="194" y="437" text-anchor="middle" font-size="14" fill="#344054">SWIM</text><text x="324" y="437" text-anchor="middle" font-size="14" fill="#344054">Phi</text>
+    <text x="700" y="118" text-anchor="middle" font-size="18" font-weight="700" fill="#344054">bytes / node / s</text>
+    <line x1="532" y1="408" x2="868" y2="408" stroke="#9aa5b5" stroke-width="1.5"/>
+    <rect x="595" y="289" width="78" height="119" rx="6" fill="#3478f6"/><rect x="725" y="141" width="78" height="267" rx="6" fill="#f59e42"/>
+    <text x="634" y="277" text-anchor="middle" font-size="15" font-weight="700" fill="#172033">130.8</text><text x="764" y="129" text-anchor="middle" font-size="15" font-weight="700" fill="#172033">294.4</text>
+    <text x="634" y="437" text-anchor="middle" font-size="14" fill="#344054">SWIM</text><text x="764" y="437" text-anchor="middle" font-size="14" fill="#344054">Phi</text>
+  </g>
+  <rect x="245" y="466" width="470" height="35" rx="17.5" fill="#edf4ff"/>
+  <text x="480" y="489" text-anchor="middle" font-family="Arial, sans-serif" font-size="15" font-weight="700" fill="#245bb5">SWIM: 메시지 약 33%↓ · 전송량 약 56%↓</text>
+</svg>

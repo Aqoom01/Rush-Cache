@@ -3,6 +3,7 @@ package io.openkache.core.migration.precopy;
 import io.openkache.core.migration.JobState;
 import io.openkache.core.migration.MigrationJob;
 import io.openkache.core.migration.MigrationProtocol;
+import io.openkache.core.migration.MigrationPublication;
 import io.openkache.core.migration.TransferBatch;
 import io.openkache.core.migration.TransferProgress;
 import io.openkache.core.migration.stopcopy.StopAndCopyProtocol;
@@ -259,14 +260,13 @@ public final class PreCopyProtocol implements MigrationProtocol {
 
     /** 외부 CAS 직후 다른 작업을 끼우지 않고 실제 게시된 table로 호출한다. */
     public void committed(RoutingTable publishedTable) {
-        Objects.requireNonNull(publishedTable, "publishedTable");
+        committed(expectedTable, publishedTable);
+    }
+
+    /** 다른 Tablet의 전환을 보존하는 실제 CAS 전·후 표를 받는다. 같은 controller 작업에서 호출한다. */
+    public void committed(RoutingTable before, RoutingTable publishedTable) {
         if (!readyToCommit()) throw new IllegalStateException("not ready to commit");
-        RoutingTable planned = expectedTable.apply(session.change());
-        if (!planned.version().equals(publishedTable.version())
-                || !planned.tablets().equals(publishedTable.tablets())
-                || planned.nextTabletId() != publishedTable.nextTabletId()) {
-            throw new IllegalArgumentException("ownership was not committed as planned");
-        }
+        MigrationPublication.verify(session, expectedTable, before, publishedTable);
         update(JobState.CLEANING_UP, job.progress());
     }
 

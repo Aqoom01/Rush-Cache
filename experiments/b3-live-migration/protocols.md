@@ -39,6 +39,12 @@ source freeze는 baseline 데이터를 고정하는 fence다. commit 뒤 요청�
 
 ## 검증
 
+다중 이동의 `MigrationScheduler`는 고정 Change 목록의 FIFO 시작·동시 상한·전체/노드 전송 예산을 제어한다. 세 protocol은 `committed(before, published)` overload를 제공한다. `before`는 시작 표가 아니라 해당 CAS 직전의 최신 실제 표다. `MigrationPublication.verify`는 대상 Tablet이 시작 때와 같고, 게시 표가 최신 표에 해당 Change 하나만 적용한 결과인지 확인한다. 다른 Tablet의 선행 commit을 보존하며 같은 Tablet의 owner·epoch·범위 변경은 거절한다. readiness 확인 → 검증 → 실제 최신 표 CAS → protocol 통지를 한 controller 작업에서 수행한다. 기존 `committed(published)`는 단일 이동의 시작 표 기준 검증을 유지한다.
+
+Scheduler의 timeout은 driver의 중단 계약을 호출하고 TIMED_OUT으로 수집한다. commit 이후 안전한 rollback·자동 복구를 추가하지 않으며 source 정리·freeze·데이터 보존은 해당 protocol 계약을 따른다. 다중 노드 fixture와 M1~M5 정식 결과는 [다중 이동 안내](movement-scaling-comparison/README.md)에 있다.
+
+`MigrationScheduler.Policy`로 시작 후보 순서·부분 집합과 active job별 예산을 주입할 수 있다. 기존 constructor는 FIFO/회전 균등 배분을 유지한다. 정책이 제안해도 중복/잘못된 job·누락된 할당·전체/노드 예산 초과는 실제 전송 전에 거절한다. 이 경계가 migration package 밖의 공통 API를 바꾸지는 않는다. 선행 정책은 test 연구 backend에 두며 [선행 Scheduler 비교](scheduler-comparison/README.md)의 원문 대비 변경표를 따른다.
+
 ```powershell
 .\gradlew.bat build
 .\gradlew.bat :cache-core:test --tests '*PreCopyProtocolTest' --tests '*PostCopyProtocolTest'
