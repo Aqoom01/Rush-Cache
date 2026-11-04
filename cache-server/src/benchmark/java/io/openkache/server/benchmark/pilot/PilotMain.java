@@ -83,7 +83,7 @@ public final class PilotMain {
         }
         Files.writeString(real.resolve("state/node-"+id+".stopped"),"closed_after_stop_file\n",StandardOpenOption.CREATE_NEW);
     }
-    private static List<Properties> ready(Path bundle,Path root,Properties run,Set<NodeId> members)throws Exception{
+    static List<Properties> ready(Path bundle,Path root,Properties run,Set<NodeId> members)throws Exception{
         String code=PilotFiles.sha(bundle.resolve("BUNDLE_SHA256SUMS")),inputs=PilotFiles.sha(root.resolve("INPUT_SHA256SUMS"));List<Properties> result=new ArrayList<>();Set<String> ids=new HashSet<>();
         for(NodeId n:members){Properties p=PilotFiles.readProperties(PilotFiles.inside(root,"ready/node-"+n.value()+".ready.properties"));
             if(!run.getProperty("run.id").equals(p.getProperty("run.id"))||PilotFiles.number(p,"node.id")!=n.value()||!"LISTENING".equals(p.getProperty("status"))||!code.equals(p.getProperty("bundle.sha256"))||!inputs.equals(p.getProperty("input.sha256"))||!ids.add(p.getProperty("instance.id"))||PilotFiles.number(p,"pid")<1)throw new IOException("replica ready metadata mismatch: "+n);result.add(p);
@@ -101,6 +101,7 @@ public final class PilotMain {
     }
     private static O00BenchmarkClient.Settings settings(String run,PilotFiles.Plan p,List<NodeId> nodes,long base,int streams){return new O00BenchmarkClient.Settings(run,"pilot-1",streams,base,nodes,new NodeId(1),nodes.get(1),TimeUnit.MILLISECONDS.toNanos(p.operationMs()),3,10_000_000,Math.max(8,p.concurrency()),256,5_000_000);}
     public static void run(Path bundle,Path root)throws Exception{
+        if(Files.exists(root.resolve("distributed.properties")))throw new IOException("Use DistributedPilotMain for a distributed run");
         Properties props=verify(bundle,root);String run=props.getProperty("run.id");var addresses=PilotFiles.addresses(PilotFiles.readProperties(root.resolve("topology.properties")));var replicas=ready(bundle,root,props,addresses.keySet());var p=PilotFiles.Plan.read(root.resolve("profile.properties"));
         Files.writeString(root.resolve("CLIENT_STARTED"),"one load coordinator only\n",StandardOpenOption.CREATE_NEW);String clock="load-pid-"+ProcessHandle.current().pid();
         try(var control=admin(addresses,p.socketMs())){
@@ -118,7 +119,7 @@ public final class PilotMain {
             }
         }catch(Exception e){PilotFiles.json(root.resolve("PILOT_FAILED.json"),Map.of("passed",false,"error",e.toString(),"run_id",run));throw e;}
     }
-    private static Map<String,Object> audit(Map<NodeId,InetSocketAddress> addresses,PilotFiles.Plan p,String run,long baseline)throws Exception{
+    static Map<String,Object> audit(Map<NodeId,InetSocketAddress> addresses,PilotFiles.Plan p,String run,long baseline)throws Exception{
         List<NodeId> nodes=new ArrayList<>(addresses.keySet());Bytes key=Bytes.utf8("__pilot_audit/"+run),a=Bytes.utf8("pilot-value-A/"+run),b=Bytes.utf8("pilot-value-B/"+run);
         try(var client=O00TcpClients.open(settings(run+"-audit",p,nodes,2_000_000,1),addresses,p.socketMs(),TimeSource.system());var control=admin(addresses,p.socketMs());var probe=new RemoteO00DrainProbe(control,client::diagnostics,nodes,new NodeId(1),run)){
             List<Command> commands=List.of(new Command.Get(key),new Command.Set(key,a),new Command.Get(key),new Command.Delete(key),new Command.Get(key),new Command.Delete(key),new Command.Set(key,b),new Command.Get(key));

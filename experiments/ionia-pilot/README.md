@@ -1,5 +1,7 @@
 # O00 3노드 기능 pilot
 
+2개 부하 서버·별도 제어 서버의 분산 기능 pilot은 [DISTRIBUTED.md](DISTRIBUTED.md)를 따른다. 고정3,200요청 dataset은 datasets/pilot-v1-seed101/에 build/clean과 독립적으로 보관한다. 아래 내용은 기존 단일 load 실행 방법이다.
+
 Java 21 기준. 기존 IoniaNode, TCP 전송, O00 장기 client, TraceGenerator와 ClosedLoopRunner를 재사용한다. 복제 JVM 3개와 부하 JVM 1개를 분리한다. 이 도구는 원본/파생 알고리즘이나 공통 API를 변경하지 않는다.
 
 ## 빠른 시작 — Windows 로컬
