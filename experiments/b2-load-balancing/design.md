@@ -306,3 +306,7 @@ PlacementInput: RoutingTable(B1), Tablet별 window 부하·byte, 노드별 용�
 - 개선율은 seed 10개 짝의 평균과 95% 신뢰구간이다. Baseline이 0이거나 정의되지 않으면(보류) 계산하지 않는다. 보류한 실행의 큰 쪽 비율은 0으로 넣지 않는다.
 - 모든 결과는 계획 계산값이다. QPS·IOPS로 표현하지 않는다.
 - 실행: `./gradlew :cache-core:testClasses` 후 `java -cp cache-core/build/classes/java/main:cache-core/build/classes/java/test io.openkache.core.balance.experiment.BalanceBenchmark experiments/b2-load-balancing [A|B|C]`
+
+### 9.6 EC2 실측 (cluster-placement)
+
+Benchmark B의 결정을 실제 노드 라우팅에 적용해 잰다. 방식은 오프라인 계획 재생이다. `ClusterPlacementPlanner`가 Runner와 같은 요청열로 window별 주인을 계산해 `schedule` 파일로 쓰고, Runner가 window 단위로 재생한다. 이동은 라우팅 변경이고 새 주인은 빈 상태에서 시작하며, MISS가 나면 클라이언트가 다시 SET한다(cache-aside). 그래서 이동 비용은 miss·다시 채운 SET으로 나타난다. 환경·묶음·실행 방법은 [cluster-placement/README.md](cluster-placement/README.md)에 있다.
