@@ -44,23 +44,28 @@ if [ "$remaining" -lt $(( exec_ms / 1000 + 300 )) ]; then
   exit 1
 fi
 
-# SSM으로 인스턴스 하나에서 bash 스크립트를 실행하고 끝날 때까지 기다린다. 출력은 표준 출력으로, 성공이면 0.
+# SSM으로 인스턴스들(공백 구분)에서 같은 bash 스크립트를 동시에 실행하고 모두 끝날 때까지 기다린다. 출력은 표준 출력으로, 모두
+# 성공이면 0.
 ssm_run() {
-  local instance=$1 script=$2 timeout=$3 cmd status
-  cmd=$(aws ssm send-command --instance-ids "$instance" --document-name AWS-RunShellScript \
+  local instances=$1 script=$2 timeout=$3 cmd status id failed=0
+  # shellcheck disable=SC2086
+  cmd=$(aws ssm send-command --instance-ids $instances --document-name AWS-RunShellScript \
     --parameters "{\"commands\":[\"echo $(printf '%s' "$script" | base64 -w0) | base64 -d | bash\"],\"executionTimeout\":[\"$timeout\"]}" \
     --query Command.CommandId --output text)
-  while :; do
-    status=$(aws ssm get-command-invocation --command-id "$cmd" --instance-id "$instance" \
-      --query Status --output text 2>/dev/null || echo Pending)
-    case "$status" in
-      Pending | InProgress | Delayed) sleep 10 ;;
-      *) break ;;
-    esac
+  for id in $instances; do
+    while :; do
+      status=$(aws ssm get-command-invocation --command-id "$cmd" --instance-id "$id" \
+        --query Status --output text 2>/dev/null || echo Pending)
+      case "$status" in
+        Pending | InProgress | Delayed) sleep 3 ;;
+        *) break ;;
+      esac
+    done
+    aws ssm get-command-invocation --command-id "$cmd" --instance-id "$id" \
+      --query '[StandardOutputContent, StandardErrorContent]' --output text
+    [ "$status" = Success ] || { echo "$id: $status" >&2; failed=1; }
   done
-  aws ssm get-command-invocation --command-id "$cmd" --instance-id "$instance" \
-    --query '[StandardOutputContent, StandardErrorContent]' --output text
-  [ "$status" = Success ]
+  [ "$failed" -eq 0 ]
 }
 
 restart='docker restart openkache-server > /dev/null
@@ -70,10 +75,8 @@ for _ in $(seq 1 60); do
 done
 echo "cache-server가 다시 뜨지 않았다" >&2
 exit 1'
-for id in $node_ids; do
-  echo "cache-server 재시작: $id"
-  ssm_run "$id" "$restart" 300 || { echo "$id 재시작 실패" >&2; exit 1; }
-done
+echo "cache-server 재시작(동시): $node_ids"
+ssm_run "$node_ids" "$restart" 300 || { echo "cache-server 재시작 실패" >&2; exit 1; }
 
 # 폴더 이름: <KST 날짜>/<KST 시각>_<저장소>_n<cache-server 수>_<variant>_<실행자>_<commit>. 컨테이너에 tzdata가 없어 +9시간으로 계산한다.
 kst_date=$(date -u -d '+9 hours' +%Y-%m-%d)
