@@ -18,7 +18,7 @@
 | [placement-comparison/](placement-comparison/) | in-process. Tablet 64개 고정, 노드별 부하·이동량(Benchmark B) |
 | [end-to-end/](end-to-end/) | in-process. 분할 + 배치 조합(Benchmark C) |
 | [cluster-split/](cluster-split/) | EC2 cache-server 2대. 정책별 분할 지점으로 라우팅했을 때 노드별 부하·p99·처리량(memory·nvme) |
-| [cluster-placement/](cluster-placement/) | EC2 cache-server 4-5대. 배치 정책의 window별 라우팅 계획을 재생해 노드별 부하·p99·CPU·이동 후 miss를 잰다 |
+| [cluster-placement/](cluster-placement/) | EC2 cache-server 4대. 배치 정책의 window별 라우팅 계획을 재생해 노드별 부하·p99·CPU·이동 후 miss를 잰다. 결과: [results.md](cluster-placement/results.md) |
 
 ## 정책(variant) 목록
 
