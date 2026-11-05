@@ -51,3 +51,8 @@ Scheduler의 timeout은 driver의 중단 계약을 호출하고 TIMED_OUT으로 
 ```
 
 두 테스트와 `LiveMigrationFixture`는 실제 프로토콜·수신기를 호출한다. snapshot/delta barrier, 라운드 중 반복 쓰기, 삭제/빈 값, final ACK 누락, checksum·session·epoch 오류, byte 예산, 취소와 cleanup, Tablet 격리, 우선 pull, late-pull 쓰기 보호, source 장애와 복구를 검증한다. 이 검증은 실제 서버 성능 실험이나 S1~S6 비교 보고서를 대체하지 않는다.
+
+
+## Pre-copy dirty 상세 기록 보완 (2026-11-04)
+
+라운드 generation별 dirty key·삭제 수·예상 bytes와 실제 전송·ACK·종료 사유를 구현했다. 새 S1~S5/S3 민감도·M1~M5·Scheduler JSON은 각 backend의 schema 2를 사용하고 이전 schema 1 재생성을 지원한다. 통합 b3-research-v2 전체 구현과는 구분한다. 기록 의미·호환성·검증은 [dirty 상세 안내](migration-comparison/dirty-rounds.md)를 따른다. 실제 KV/peer·노드 증감 controller 연결은 후속이다.

@@ -108,8 +108,11 @@ public final class BaselineResearchMain {
         for (String key : launch.stringPropertyNames()) if (!java.util.Set.of("suiteExecutionId", "sourceHash", "sourceHashAlgorithm",
                 "backendHash", "runnerHash", "gitCommit", "workingTreeDirty", "configPath", "runnerJvmArgs").contains(key)) config.put(key, launch.getProperty(key));
         context.put("configSnapshot", config);
-        context.put("invocation", Map.of("command", "openkache-experiment-runner", "configPath", launch.getProperty("configPath", ""),
-                "arguments", java.util.List.of(launch.getProperty("configPath", ""))));
+        context.put("invocation", Map.of("command", launch.getProperty("execution.command", "openkache-experiment-runner"),
+                "configPath", launch.getProperty("configPath", ""),
+                "arguments", BaselineJson.decode(launch.getProperty("execution.arguments",
+                        BaselineJson.encode(java.util.List.of(launch.getProperty("configPath", "")))))));
+        if (launch.containsKey("execution.launcher")) context.put("executionLauncher", launch.getProperty("execution.launcher"));
         context.put("sourceHash", launch.getProperty("sourceHash"));
         context.put("sourceHashAlgorithm", launch.getProperty("sourceHashAlgorithm"));
         context.put("backendHash", launch.getProperty("backendHash"));

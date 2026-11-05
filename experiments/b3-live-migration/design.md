@@ -1,6 +1,8 @@
+현재 범위는 [고정 배치 B3 명세](scaling-decision/README.md)와 [Java 모듈](java/README.md)이 우선한다. 아래는 초기 설계이며 B2 분할·병합·배치 알고리즘을 현재 필수 기능으로 추가하지 않는다.
+
 # B3 설계
 
-**최신 구현 현황(2026-11-02):** 아래 단계 계획 중 pre-copy와 post-copy 프로토콜·수신기·정합성 테스트를 구현했다. 상세와 확정된 post-copy 실패/조회 계약은 [protocols.md](protocols.md)에 있다. pre-copy의 라운드·seq는 공통 `MigrationJob` 필드를 변경하지 않고 protocol의 `rounds()`·`acknowledgedSequence()`로 제공하며 `DeltaBatch`로 전달한다. source-owned `JobState.CATCHING_UP`을 추가했고 post-copy는 별도 `PostCopyState`를 사용한다. S1~S5 세 방식 비교 backend와 b3-comparison-json-1 원본/요약 생성을 구현했다. S3 민감도와 별도 S6 취소·장애 비교도 구현하고 실험했다. 자체 노드 증감 비교 구현·설정·결과는 제거했다. 선행 메커니즘 8개의 연구 prototype과 가상 비교 backend를 구현했다. 원 논문 제품·실제 노드 실행의 재현은 아니다. [변경점과 실행 범위](scaling-decision/README.md), [결과](scaling-decision/results.md)를 따른다. M scheduler·다중 노드 fixture·M1~M5 backend를 구현하고 정식 210회·축소 두 반복 168회를 완료했다. 결과와 실제 실행 범위는 [다중 이동 결과](movement-scaling-comparison/results.md)를 따른다. schema v2 dirty 상세 보고서와 실제 KV/peer 연계는 후속이다. 아래 1단계·후속 구분과 초안 설명은 원래 구현 순서이며 최신 완료 여부는 이 문단과 구현 안내를 기준으로 한다.
+**최신 구현 현황(2026-11-02):** 아래 단계 계획 중 pre-copy와 post-copy 프로토콜·수신기·정합성 테스트를 구현했다. 상세와 확정된 post-copy 실패/조회 계약은 [protocols.md](protocols.md)에 있다. pre-copy의 라운드·seq는 공통 `MigrationJob` 필드를 변경하지 않고 protocol의 `rounds()`·`acknowledgedSequence()`로 제공하며 `DeltaBatch`로 전달한다. source-owned `JobState.CATCHING_UP`을 추가했고 post-copy는 별도 `PostCopyState`를 사용한다. S1~S5 세 방식 비교 backend와 b3-comparison-json-1 원본/요약 생성을 구현했다. S3 민감도와 별도 S6 취소·장애 비교도 구현하고 실험했다. 자체 노드 증감 비교 구현·설정·결과는 제거했다. 선행 시스템의 수 판단 7개를 공통 고정 배치에 적용한 연구 변형으로 수정했다. 원 논문 제품·실제 노드 실행의 재현은 아니다. [변경점과 실행 범위](scaling-decision/README.md), [결과](scaling-decision/results.md)를 따른다. M scheduler·다중 노드 fixture·M1~M5 backend를 구현하고 정식 210회·축소 두 반복 168회를 완료했다. 결과와 실제 실행 범위는 [다중 이동 결과](movement-scaling-comparison/results.md)를 따른다. schema v2 dirty 상세 보고서와 실제 KV/peer 연계는 후속이다. 아래 1단계·후속 구분과 초안 설명은 원래 구현 순서이며 최신 완료 여부는 이 문단과 구현 안내를 기준으로 한다.
 
 Baseline 실행: 공통 Runner 연계와 §6.1 SC1~SC6 결과 보관까지 구현했다. S1~S5 variant 비교 backend도 구현했다. S3 민감도와 별도 S6 취소·장애 비교 backend도 구현했다. 실제 KV/peer 연계·scaling과 v2 dirty 라운드 상세는 후속이다. 실행 방법은 [migration-comparison/README.md](migration-comparison/README.md), 보관된 실행은 [Baseline 보고서](migration-comparison/runs/run-2026-10-22T04-48-53.944252700Z-a4354ce4/repeat-001/results.md)와 [조건별 요약](migration-comparison/runs/run-2026-10-22T04-48-53.944252700Z-a4354ce4/repeat-001/summary.csv)을 따른다. S1~S5는 2026-10-23 generator v2 full 240회를 참조 run으로 선정했고 migration-comparison/results.md와 B3 통합 results.md에 정리했다. SC 수치는 별도 Baseline으로 보존한다.
 
@@ -175,20 +177,19 @@ abort()                          → JobState   commit 전이면 되돌리고 AB
 
 **dirty generation 규칙.** 라운드가 시작되면 `collecting` 참조를 새 빈 집합으로 교체하고 이전 집합을 `sending`으로 고정한다. 전송 중 같은 key에 write가 오면 새 `collecting`에 다시 들어가므로, `sending`에서 key를 제거하거나 라운드를 끝내도 변경을 잃지 않는다. `sending`의 key는 읽는 순간의 최신 value 또는 tombstone으로 직렬화하고 그때 `seq`를 부여한다.
 
-### 4.3 노드 증감·재배치 — 선행 메커니즘 prototype과 후속 통합
+### 4.3 노드 수 판단 — 고정 배치에서 비교
 
-현재 8개 선행 메커니즘의 핵심 계산을 Python 연구 backend에 구현했다. [선행 시스템별 알고리즘](references/elastic-scaling-algorithms.md)과 [실험 안내](scaling-decision/README.md)에 원문과의 변경점·실행 모형·비교군을 명시한다. production 노드 증감 controller는 없으며 문서 아래 Java scaling 클래스 이름은 계획이다.
+현재는 7개 수 판단만 NodeCountPolicy에 구현하고 fixed-tablet-lpt-v1 배치를 고정한다. [선행 시스템별 알고리즘](references/elastic-scaling-algorithms.md)과 [실험 안내](scaling-decision/README.md)에 원문과의 변경점·실행 모형·비교군을 명시한다. 현재 전략 클래스·선택 설정·B3Workflow는 구현됐다. 아래 초기 설계보다 [현재 Java 모듈](java/README.md)을 우선하며 실제 노드 I/O adapter·실서버 실행은 후속이다.
 
 | 선행 시스템 | 검토할 알고리즘 | 필요한 전제 |
 |---|---|---|
-| SCADS Director | 성능 모델 + best-fit 탐욕 재배치 | bin 통계·모델, 복제 경로 |
+| SCADS 수 판단 변형 | 성능 경계 기반 수 탐색 | 공통 고정 배치·단일 owner |
 | ElastMan | feedforward 모델 + p99 feedback | 실측 지연·처리량과 성능 식별 |
-| E-Store | CPU 상·하한 + Greedy/Greedy Extended hot/cold 배치 | tuple 접근 통계와 세밀한 배치 |
-| Accordion | 서버 수 후보별 MILP | 처리 용량·메모리·배치 제약 |
+| E-Store 수 판단 | CPU 상·하한 한 노드 증감 | 평균 CPU·공통 고정 배치 |
+| Accordion 수 판단 변형 | 서버 수 후보 선택·공통 배치 가능성 | MILP 재배치 제외 |
 | P-Store | SPAR 예측 + 동적 계획법 | 부하 이력·재구성 시간·유효 용량 |
 | TIRAMOLA | MDP 기반 행동 평가 | 상태·행동·보상·관측 이력 |
-| PAX | hot partition 기반 휴면 노드 선택, ARIMA 예측 | 복제 데이터와 hints 동기화 |
-| Slicer | 가중치 기반 slice 이동·split/merge | 서버 수는 외부에서 제공 |
+| PAX 수 판단 변형 | ARIMA·평균 CPU 범위 | partition 선택·replica·hint 제외 |
 
 특정 target tracking 식이나 자체 비용식을 재현 대상 대신 사용하지 않는다. 원문 알고리즘을 단순화하거나 Tablet에 맞게 바꾸면 변경점을 명시한다. 현재 없는 복제·실측 p99·학습 이력을 가상 값으로 채워 원문 재현으로 표시하지 않는다.
 
@@ -313,7 +314,7 @@ S6에서 `CATCHING_UP`은 stop-and-copy에 없는 상태이므로 미지원으�
 | E6 자원·배치 경계 | min/max·메모리·Tablet 배치 제약을 만족하는가? |
 | E7 노드 선택·쏠림 | 선택한 노드와 재배치가 실제 hotspot을 해소하는가? |
 
-hot range·이동 hotspot·단일 hot key와 split/merge 유무를 별도로 다룬다. Slicer처럼 노드 수를 결정하지 않는 알고리즘은 노드 수 고정 배치 실험으로 구분한다.
+hot range·이동 hotspot·단일 hot key를 고정 Tablet 경계에서 관측한다. split/merge와 Slicer 배치 비교는 B3에서 제외한다.
 
 원문 재현 범위와 관측·모델의 준비 여부를 먼저 확정한다. 정책에는 같은 외부 요청열·초기 데이터·seed를 주되, 정책에 따라 달라지는 사용률·배치를 다시 관측한다. 정책과 무관한 고정 사용률을 서비스 결과처럼 재생하지 않는다.
 
@@ -321,7 +322,7 @@ hot range·이동 hotspot·단일 hot key와 split/merge 유무를 별도로 다
 
 ### 6.4 이동 Scaling — M1~M5 구현·실험 완료
 
-2026-11-04 후속으로 [선행 Scheduler 방법 비교](scheduler-comparison/README.md)를 별도 구현·실행했다. 고정 계획의 FIFO·MongoDB식·TiDB 변형·iter-GWIN·single-MCs·SLAMIG 변형·VMbuddies 배분 변형·FPTA 할당을 비교하고 CAMIG는 후보 목적지 선택 단계에서 평가한다. 정식 855회·축소 반복 684회의 [결과](scheduler-comparison/results.md)가 있다. 아래 M1~M5는 FIFO의 조건 변화 실험으로 보존하며 정책별 비교와 구별한다.
+현재 [선행 Scheduler](scheduler-comparison/README.md)는 고정 목적지의 9실행 정책만 비교한다. CAMIG·후보 목적지 선택을 삭제했고 full810×2·quick324×2로 재실행했다. M1~M5는 FIFO 조건 변화 실험으로 보존한다.
 
 단일 이동 후속 단계로 여러 `Change`를 동시에 실행하는 scheduler를 구현했다. 실제 세 protocol을 다중 노드 메모리 저장소에서 호출한 정식 210회와 축소 반복 168회를 완료했다. 구현 위치·전체 설정·공식 run·해석 제한은 [다중 이동 안내](movement-scaling-comparison/README.md)와 [결과](movement-scaling-comparison/results.md)를 따른다. 아래 설계에서 M3는 노드 동시 상한 1/4를 함께 비교하고, M4는 Pre-copy 기준, M5는 세 방식의 동일 조건 비교로 실행했다.
 
@@ -445,6 +446,8 @@ stop-and-copy와 pre-copy는 source-owned 계약을 공유한다. post-copy는 �
 - `valid`인 의도된 취소도 복구 비용 비교에 포함한다. 미지원·관측 누락·오류는 성능 차이를 계산하지 않고 보고서에서 건수와 이유를 드러낸다.
 
 #### JSON 원본과 파생 요약 · B3 후속 형식
+
+2026-11-04 보완: Pre-copy generation별 dirty·실전송·ACK·종료 사유를 S 비교와 M/Scheduler의 개별 schema 2에 구현했다. [관측 계약과 호환성](migration-comparison/dirty-rounds.md)을 따른다. 아래 b3-research-v2는 별도의 통합 형식 제안이며 전체 구현 완료를 뜻하지 않는다. 기존 run의 관측을 소급 생성하지 않는다.
 
 공통 Runner의 **JSON 원본·CSV 요약** 원칙을 따른다. 후속 B3 결과도 JSON이 재분석의 기준이며, CSV·Markdown은 JSON에서 다시 만들 수 있어야 한다. `b3-research-v2`는 비교용 후속 형식의 제안 식별자이며 프로젝트 전체의 schema v2 합의를 의미하지 않는다. 현재 구현된 Baseline JSON은 `b3-baseline-json-1`로 구별하며, M은 별도 b3-movement-json-1로 cases/runs/jobs/budgets/phase-rounds와 원본 재검증을 구현했다. 아래 통합 v2의 dirty generation 등 전체 상세 schema는 후속이다.
 
@@ -640,3 +643,8 @@ experiments/b3-live-migration/
 | `pre-copy` 종료 조건 | 남은 dirty 직렬화 예상량 ≤ 256 KiB, 라운드 상한 10, dirty bytes가 줄지 않으면 종료 | §4.2 |
 | 전송 검증 | 1단계는 snapshot batch의 checksum·record 수·ACK를 확인한다. 후속 Pre-Copy는 delta batch와 final `seq` 검증을 추가한다. 계약 테스트는 전체 map exact compare | §3·§4.1·§4.2 |
 | 이동 scaling 범위 | 노드 증감 판단과 movement 실행을 분리. movement 단계는 고정된 `Change` 목록에서 job 수·동시성·전송 예산·endpoint 경합만 변경 | §1·§6.3·§6.4 |
+
+
+## 독립 prototype 실행 범위 보정 (2026-11-04)
+
+사용자 지시에 따라 개인 B3 실험의 필수 완료 기준에서 공통 서비스 통합을 제외한다. 자체 저장소·라우팅 fixture와 세 migration 프로토콜을 독립 Java B3ResearchLauncher로 직접 실행한다. 공통 자료형은 모델로 재사용하되 B1/B2 controller·실제 KvEngine·Network·공통 Runner 기동을 요구하지 않는다. 증감 판단과 이동 실행의 연결·검증은 독립 B3 prototype 안에서 진행할 수 있다. 이전 절의 공통 연계는 호환·선택 사항이며 개인의 남은 필수 작업으로 해석하지 않는다.

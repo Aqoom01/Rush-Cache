@@ -15,13 +15,14 @@ import java.util.Properties;
 
 /** 공통 Runner 연결. 비교 JSON 원본을 먼저 저장하고 검증 후 CSV·Markdown을 다시 생성한다. */
 public final class ComparisonResearchMain {
-    static final String SCHEMA = "b3-comparison-json-1";
+    static final String SCHEMA = "b3-comparison-json-2";
+    static final String LEGACY_SCHEMA = "b3-comparison-json-1";
 
     public static void main(String[] args) throws IOException {
         if (args.length == 2 && args[0].equals("--rebuild")) {
             Path folder = Path.of(args[1]).toAbsolutePath().normalize();
             Properties completion = readProperties(folder.resolve("completion.properties"));
-            if (!SCHEMA.equals(completion.getProperty("resultSchemaVersion"))) throw new IllegalArgumentException("schema mismatch");
+            if (!List.of(SCHEMA, LEGACY_SCHEMA).contains(completion.getProperty("resultSchemaVersion"))) throw new IllegalArgumentException("schema mismatch");
             regenerate(folder, completion.getProperty("profile"));
             return;
         }
@@ -59,6 +60,7 @@ public final class ComparisonResearchMain {
                     root.put("validationStatus", "valid"); root.put("terminationReason", "completed");
                     root.put("stopPhaseReason", run.stopReason()); root.put("metrics", run.metrics());
                     root.put("phaseEvents", run.phases());
+                    root.put("dirtyRounds", run.dirtyRounds());
                     Files.writeString(originals.resolve(id + ".json"), BaselineJson.encode(root) + "\n", StandardCharsets.UTF_8);
                 }
             }
@@ -88,7 +90,7 @@ public final class ComparisonResearchMain {
         try (var files = Files.list(folder.resolve("results"))) {
             for (Path file : files.filter(p -> p.getFileName().toString().endsWith(".json")).sorted().toList()) {
                 var root = BaselineJson.object(BaselineJson.decode(Files.readString(file, StandardCharsets.UTF_8)));
-                ComparisonExperiment.require(SCHEMA.equals(root.get("resultSchemaVersion")), "unexpected schema");
+                ComparisonExperiment.require(List.of(SCHEMA, LEGACY_SCHEMA).contains(root.get("resultSchemaVersion")), "unexpected schema");
                 ComparisonExperiment.require("virtual".equals(root.get("timeDomain"))
                         && "valid".equals(root.get("validationStatus")) && "completed".equals(root.get("outcome")), "invalid run");
                 String caseId = (String) root.get("caseId"), variant = (String) root.get("variant");
@@ -102,6 +104,13 @@ public final class ComparisonResearchMain {
                         actual.get(name) instanceof Number number && Double.compare(number.doubleValue(), ((Number) value).doubleValue()) == 0,
                         "condition mismatch " + name));
                 var condition = expectedCases.get(caseId);
+                if (SCHEMA.equals(root.get("resultSchemaVersion"))) {
+                    PreCopyRoundTrace.validate(root.get("dirtyRounds"), variant.equals("pre-copy"),
+                            condition.threshold(), condition.maxRounds(),
+                            variant.equals("pre-copy") ? (long) metric(root, "live_delta_rounds") : 0,
+                            (String) root.get("stopPhaseReason"), (long) metric(root, "sent_bytes"),
+                            0, (long) metric(root, "commit_tick"));
+                }
                 var candidate = BaselineJson.object(root.get("candidateConfig"));
                 ComparisonExperiment.require(candidate.equals(variant.equals("pre-copy")
                         ? BaselineJson.decode(BaselineJson.encode(Map.of("stopThresholdBytes", condition.threshold(),
@@ -118,7 +127,7 @@ public final class ComparisonResearchMain {
                 }
                 ComparisonExperiment.require(metric(root, "invariant_violations") == 0
                         && metric(root, "exact_comparisons") == 1, "invariant result");
-                String signature = root.get("sourceHash") + ":" + root.get("backendHash") + ":" + root.get("suiteExecutionId")
+                String signature = root.get("resultSchemaVersion") + ":" + root.get("sourceHash") + ":" + root.get("backendHash") + ":" + root.get("suiteExecutionId")
                         + ":" + root.get("runNumber");
                 if (provenance == null) provenance = signature;
                 ComparisonExperiment.require(provenance.equals(signature), "mixed provenance");
@@ -132,6 +141,7 @@ public final class ComparisonResearchMain {
             }
         }
         ComparisonExperiment.require(rows.size() == cases.size() * 15, "missing results " + rows.size());
+        if (SCHEMA.equals(rows.getFirst().get("resultSchemaVersion"))) PreCopyRoundTrace.write(folder, rows);
         if (sensitivity) {
             writeSensitivityReport(folder, cases, rows);
             return;
@@ -169,6 +179,7 @@ public final class ComparisonResearchMain {
         md.append("S6의 취소·장애 경계는 기존 프로토콜 테스트로 별도 검증한다. 이번 suite는 S6 성능 비교·S3 임계/라운드 민감도·E/M scaling·실제 서버 실험을 포함하지 않는다. ")
                 .append("기존 SC 결과와 이번 결과는 별도 schema이며 자동 합산하지 않는다.\n");
         Files.writeString(folder.resolve("summary.csv"), csv, StandardCharsets.UTF_8);
+        if (SCHEMA.equals(rows.getFirst().get("resultSchemaVersion"))) md.append("\n라운드별 dirty 원본·예상/실전송량·ACK·종료 판단은 [dirty 상세](dirty-rounds.md)와 [이벤트 CSV](dirty-rounds.csv)를 따른다.\n");
         Files.writeString(folder.resolve("results.md"), md, StandardCharsets.UTF_8);
     }
 
@@ -212,6 +223,7 @@ public final class ComparisonResearchMain {
                 .append("rho는 쓰기 시도당 152 bytes 기준이며 DELETE·중복 쓰기로 실제 dirty bytes와 다를 수 있다. NOT_SHRINKING은 이 모델의 관측 결과이며 보편적인 수렴 한계가 아니다.\n\n")
                 .append("quick은 N=1,000, B=4 KiB/tick과 임계 4/16/64 KiB를 쓰는 재현 검증용이다. full은 N=100,000, B=64 KiB/tick과 임계 64/256/1,024 KiB다. 두 결과를 합산하지 않는다. ")
                 .append("phaseEvents는 상태·라운드 경계이며 dirty generation별 상세 byte 원본을 대체하지 않는다. S6·E/M scaling·실제 KV/peer 통합은 포함하지 않는다.\n");
+        if (SCHEMA.equals(rows.getFirst().get("resultSchemaVersion"))) md.append("\n라운드별 dirty 원본·예상/실전송량·ACK·종료 판단은 [dirty 상세](dirty-rounds.md)와 [이벤트 CSV](dirty-rounds.csv)를 따른다.\n");
         Files.writeString(folder.resolve("summary.csv"), csv, StandardCharsets.UTF_8);
         Files.writeString(folder.resolve("results.md"), md, StandardCharsets.UTF_8);
     }

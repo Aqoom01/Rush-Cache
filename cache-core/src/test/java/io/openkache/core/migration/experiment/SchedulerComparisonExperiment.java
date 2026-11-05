@@ -12,11 +12,11 @@ import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
 
-/** 선행 Scheduler의 동일 입력 비교. CAMIG 후보 선택은 별도 비교군이다. */
+/** 선행 Scheduler의 동일 입력 비교. 입력으로 고정된 이동 계획의 실행만 비교한다. */
 final class SchedulerComparisonExperiment {
     static final String GENERATOR = "b3-scheduler-trace-1";
     static final int MAX_TICKS = 6000;
-    static final List<String> SCENARIOS = List.of("heterogeneous", "conflict", "shared-source", "shared-destination", "dirty-skew", "deadline", "candidate-plan");
+    static final List<String> SCENARIOS = List.of("heterogeneous", "conflict", "shared-source", "shared-destination", "dirty-skew", "deadline");
     record Condition(String scenario, String profile, List<Integer> keys, List<Double> rho, List<Long> deadlines,
                      List<List<Change>> candidates, long nodeBudget) {
         Map<String, Object> config() {
@@ -42,31 +42,19 @@ final class SchedulerComparisonExperiment {
             long deadline = scenario.equals("deadline") ? 10 + (long) Math.ceil(size * 152. / node) * (i % 4 == 3 ? 2 : 5) : 10000;
             deadlines.add(deadline);
             long source = scenario.equals("shared-source") ? 1 : scenario.equals("heterogeneous") || scenario.equals("shared-destination") ? i + 1 : i % 4 + 1;
-            long dest = scenario.equals("shared-destination") || scenario.equals("candidate-plan") ? 100
+            long dest = scenario.equals("shared-destination") ? 100
                     : scenario.equals("heterogeneous") || scenario.equals("shared-source") ? 100 + i : 100 + (i / 4 + i) % 4;
             if (scenario.equals("conflict")) {
                 int[][] crossed = {{1,100},{1,101},{2,100},{3,102},{4,103},{2,102},{3,103},{4,100},{1,102},{2,103},{3,100},{4,101}};
                 source = crossed[i][0]; dest = crossed[i][1];
             }
             Change first = new Change(new TabletId(i), new NodeId(source), new NodeId(dest));
-            candidates.add(scenario.equals("candidate-plan") ? List.of(first,
-                    new Change(new TabletId(i), new NodeId(source), new NodeId(101 + i % 3))) : List.of(first));
+            candidates.add(List.of(first));
         }
         return new Condition(scenario, profile, List.copyOf(keys), List.copyOf(rho), List.copyOf(deadlines), List.copyOf(candidates), node);
     }
-    static List<String> methods(String scenario) { return scenario.equals("candidate-plan") ? List.of("candidate-first", "candidate-balanced", "camig-selector") : SchedulerAlgorithms.METHODS; }
-    static List<Change> planFor(Condition c, String method) {
-        if (method.equals("camig-selector")) return SchedulerAlgorithms.camig(c.candidates(), c.keys().stream().map(k -> k * 152L).toList(), c.nodeBudget());
-        if (method.equals("candidate-balanced")) {
-            Map<NodeId, Long> load = new java.util.HashMap<>(); List<Change> result = new ArrayList<>();
-            for (int i = 0; i < c.candidates().size(); i++) {
-                Change best = c.candidates().get(i).stream().min(java.util.Comparator.comparingLong(p -> load.getOrDefault(p.to(), 0L))).orElseThrow();
-                result.add(best); load.merge(best.to(), c.keys().get(i) * 152L, Long::sum);
-            }
-            return List.copyOf(result);
-        }
-        return c.candidates().stream().map(List::getFirst).toList();
-    }
+    static List<String> methods(String scenario) { return SchedulerAlgorithms.METHODS; }
+    static List<Change> planFor(Condition c, String method) { if(!SchedulerAlgorithms.METHODS.contains(method))throw new IllegalArgumentException("unknown execution scheduler");return c.candidates().stream().map(List::getFirst).toList(); }
     static List<Map<String, Object>> changes(List<Change> plan) {
         return plan.stream().map(c -> Map.<String, Object>of("tablet", c.unit().value(), "source", c.from().value(), "destination", c.to().value())).toList();
     }
@@ -80,7 +68,7 @@ final class SchedulerComparisonExperiment {
         long planningStart = System.nanoTime();
         List<Change> plan = planFor(c, method);
         long initialPlannerNanos = System.nanoTime() - planningStart;
-        String executionMethod = c.scenario().equals("candidate-plan") ? "mongodb" : method;
+        String executionMethod = method;
         var f = new MultiMigrationFixture(plan, c.keys(), seed, variant, (int) c.nodeBudget(), c.nodeBudget() / 4);
         var settings = new MigrationScheduler.Settings(4, 4, c.nodeBudget() * 4, c.nodeBudget(), MAX_TICKS);
         double[] dirty = new double[plan.size()]; long[] remaining = new long[plan.size()];
@@ -130,6 +118,7 @@ final class SchedulerComparisonExperiment {
             budgets.add(Map.of("tick", tick, "grants", grants));
             for (var job : observation.jobs()) {
                 var h = f.handles.get(job.index());
+                h.recordDirty(tick + 1L);
                 if (h.commitTick < 0 && f.routing.get().get(h.change.unit()).owner().equals(h.change.to())) h.commitTick = tick + 1L;
                 if (!h.state().equals(state[job.index()]) || h.rounds() != rounds[job.index()]) {
                     events.add(Map.of("job", job.index(), "tick", tick + 1, "state", h.state(), "round", h.rounds(), "sentBytes", h.sentBytes()));
@@ -155,6 +144,7 @@ final class SchedulerComparisonExperiment {
             row.put("sentBytes", h.sentBytes()); row.put("blockedTicks", h.blockedTicks); row.put("writes", h.writes); row.put("acceptedWrites", h.accepted);
             row.put("writeBusy", h.writeBusy); row.put("reads", h.reads); row.put("readBusy", h.readBusy); row.put("rounds", h.rounds()); row.put("stopReason", h.reason());
             row.put("sourceRecords", 0); row.put("exactMatch", true); row.put("oracleHash", MovementExperiment.dataHash(h.oracle)); row.put("destinationHash", MovementExperiment.dataHash(h.finalData()));
+            row.put("dirtyRounds", h.dirtyTrace.events());
             jobs.add(row);
         }
         var result = new LinkedHashMap<String, Object>();

@@ -112,6 +112,7 @@ final class MovementExperiment {
             budgets.add(Map.of("tick", tick, "grants", grants, "nodes", nodes));
             for (var job : observation.jobs()) {
                 var h = f.handles.get(job.index());
+                h.recordDirty(tick + 1L);
                 if (job.startTick() >= 0) h.startTick = job.startTick();
                 if (h.commitTick < 0 && f.routing.get().get(h.change.unit()).owner().equals(h.change.to())) h.commitTick = tick + 1L;
                 if (!states[job.index()].equals(h.state()) || rounds[job.index()] != h.rounds()) {
@@ -145,6 +146,7 @@ final class MovementExperiment {
             row.put("writes", h.writes); row.put("acceptedWrites", h.accepted); row.put("writeBusy", h.writeBusy); row.put("reads", h.reads); row.put("readBusy", h.readBusy);
             row.put("rounds", h.rounds()); row.put("stopReason", h.reason()); row.put("exactMatch", true); row.put("sourceRecords", h.sourceData.size());
             row.put("oracleHash", dataHash(h.oracle)); row.put("destinationHash", dataHash(h.finalData()));
+            row.put("dirtyRounds", h.dirtyTrace.events());
             jobs.add(row); waits.add(job.startTick()); totalBytes += h.sentBytes(); finalBytes += h.oracle.size() * 152L;
             blocked += h.blockedTicks; writes += h.writes; writeBusy += h.writeBusy; reads += h.reads; readBusy += h.readBusy;
         }

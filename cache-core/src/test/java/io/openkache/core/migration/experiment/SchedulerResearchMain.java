@@ -17,19 +17,20 @@ import java.util.TreeMap;
 
 /** 선행 Scheduler 비교 전용 backend. 원본을 streaming 검증하고 검증된 전체 조합에서만 요약한다. */
 public final class SchedulerResearchMain {
-    static final String SCHEMA = "b3-scheduler-json-1";
+    static final String SCHEMA = "b3-scheduler-fixed-plan-json-3";
+    static final String LEGACY_SCHEMA = "b3-scheduler-json-1";
     static int seeds(String profile) {
         if (!List.of("full", "quick").contains(profile)) throw new IllegalArgumentException("unknown profile");
         return profile.equals("full") ? 5 : 2;
     }
-    static int expected(String profile) { return (6 * SchedulerAlgorithms.METHODS.size() + 3) * 3 * seeds(profile); }
+    static int expected(String profile) { return (6 * SchedulerAlgorithms.METHODS.size()) * 3 * seeds(profile); }
     static final List<String> HARD_ENDPOINT = List.of("mongodb", "iter-gwin", "single-mcs", "slamig");
 
     public static void main(String[] args) throws IOException {
         if (args.length == 2 && args[0].equals("--rebuild")) {
             Path folder = Path.of(args[1]).toAbsolutePath().normalize();
             var complete = properties(folder.resolve("completion.properties"));
-            require(SCHEMA.equals(complete.getProperty("resultSchemaVersion")), "scheduler schema mismatch");
+            require(List.of(SCHEMA, LEGACY_SCHEMA).contains(complete.getProperty("resultSchemaVersion")), "scheduler schema mismatch");
             regenerate(folder, complete.getProperty("profile")); return;
         }
         if (args.length != 4) throw new IllegalArgumentException("<folder> <full|quick> <repeat> <repeats>");
@@ -61,16 +62,15 @@ public final class SchedulerResearchMain {
     static Map<String, Object> record(SchedulerComparisonExperiment.Condition c, String method, String variant, long seed) {
         var root = SchedulerComparisonExperiment.run(c, method, variant, seed);
         root.put("resultSchemaVersion", SCHEMA); root.put("timeDomain", "virtual"); root.put("outcome", "completed"); root.put("validationStatus", "valid");
-        root.put("study", "b3-live-migration"); root.put("inputHashKind", "candidate-plan-and-generator-specification-sha256");
-        root.put("stage", c.scenario().equals("candidate-plan") ? "candidate-plan" : "fixed-plan");
+        root.put("study", "b3-live-migration"); root.put("inputHashKind", "fixed-plan-and-generator-specification-sha256");
+        root.put("stage", "fixed-plan");
         root.put("methodConfig", methodConfig(method)); root.put("evidenceHash", evidenceHash(root)); return root;
     }
     static Map<String, Object> methodConfig(String method) {
         Map<String, Object> values = new TreeMap<>(); values.put("implementation", "endpoint-only-research-adaptation-1");
         switch (method) {
             case "fifo" -> values.put("admission", "oldest-eligible");
-            case "mongodb", "candidate-first" -> values.put("maxJobsPerEndpoint", 1);
-            case "candidate-balanced" -> { values.put("selection", "minimum-destination-planned-bytes"); values.put("executionScheduler", "mongodb"); }
+            case "mongodb" -> values.put("maxJobsPerEndpoint", 1);
             case "tidb-token", "tidb-feedback" -> {
                 values.put("initialTokens", 1); values.put("bucketCapacity", 4); values.put("jobTokenCost", 1);
                 values.put("initialTokensPerTick", 1. / 12);
@@ -84,10 +84,7 @@ public final class SchedulerResearchMain {
                 values.put("dirtyEWMAAlpha", .125); values.put("numericSolver", "nested-bisection-32x28"); values.put("cutoverSynchronization", false);
             }
             case "fpta" -> { values.put("epsilon", .2); values.put("paths", "one-path-cluster-source-destination"); values.put("integerBudget", "floor"); values.put("admission", "FIFO-four-slots"); }
-            case "camig-selector" -> {
-                values.put("metric", "eq17-21-cliques-and-MIS"); values.put("goal", "all-listed-tablets-relocated"); values.put("singleCost", "initial-bytes/node-budget");
-                values.put("kappa", 1); values.put("executionScheduler", "mongodb"); values.put("cpuPlacementModel", false);
-            }
+
             default -> throw new IllegalArgumentException("unknown scheduler method");
         }
         return values;
@@ -100,17 +97,17 @@ public final class SchedulerResearchMain {
         return MovementExperiment.hash(result);
     }
     static void validate(Map<String, Object> row, SchedulerComparisonExperiment.Condition c, String method, String variant, long seed) {
-        require(SCHEMA.equals(row.get("resultSchemaVersion")) && "virtual".equals(row.get("timeDomain")) && "completed".equals(row.get("outcome"))
+        require(List.of(SCHEMA, LEGACY_SCHEMA).contains(row.get("resultSchemaVersion")) && "virtual".equals(row.get("timeDomain")) && "completed".equals(row.get("outcome"))
                 && "valid".equals(row.get("validationStatus")), "invalid scheduler outcome/schema");
         require(c.scenario().equals(row.get("scenario")) && method.equals(row.get("method")) && variant.equals(row.get("variant"))
                 && seed == n(row, "seed") && SchedulerComparisonExperiment.methods(c.scenario()).contains(method)
                 && MovementExperiment.VARIANTS.contains(variant), "invalid result identity");
-        require((c.scenario().equals("candidate-plan") ? "candidate-plan" : "fixed-plan").equals(row.get("stage")), "wrong comparison stage");
+        require(("fixed-plan").equals(row.get("stage")), "wrong comparison stage");
         require(same(c.config(), row.get("condition")) && same(methodConfig(method), row.get("methodConfig")), "condition/method settings mismatch");
         require(MovementExperiment.hash(SchedulerComparisonExperiment.input(c, seed)).equals(row.get("inputHash"))
                 && SchedulerComparisonExperiment.workloadHash(c, seed).equals(row.get("workloadHash")), "scheduler input hash mismatch");
         require(evidenceHash(row).equals(row.get("evidenceHash")), "scheduler evidence hash mismatch");
-        String execution = c.scenario().equals("candidate-plan") ? "mongodb" : method;
+        String execution = method;
         require(execution.equals(row.get("executionMethod")), "execution scheduler mismatch");
         var plan = objects(row.get("plan")); require(plan.size() == c.keys().size(), "missing planned jobs");
         require(MovementExperiment.hash(plan).equals(row.get("planHash")), "plan hash mismatch");
@@ -122,6 +119,9 @@ public final class SchedulerResearchMain {
         for (var j : jobs) {
             long id = n(j, "job"); require(id >= 0 && id < jobs.size() && ids.add(id), "duplicate/invalid job");
             var p = plan.get((int) id); long start = n(j, "startTick"), commit = n(j, "commitTick"), end = n(j, "endTick");
+            if (SCHEMA.equals(row.get("resultSchemaVersion"))) PreCopyRoundTrace.validate(j.get("dirtyRounds"),
+                    variant.equals("pre-copy"), c.nodeBudget() / 4, 10, n(j, "rounds"),
+                    (String) j.get("stopReason"), n(j, "sentBytes"), start, commit);
             require(n(p, "tablet") == id && n(j, "source") == n(p, "source") && n(j, "destination") == n(p, "destination")
                     && n(j, "deadline") == c.deadlines().get((int) id), "job plan/deadline mismatch");
             require(start >= 0 && start < commit && commit < end && end <= budgets.size() && "DONE".equals(j.get("status"))
@@ -180,6 +180,7 @@ public final class SchedulerResearchMain {
     static void regenerate(Path folder, String profile) throws IOException {
         int count = expected(profile); var unique = new HashSet<String>(); var executions = new HashSet<String>();
         Map<String, String> pairedInput = new HashMap<>(); List<Map<String, Object>> rows = new ArrayList<>(); String provenance = null;
+        List<Map<String, Object>> dirtyRows = new ArrayList<>();
         // 큰 budget 원본은 한 번에 한 run만 읽고 검증한다. 요약에는 scalar만 유지한다.
         try (BufferedWriter jobs = writer(folder, "jobs.csv", "scenario,method,variant,seed,job,source,destination,startTick,commitTick,endTick,deadline,sentBytes,blockedTicks,writeBusy,readBusy,rounds,stopReason,status,exactMatch\n");
              BufferedWriter budgets = writer(folder, "budgets.csv", "scenario,method,variant,seed,tick,node,allocatedBytes,consumedBytes\n");
@@ -194,9 +195,13 @@ public final class SchedulerResearchMain {
                 String id = scenario + ":" + method + ":" + variant + ":" + seed;
                 require(unique.add(id) && row.get("executionId") instanceof String && executions.add((String) row.get("executionId")), "duplicate scheduler result");
                 for (String key : List.of("suiteExecutionId", "sourceHash", "backendHash", "runnerHash", "runNumber")) require(row.get(key) != null, "missing provenance");
-                String signature = List.of(row.get("suiteExecutionId"), row.get("sourceHash"), row.get("backendHash"), row.get("runnerHash"), row.get("runNumber")).toString();
+                String signature = List.of(row.get("resultSchemaVersion"), row.get("suiteExecutionId"), row.get("sourceHash"), row.get("backendHash"), row.get("runnerHash"), row.get("runNumber")).toString();
                 if (provenance == null) provenance = signature; require(provenance.equals(signature), "mixed scheduler provenance");
                 validate(row, c, method, variant, seed);
+                if (SCHEMA.equals(row.get("resultSchemaVersion"))) dirtyRows.add(Map.of(
+                        "scenario", scenario, "method", method, "variant", variant, "seed", seed,
+                        "jobs", objects(row.get("jobs")).stream().map(j -> Map.of(
+                                "job", j.get("job"), "dirtyRounds", j.get("dirtyRounds"))).toList()));
                 String pair = scenario + ":" + seed;
                 String prior = pairedInput.putIfAbsent(pair, (String) row.get("inputHash"));
                 require(prior == null || prior.equals(row.get("inputHash")), "unpaired algorithm input");
@@ -207,6 +212,7 @@ public final class SchedulerResearchMain {
             }
         }
         require(rows.size() == count, "missing scheduler results: " + rows.size() + "/" + count);
+        if (!dirtyRows.isEmpty()) PreCopyRoundTrace.write(folder, dirtyRows);
         writeReport(folder, rows, profile);
     }
     private static void details(Map<String, Object> row, BufferedWriter jobs, BufferedWriter budgets, BufferedWriter phases, BufferedWriter timing) throws IOException {
@@ -226,7 +232,7 @@ public final class SchedulerResearchMain {
     private static void writeReport(Path folder, List<Map<String, Object>> rows, String profile) throws IOException {
         StringBuilder csv = new StringBuilder("stage,scenario,variant,method,seeds,makespan_mean_ticks,makespan_sample_sd,mean_completion_ticks,wait_p99_ticks,sent_bytes,initial_transfer_ratio,blocked_job_ticks,write_busy,read_busy,deadline_misses\n");
         StringBuilder md = new StringBuilder("# 선행 Scheduler 비교\n\nprofile=" + profile + "; " + rows.size() + "회 × 12 jobs. 실제 Java Stop/Pre/Post-copy 프로토콜을 endpoint-only 다중 노드 인메모리 fixture에서 실행했다. 시간 단위는 논리 tick이다.\n\n");
-        md.append("원 논문 시스템·MongoDB·TiDB 제품 자체의 성능 재현이 아니라 아래 핵심 알고리즘을 이 환경에 옮긴 연구 구현이다. CAMIG는 같은 후보 집합에서 목적지를 고르는 별도 비교이며 고정 계획 Scheduler 순위에 섞지 않는다. methodConfig와 상위 README의 원문 대비 변경표를 함께 읽는다. 평균±SD는 seed 간 표본 표준편차다.\n");
+        md.append("원 논문 시스템·MongoDB·TiDB 제품 자체의 성능 재현이 아니라 아래 핵심 알고리즘을 이 환경에 옮긴 연구 구현이다. 목적지 선택 알고리즘은 제외하고 고정 이동 계획의 실행만 비교한다. methodConfig와 상위 README의 원문 대비 변경표를 함께 읽는다. 평균±SD는 seed 간 표본 표준편차다.\n");
         for (String scenario : SchedulerComparisonExperiment.SCENARIOS) {
             md.append("\n## ").append(scenario).append("\n");
             for (String variant : MovementExperiment.VARIANTS) {
@@ -251,10 +257,11 @@ public final class SchedulerResearchMain {
         md.append("대기 p99는 run 내부 12 job 시작 대기의 nearest-rank 분위수 후 seed 평균이다. 평균 job 완료 시간은 입력 시각 0부터 각 DONE까지의 평균이다. deadline scenario의 기한만 유효하며 나머지는 10000 tick의 비긴급 조건이다. plannerWallNanos는 fixture 적재를 제외한 한 JVM 안의 관측으로 warm-up/하드웨어가 통제된 CPU 벤치마크가 아니다. timings.csv에 보존하되 결정적 summary/results 및 evidenceHash에는 포함하지 않는다.\n\n");
         md.append("정식 진입점은 공통 Runner config이다. JSON `results/*.json`이 원본이며 jobs.csv/budgets.csv/rounds.csv/paired.csv/timings.csv는 파생 자료다. Git에는 정식 반복의 summary.csv/results.md만 보관하고 원본·상세 자료·manifest는 로컬에 남긴다.\n");
         Files.writeString(folder.resolve("summary.csv"), "\ufeff" + csv, StandardCharsets.UTF_8);
+        if (SCHEMA.equals(rows.getFirst().get("resultSchemaVersion"))) md.append("\njob별 generation 관측은 [dirty 상세](dirty-rounds.md)와 [이벤트 CSV](dirty-rounds.csv)를 따른다. rounds.csv는 기존 단계 기록으로 유지한다.\n");
         Files.writeString(folder.resolve("results.md"), md.toString(), StandardCharsets.UTF_8);
         StringBuilder paired = new StringBuilder("scenario,variant,seed,method,baseline,makespan_ratio,write_busy_delta,read_busy_delta,deadline_miss_delta,inputHash,planHash\n");
         for (var row : rows) {
-            String baseline = row.get("stage").equals("candidate-plan") ? "candidate-balanced" : "fifo";
+            String baseline = "fifo";
             var base = rows.stream().filter(r -> r.get("scenario").equals(row.get("scenario")) && r.get("variant").equals(row.get("variant"))
                     && n(r, "seed") == n(row, "seed") && baseline.equals(r.get("method"))).findFirst().orElseThrow();
             paired.append(row.get("scenario")).append(',').append(row.get("variant")).append(',').append(row.get("seed")).append(',').append(row.get("method")).append(',').append(baseline)

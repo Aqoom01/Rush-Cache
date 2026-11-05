@@ -1,0 +1,4 @@
+﻿flow,name,all_injected_problems,meaning
+N,기본적인 정상 흐름,,정상 조건의 전체 처리 단계
+U,자주 발생하는 불안정한 흐름,U01-load-spike-oscillation|U02-moving-skew|U03-dirty-down-up|U04-ready-delay|U05-transfer-jitter|U06-shared-endpoints|U07-scale-in-capacity-fragmentation,할당된 일곱 조건 모두 포함
+R,가끔 발생하는 불안정한 흐름,U01-load-spike-oscillation|U02-moving-skew|U03-dirty-down-up|U04-ready-delay|U05-transfer-jitter|U06-shared-endpoints|U07-scale-in-capacity-fragmentation|R01-source-before-publish-crash|R02-destination-before-publish-crash|R03-source-after-publish-partition|R04-destination-after-publish-crash|R05-controller-restart|R06-partial-cleanup-retry|R07-duplicate-stale-messages,할당된 일곱 조건과 일곱 장애 모두 포함

@@ -43,7 +43,7 @@ final class ComparisonExperiment {
     }
 
     record Run(Case condition, long seed, String variant, String inputHash, Map<String, Object> metrics,
-            String stopReason, List<Map<String, Object>> phases) {}
+            String stopReason, List<Map<String, Object>> phases, List<Map<String, Object>> dirtyRounds) {}
 
     static List<Case> cases(boolean quick) {
         int[] sizes = quick ? new int[] {100, 1_000, 10_000} : new int[] {10_000, 100_000, 1_000_000};
@@ -187,6 +187,7 @@ final class ComparisonExperiment {
         long acknowledgedSequence() { return 0; }
         boolean partialLiveDelta() { return false; }
         String stopReason() { return null; }
+        List<PreCopyProtocol.RoundEvent> roundEvents() { return List.of(); }
 
         Result request(NodeId target, Command command) {
             var tablet = table().get(LiveMigrationFixture.MOVING);
@@ -287,6 +288,7 @@ final class ComparisonExperiment {
                             : local(f.source.data, command, p.acceptsWrite(), f.source);
                 }
                 @Override int rounds() { return p.rounds(); }
+                @Override List<PreCopyProtocol.RoundEvent> roundEvents() { return p.roundEvents(); }
                 @Override long acknowledgedSequence() { return p.acknowledgedSequence(); }
                 @Override boolean partialLiveDelta() {
                     return p.state() == JobState.CATCHING_UP && p.acknowledgedSequence() > 0
@@ -333,6 +335,7 @@ final class ComparisonExperiment {
         long writes = 0, accepted = 0, writeBusy = 0, reads = 0, readBusy = 0;
         long blockedTicks = 0;
         List<Map<String, Object>> phases = new ArrayList<>();
+        var dirty = new PreCopyRoundTrace();
         d.begin();
         phases.add(Map.of("tick", 0, "state", d.state(), "sentBytes", d.bytes(), "round", d.rounds()));
         int tick = 0;
@@ -371,6 +374,7 @@ final class ComparisonExperiment {
             long bytes = d.bytes();
             if (d.ready()) { d.commit(); d.commitTick = tick + 1L; }
             else d.step(c.budget());
+            dirty.capture(d.roundEvents(), tick + 1L);
             require(d.bytes() - bytes <= c.budget(), "byte budget exceeded");
             if (!before.equals(d.state()) || previousRound != d.rounds()) {
                 phases.add(Map.of("tick", tick + 1, "state", d.state(), "sentBytes", d.bytes(), "round", d.rounds()));
@@ -396,7 +400,9 @@ final class ComparisonExperiment {
         metric(metrics, "invariant_violations", 0, "count"); metric(metrics, "exact_comparisons", 1, "count");
         if (variant.equals("pre-copy")) metric(metrics, "live_delta_rounds", d.rounds(), "count");
         String input = GENERATOR + ":seed=" + seed + ":" + BaselineJson.encode(new java.util.TreeMap<>(c.config()));
-        return new Run(c, seed, variant, sha256(input), Map.copyOf(metrics), d.stopReason(), List.copyOf(phases));
+        PreCopyRoundTrace.validate(dirty.events(), variant.equals("pre-copy"), c.threshold(), c.maxRounds(),
+                d.rounds(), d.stopReason(), d.bytes(), 0, d.commitTick);
+        return new Run(c, seed, variant, sha256(input), Map.copyOf(metrics), d.stopReason(), List.copyOf(phases), dirty.events());
     }
 
     private static void metric(Map<String, Object> metrics, String name, Number value, String unit) {

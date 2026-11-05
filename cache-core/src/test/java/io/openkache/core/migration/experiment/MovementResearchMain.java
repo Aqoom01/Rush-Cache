@@ -16,7 +16,8 @@ import java.util.TreeMap;
 
 /** M1~M5 공통 Runner backend. JSON 검증을 마친 뒤에만 요약·완료 표시를 생성한다. */
 public final class MovementResearchMain {
-    static final String SCHEMA = "b3-movement-json-1";
+    static final String SCHEMA = "b3-movement-json-2";
+    static final String LEGACY_SCHEMA = "b3-movement-json-1";
     static int seeds(String profile) { MovementExperiment.cases(profile); return profile.equals("full") ? 5 : 2; }
     static int expected(String profile) { return MovementExperiment.cases(profile).size() * seeds(profile); }
 
@@ -24,7 +25,7 @@ public final class MovementResearchMain {
         if (args.length == 2 && args[0].equals("--rebuild")) {
             Path folder = Path.of(args[1]).toAbsolutePath().normalize();
             Properties complete = properties(folder.resolve("completion.properties"));
-            require(SCHEMA.equals(complete.getProperty("resultSchemaVersion")), "movement schema mismatch");
+            require(List.of(SCHEMA, LEGACY_SCHEMA).contains(complete.getProperty("resultSchemaVersion")), "movement schema mismatch");
             regenerate(folder, complete.getProperty("profile"));
             return;
         }
@@ -107,7 +108,7 @@ public final class MovementResearchMain {
                 require(seed >= 1 && seed <= seeds(profile) && unique.add(c.id() + ":" + seed), "invalid/duplicate movement seed");
                 require(row.get("executionId") instanceof String && ids.add((String) row.get("executionId")), "duplicate execution ID");
                 for (String key : List.of("sourceHash", "backendHash", "runnerHash", "suiteExecutionId", "runNumber")) require(row.get(key) != null, "missing provenance: " + key);
-                String signature = List.of(row.get("sourceHash"), row.get("backendHash"), row.get("runnerHash"), row.get("suiteExecutionId"), row.get("runNumber")).toString();
+                String signature = List.of(row.get("resultSchemaVersion"), row.get("sourceHash"), row.get("backendHash"), row.get("runnerHash"), row.get("suiteExecutionId"), row.get("runNumber")).toString();
                 if (provenance == null) provenance = signature;
                 require(provenance.equals(signature), "mixed movement provenance");
                 validate(row, c, seed);
@@ -115,11 +116,12 @@ public final class MovementResearchMain {
             }
         }
         require(rows.size() == expected(profile), "missing movement results: " + rows.size());
+        if (SCHEMA.equals(rows.getFirst().get("resultSchemaVersion"))) PreCopyRoundTrace.write(folder, rows);
         writeReports(folder, rows, cases, profile);
     }
 
     static void validate(Map<String, Object> row, MovementExperiment.Case c, long seed) {
-        require(SCHEMA.equals(row.get("resultSchemaVersion")) && "virtual".equals(row.get("timeDomain"))
+        require(List.of(SCHEMA, LEGACY_SCHEMA).contains(row.get("resultSchemaVersion")) && "virtual".equals(row.get("timeDomain"))
                 && "completed".equals(row.get("outcome")) && "valid".equals(row.get("validationStatus")), "invalid movement outcome/schema");
         require(c.id().equals(row.get("caseId")) && c.variant().equals(row.get("variant")) && c.scenario().equals(row.get("scenario")), "case identity mismatch");
         require(integer(row.get("nodeCount")) == nodeCount(c), "node count mismatch");
@@ -143,6 +145,9 @@ public final class MovementResearchMain {
             var plan = changes(c).get((int) index);
             for (String key : List.of("tablet", "source", "destination")) require(integer(j.get(key)) == integer(plan.get(key)), "changed job plan");
             long start = integer(j.get("startTick")), commit = integer(j.get("commitTick")), end = integer(j.get("endTick"));
+            if (SCHEMA.equals(row.get("resultSchemaVersion"))) PreCopyRoundTrace.validate(j.get("dirtyRounds"),
+                    c.variant().equals("pre-copy"), c.threshold(), 10, integer(j.get("rounds")),
+                    (String) j.get("stopReason"), integer(j.get("sentBytes")), start, commit);
             require(start >= 0 && start < commit && commit < end && end <= budgets.size()
                     && "DONE".equals(j.get("status")) && Boolean.TRUE.equals(j.get("exactMatch")) && integer(j.get("sourceRecords")) == 0
                     && j.get("oracleHash") instanceof String hash && hash.matches("[0-9a-f]{64}") && hash.equals(j.get("destinationHash")), "job completion/oracle mismatch");
@@ -235,7 +240,8 @@ public final class MovementResearchMain {
         report.append("\n## 검증·해석 범위\n\n총 ").append(jobs).append("개 job 모두 DONE·최종 데이터 exact match·이전 source 정리·owner/epoch 전환을 확인했다. 매 tick의 전체/노드별 할당·실소비·동시 상한 검증과 JSON 재검증에서 위반 0, 미시작 job 0이다. 대기 p99는 run 내부 job 시작 대기의 nearest-rank 분위수를 구한 뒤 seed 평균을 냈다. 처리량은 전송 bytes/전체 완료 tick이다.\n\n");
         report.append("M1~M3는 Stop-copy, M4는 dirty 변화가 드러나는 Pre-copy를 기준으로 삼았다. M5가 M2/M4의 같은 조건을 세 방식 모두로 반복한다. rho는 job당 고정 reference bytes/tick으로 생성한 쓰기 시도량이며 실제 할당량으로 낮추지 않는다. SET 70%·DELETE 30%, job/tick마다 GET 2개를 시도한다. 대기/완료한 job에도 suite 종료까지 같은 생성 규격을 적용한다. BUSY와 완료 시각 때문에 성공 요청·최종 데이터량은 방식마다 다르며 각자의 성공 요청 oracle로 비교했다. workloadHash는 전체 trace 파일이 아닌 생성 규격의 hash다.\n\n");
         report.append("FIFO는 실행 가능한 가장 오래된 job을 고른다. 공유 endpoint는 송수신 합산 예산, 전체 예산은 전송 1 byte당 한 번 차감한다. 회전 progressive filling으로 나누고 미사용 예산은 같은 tick에 재분배하거나 다음 tick으로 이월하지 않는다. ACK/control/실제 network framing은 기존 protocol byte 모델 밖이다. queued starvation=0은 이번 유한 입력의 관측이며 지속 도착·장애 환경의 보장이 아니다.\n\n");
-        report.append("원본: `results/*.json` (`").append(SCHEMA).append("`). 상세 파생 파일: `cases.csv`, `runs.csv`, `jobs.csv`, `budgets.csv`, `rounds.csv`. Git에는 반복별 summary.csv/results.md만 보관한다.\n");
+        report.append("원본: `results/*.json` (`").append(rows.getFirst().get("resultSchemaVersion")).append("`). 상세 파생 파일: `cases.csv`, `runs.csv`, `jobs.csv`, `budgets.csv`, `rounds.csv`. Git에는 반복별 summary.csv/results.md만 보관한다.\n");
+        if (SCHEMA.equals(rows.getFirst().get("resultSchemaVersion"))) report.append("\njob별 generation 관측은 [dirty 상세](dirty-rounds.md)와 [이벤트 CSV](dirty-rounds.csv)를 따른다. rounds.csv는 기존 단계 기록으로 유지한다.\n");
         write(folder.resolve("summary.csv"), "\ufeff" + summary); write(folder.resolve("results.md"), report.toString());
         StringBuilder runs = new StringBuilder("case,seed,variant,inputHash,workloadHash,makespanTicks,sentBytes\n");
         StringBuilder jobCsv = new StringBuilder("case,seed,job,tablet,source,destination,startTick,commitTick,endTick,sentBytes,blockedTicks,writes,acceptedWrites,writeBusy,reads,readBusy,rounds,stopReason,status,exactMatch\n");

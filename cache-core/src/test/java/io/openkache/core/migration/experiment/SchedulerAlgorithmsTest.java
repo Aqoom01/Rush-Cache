@@ -71,13 +71,6 @@ class SchedulerAlgorithmsTest {
         assertTrue(SchedulerAlgorithms.copyTime(10000, 500, 1000) > 10);
         assertTrue(SchedulerAlgorithms.copyTime(10000, 500, 2000) < SchedulerAlgorithms.copyTime(10000, 500, 1000));
     }
-    @Test void camigChoosesAllowedDestinationsAndReducesSharedDestinationPressure() {
-        var candidates = List.of(List.of(c(0, 1, 10), c(0, 1, 11)), List.of(c(1, 2, 10), c(1, 2, 12)),
-                List.of(c(2, 3, 10), c(2, 3, 13)));
-        var plan = SchedulerAlgorithms.camig(candidates, List.of(1000L, 1000L, 1000L), 1000);
-        for (int i = 0; i < plan.size(); i++) assertTrue(candidates.get(i).contains(plan.get(i)));
-        assertEquals(3, plan.stream().map(Change::to).distinct().count());
-    }
     @Test void everyMethodExecutesTheRealPrecopyProtocolAndPreservesData() {
         var condition = SchedulerComparisonExperiment.condition("conflict", "quick");
         for (String method : SchedulerAlgorithms.METHODS) {
@@ -86,15 +79,6 @@ class SchedulerAlgorithmsTest {
             assertEquals(12, ((Number) metrics.get("exact_comparisons")).intValue(), method);
             assertEquals(0, ((Number) metrics.get("invariant_violations")).intValue(), method);
         }
-    }
-    @Test void camigAndBaselineHaveTheSameCandidateInputButDifferentPlans() {
-        var condition = SchedulerComparisonExperiment.condition("candidate-plan", "quick");
-        var baseline = SchedulerComparisonExperiment.run(condition, "candidate-first", "post-copy", 1);
-        var camig = SchedulerComparisonExperiment.run(condition, "camig-selector", "post-copy", 1);
-        assertEquals(baseline.get("inputHash"), camig.get("inputHash"));
-        assertEquals(baseline.get("workloadHash"), camig.get("workloadHash"));
-        assertNotEquals(baseline.get("planHash"), camig.get("planHash"));
-        assertEquals(12, ((Number) BaselineJson.object(camig.get("metrics")).get("exact_comparisons")).intValue());
     }
     @Test void schedulerRejectsMaliciousAllocationAndUnknownAdmissionBeforeTransfer() {
         var settings = new MigrationScheduler.Settings(4, 4, 1000, 1000, 100);
