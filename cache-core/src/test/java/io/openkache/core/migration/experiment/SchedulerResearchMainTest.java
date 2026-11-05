@@ -27,8 +27,8 @@ class SchedulerResearchMainTest {
             var row = row(c, "mongodb", variant);
             assertDoesNotThrow(() -> SchedulerResearchMain.validate(row, c, "mongodb", variant, 1));
         }
-        assertEquals(855, SchedulerResearchMain.expected("full"));
-        assertEquals(342, SchedulerResearchMain.expected("quick"));
+        assertEquals(810, SchedulerResearchMain.expected("full"));
+        assertEquals(324, SchedulerResearchMain.expected("quick"));
     }
     @Test void repeatEvidenceIgnoresMeasuredPlannerTime() {
         var c = SchedulerComparisonExperiment.condition("heterogeneous", "quick");
@@ -37,6 +37,16 @@ class SchedulerResearchMainTest {
         assertEquals(first.get("evidenceHash"), second.get("evidenceHash"));
         assertEquals(first.get("metrics"), second.get("metrics"));
         first.put("plannerWallNanos", 1); assertEquals(first.get("evidenceHash"), SchedulerResearchMain.evidenceHash(first));
+    }
+
+    @Test void dirtyTraceIsRequiredAndCrossCheckedEvenAfterResigning() {
+        var c = SchedulerComparisonExperiment.condition("heterogeneous", "quick");
+        var missing = row(c, "mongodb", "pre-copy");
+        first(missing.get("jobs")).remove("dirtyRounds"); resign(missing);
+        assertThrows(IllegalStateException.class, () -> SchedulerResearchMain.validate(missing, c, "mongodb", "pre-copy", 1));
+        var altered = row(c, "mongodb", "pre-copy");
+        first(first(altered.get("jobs")).get("dirtyRounds")).put("tick", 999999); resign(altered);
+        assertThrows(IllegalStateException.class, () -> SchedulerResearchMain.validate(altered, c, "mongodb", "pre-copy", 1));
     }
     @Test void aggregateForgeryIsRejectedAfterChecksumUpdate() {
         var c = SchedulerComparisonExperiment.condition("heterogeneous", "quick");
@@ -55,13 +65,6 @@ class SchedulerResearchMainTest {
         var altered = row(c, "iter-gwin", "pre-copy");
         first(altered.get("plan")).put("destination", 999); altered.put("planHash", MovementExperiment.hash(altered.get("plan"))); resign(altered);
         assertThrows(IllegalStateException.class, () -> SchedulerResearchMain.validate(altered, c, "iter-gwin", "pre-copy", 1));
-    }
-    @Test void camigUsesSameCandidateInputAndValidatesActualSelectedPlan() {
-        var c = SchedulerComparisonExperiment.condition("candidate-plan", "quick");
-        var row = row(c, "camig-selector", "post-copy");
-        assertDoesNotThrow(() -> SchedulerResearchMain.validate(row, c, "camig-selector", "post-copy", 1));
-        assertEquals("candidate-plan", row.get("stage"));
-        assertEquals("mongodb", row.get("executionMethod"));
     }
     @Test void missingAndDuplicateOriginalsNeverCreateCompletionReport() throws IOException {
         var originals = Files.createDirectory(folder.resolve("results"));

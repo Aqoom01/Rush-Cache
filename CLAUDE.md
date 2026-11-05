@@ -169,3 +169,40 @@ experiment-runner/build/install/openkache-experiment-runner/bin/openkache-experi
 `MigrationScheduler.Policy`에 시작 후보와 예산의 주입 경계를 추가했다. Scheduler가 job ID·전체/노드 예산을 검증하며 기존 FIFO constructor는 유지한다. 공통 `api/model/spi/runtime`과 production 의존성은 변경하지 않았다. test의 `SchedulerAlgorithms`·`SchedulerComparisonExperiment`·`SchedulerResearchMain`이 서로 다른 Tablet 크기·교차 경합·dirty 편향·완료 기한에서 9개 정책을 실제 세 protocol로 비교한다. CAMIG는 같은 후보 목적지 집합의 계획 선택을 별도로 평가하며 실행기는 동일하다. 원 시스템의 전체 재현이 아닌 endpoint-only 연구 변형이고 TiDB AIMD, SLAMIG γ=0, VMbuddies 비동기 cutover, FPTA 단일 경로·4 slot, CAMIG의 제한된 목표를 구분한다. 설정·원문 대비 범위·실행·결과는 `experiments/b3-live-migration/scheduler-comparison/README.md`와 `results.md`를 따른다. 기존 M1~M5 결과는 FIFO의 조건 변화 실험으로 보존한다.
 
 정식 855회/10,260 jobs·축소 342회×2반복=684회를 완료했고 정합성·예산·동시 상한 위반은 0이다. 전체 빌드·테스트 633개를 통과했다. source 공유·Pre-copy는 노드당 동시 1개가 FIFO 동시 4개보다 빨랐으며 CAMIG는 데이터량 균등 기준선과 전체 완료 평균이 같았다. 공식 run과 정확한 수치는 위 결과 문서를 따른다. commit/push는 별도 명시 요청이 있을 때만 한다.
+
+
+## B3 Pre-copy dirty 상세 추가 (2026-11-04)
+
+PreCopyProtocol.roundEvents()는 generation별 STARTED/ACKNOWLEDGED/ABORTED와 dirty key·tombstone 수·예상/직전 bytes·실제 전송 bytes·seq·종료 사유를 불변 관측으로 제공한다. payload를 보관하거나 실제 시계를 읽지 않는다. test의 PreCopyRoundTrace가 caller tick을 붙이고 JSON 원본 검증 및 dirty-rounds.csv/md 재생성을 맡는다. S1~S5/S3 민감도·M1~M5·Scheduler의 새 config는 각 backend schema 2를 사용하며 기존 schema 1을 읽는다. 통합 b3-research-v2 전체 구현이 아니며 실제 KV/peer·증감 controller 연결은 여전히 후속이다. 세부 의미와 검증은 experiments/b3-live-migration/migration-comparison/dirty-rounds.md를 따른다. 이 절을 과거 dirty 상세 미구현 표기보다 우선한다.
+
+
+### B3 현재 작업 범위 보정
+
+사용자는 공통 모듈을 사용할 계획이 없다고 명시했다(2026-11-04). 개인 B3의 필수 범위에 공통 KV/Network/B1/B2 controller/Experiment Runner 통합을 추가하지 않는다. experiments/b3-live-migration/run_experiment.py로 자체 fixture/backend를 직접 실행한다. 기존 공통 자료형은 모델로 재사용한다. 이전의 통합 후속 표기는 선택·호환 경로로 해석하며 독립 prototype의 증감 판단·이동 실행 연결과 실제 노드 실험을 우선한다.
+
+
+## B3 배치·준비 지연·안전한 축소·부분 실패 추가 (2026-11-04)
+
+개인 B3의 공통 서비스 통합 제외 지시를 유지한다. execution-policy-comparison/policy_lab.py는 Accordion MILP/CA식 배치 가능성과 AWS warm-up/ElastMan/P-Store의 준비·이동 지연을 기존 독립 Python 모형에서 실행한다. execution-safety-comparison은 실제 B3 세 protocol·MigrationScheduler를 자체 fixture에서 실행해 Scylla식 preflight/drain, MongoDB식 부분 drain/관리 metadata, PD식 job 격리/timeout, FDB식 seed 장애 재생을 검사한다. 원 제품 전체 재현이나 물리 장애 실험은 아니다. main에는 운영 의존성을 추가하지 않았다.
+
+최종 정식 policy 820회×2와 safety 435회×2, 총 2,510회를 완료했다. 예상 거부·보류·HELD와 완료를 구분하며 검사한 위반은 0이다. 원본 재생성 파생 파일 12개와 반복별 요약·Java event·record evidence가 일치했다. Map의 표시 순서로 controller-reload 상세 로그가 달라진 문제를 수정 후 safety 정식을 재실행했다. B3 Java 113개·Python 5개와 운영 의존성 검사는 통과했다. 전체 build는 기존 Windows NvmeKvStoreTest 두 실패로 실패하며 성공 처리하지 않는다. 문제·선행 사례·지표·최종 run은 experiments/b3-live-migration/execution-validation.md를 따른다. 독립 판단→실제 protocol→drain의 전체 폐루프와 실제 서버 측정은 아직 완료가 아니다. commit/push는 별도 요청 때만 한다.
+
+## B3 Java 이전·선택 모듈·결과 교체 (2026-11-05, 현재 기준)
+
+과거 Python 구현·실행 안내보다 이 절을 우선한다. B3의 Python 소스와 실행기를 제거하고 Java21/JDK 전략 모듈(io.openkache.core.migration.strategy), B3Configuration/B3Workflow, CopyDrivers, B3ResearchLauncher, Java2D 그림·계획 생성기로 이식했다. 기존 cache-core에서 구현했고 새 Gradle 모듈·외부 production 의존성은 없다. 공통 KV/Network/B1/B2/Runner 서비스 통합은 필수가 아니다. 기본 b3/b3Research는 목록/도움말이며 build가 실험을 자동 실행하지 않는다.
+
+사용자 요청으로 이전 Python 알고리즘·보조 실행 결과를 삭제하고 Java 가상 실험 9묶음 6,157회로 교체했다. 원본 재생성 79파일, 반복 비교 34파생 파일·1,971 scientific evidence가 일치했다. 보고서 반복 정보·실제 planning 시간은 scientific 비교에서 분리한다. 현재 결과·run·소스/클래스/manifest hash는 experiments/b3-live-migration/java/results.md와 run-audit.json을 따른다. 기존 순수 Java 정식 결과는 보존하며 중간 Java 실행은 제거했다. 기존 S1~S5 full CSV로 다섯 그림을 Java2D로 재생성해 Python 렌더링 이미지를 교체했다.
+
+B3 Java 테스트 140개가 모두 통과했다. 전체 762개 중 성공 757개·기존 Windows NVMe 실패 2개·조건부 skip 3개다. 실패는 NvmeKvStoreTest의 scanReadsValuesFromStorage, recordsInOlderSegmentsRemainReadableAfterRotation이며 변경 전 기준에서도 재현했다. 전체 build는 실패 상태이며 core 운영 의존성 검사는 통과했다.
+
+실노드 전체 흐름은 N/U/R 3종 계획만 사용한다. 사용자 지시로 실제 N/U/R 시나리오는 실행하지 않았다. B3Workflow는 자체 Environment/Binding을 통해 관측→판단→READY→계획→copy→drain→제거를 조립하며 단위 계약 검사까지다. 실제 TCP/SSD·프로세스 재시작·metadata 영속성·PAX native hint·실제 split/merge는 준비·검증됐다고 주장하지 않는다. commit/push는 별도 요청 때만 한다.
+
+## B3 범위 보정: 판단만 비교 (2026-11-05, 최우선 현재 기준)
+
+기존 상태를 063c817에 커밋한 뒤 B2가 섞인 실험을 수정했다. NodeCountPolicy.Decision은 수만 반환한다. 모든 판단에 FixedTabletPlacement의 fixed-tablet-lpt-v1을 적용하며 노드 수가 같으면 배치도 유지한다. SCADS/ElastMan/E-Store/Accordion/P-Store/TIRAMOLA/PAX 7판단과 고정 대조군을 비교한다. Slicer·CAMIG·Accordion MILP 재배치·E-Store 세분화·SCADS 동적 복제·PAX partition 선택/hint를 활성 코드·실험에서 제거했다. PAX는 ARIMA·평균 CPU 수 판단 변형이며 원형 재현이 아니다.
+
+기존 결합형 증감·배치·CAMIG run을 삭제하고 새 Java 6묶음 4,684회(판단 full560/quick224, 지연 full1440/quick192, Scheduler full1620/quick648)로 교체했다. 원본 재생성 60파일·반복 evidence 2342개가 일치했다. 기존 순수 copy·safety·M은 이전 버전 기록으로 별도 유지한다. 과거 6,157회를 현재 B3 성과로 쓰지 않는다. 현재 run·수치·hash는 experiments/b3-live-migration/java/results.md와 run-audit.json을 따른다.
+
+B3 테스트 138개 모두 통과. 전체 760개 중 성공 755개·기존 NVMe 실패 2개·조건부 skip 3개다. 실패는 NvmeKvStoreTest의 scanReadsValuesFromStorage와 recordsInOlderSegmentsRemainReadableAfterRotation이며 변경 전에도 재현한 항목이다. 전체 build는 실패 상태이며 production 외부 의존성 검사는 통과했다.
+
+실노드 N/U/R은 7판단×고정 배치×9 Scheduler×3copy×2drain×3흐름×5seed=5,670회/환경의 계획만 생성했다. 실행은 금지 상태를 유지한다. 기존 21,870/25,380 조합 수는 폐기한다. 공통 서비스 통합은 필수가 아니고 실제 I/O·프로세스 복구·영속성·성능은 후속이다. push는 요청하지 않았으므로 실행하지 않는다.

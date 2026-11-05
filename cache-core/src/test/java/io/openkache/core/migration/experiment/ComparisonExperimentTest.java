@@ -16,6 +16,19 @@ import org.junit.jupiter.api.io.TempDir;
 
 class ComparisonExperimentTest {
     @Test
+    void standaloneInvocationIsRecordedWithoutClaimingTheCommonRunnerWasUsed() {
+        var launch = new java.util.Properties();
+        launch.setProperty("execution.command", "java");
+        launch.setProperty("execution.arguments", BaselineJson.encode(List.of("-cp", "classes", "B3Main")));
+        launch.setProperty("execution.launcher", "b3-standalone-python");
+        var context = BaselineResearchMain.context(launch, 1, 1);
+        var invocation = BaselineJson.object(context.get("invocation"));
+        assertEquals("java", invocation.get("command"));
+        assertEquals(List.of("-cp", "classes", "B3Main"), invocation.get("arguments"));
+        assertEquals("b3-standalone-python", context.get("executionLauncher"));
+    }
+
+    @Test
     void tickTracesRepeatExactlyAndZipfConcentratesRequests() {
         var uniform = new ComparisonExperiment.Case("test", "test", 1_000, 512, .5, 30, 0, 64, 10);
         var skew = new ComparisonExperiment.Case("test", "test", 1_000, 512, .5, 30, 1.2, 64, 10);
@@ -119,9 +132,15 @@ class ComparisonExperimentTest {
         assertEquals(240, originals.size());
         String report = Files.readString(folder.resolve("results.md"));
         String csv = Files.readString(folder.resolve("summary.csv"));
+        String dirtyCsv = Files.readString(folder.resolve("dirty-rounds.csv"));
+        String dirtyReport = Files.readString(folder.resolve("dirty-rounds.md"));
+        assertTrue(dirtyCsv.contains("NOT_SHRINKING") || dirtyCsv.contains("THRESHOLD"));
+        assertTrue(dirtyReport.contains("dirty keys"));
         ComparisonResearchMain.regenerate(folder, "quick");
         assertEquals(report, Files.readString(folder.resolve("results.md")));
         assertEquals(csv, Files.readString(folder.resolve("summary.csv")));
+        assertEquals(dirtyCsv, Files.readString(folder.resolve("dirty-rounds.csv")));
+        assertEquals(dirtyReport, Files.readString(folder.resolve("dirty-rounds.md")));
         Path file = originals.getFirst();
         String original = Files.readString(file);
         var changed = BaselineJson.object(BaselineJson.decode(original));
@@ -131,6 +150,18 @@ class ComparisonExperimentTest {
         Files.writeString(file, original);
         Files.move(file, file.resolveSibling("missing.txt"));
         assertThrows(IllegalStateException.class, () -> ComparisonResearchMain.regenerate(folder, "quick"));
+        Files.move(file.resolveSibling("missing.txt"), file);
+        Path legacy = Files.createDirectory(folder.resolve("legacy"));
+        Path legacyResults = Files.createDirectory(legacy.resolve("results"));
+        for (Path source : originals) {
+            var row = BaselineJson.object(BaselineJson.decode(Files.readString(source)));
+            row.put("resultSchemaVersion", ComparisonResearchMain.LEGACY_SCHEMA);
+            row.remove("dirtyRounds");
+            Files.writeString(legacyResults.resolve(source.getFileName()), BaselineJson.encode(row));
+        }
+        ComparisonResearchMain.regenerate(legacy, "quick");
+        assertEquals(csv, Files.readString(legacy.resolve("summary.csv")));
+        assertFalse(Files.exists(legacy.resolve("dirty-rounds.csv")));
     }
 
     private static double metric(ComparisonExperiment.Run run, String key) {

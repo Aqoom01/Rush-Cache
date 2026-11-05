@@ -40,6 +40,23 @@ class MovementResearchMainTest {
         }
     }
 
+    @Test void dirtyTraceCannotBeOmittedOrForgedAfterEvidenceChecksumUpdate() {
+        var c = condition("pre-copy");
+        var missing = decoded(c);
+        first(missing.get("jobs")).remove("dirtyRounds"); resign(missing);
+        assertThrows(IllegalStateException.class, () -> MovementResearchMain.validate(missing, c, 1));
+        var altered = decoded(c);
+        first(first(altered.get("jobs")).get("dirtyRounds")).put("dirtyBytes", 0); resign(altered);
+        assertThrows(IllegalStateException.class, () -> MovementResearchMain.validate(altered, c, 1));
+    }
+
+    @Test void legacyEvidenceRemainsReadableWithoutFabricatedDirtyObservations() {
+        var c = condition("pre-copy"); var legacy = decoded(c);
+        legacy.put("resultSchemaVersion", MovementResearchMain.LEGACY_SCHEMA);
+        ((List<?>) legacy.get("jobs")).forEach(j -> mutable(j).remove("dirtyRounds")); resign(legacy);
+        assertDoesNotThrow(() -> MovementResearchMain.validate(legacy, c, 1));
+    }
+
     @Test void derivedMetricsAndBudgetViolationsAreRejectedEvenWithUpdatedChecksum() {
         var c = condition("pre-copy"); var row = decoded(c);
         mutable(row.get("metrics")).put("sent_bytes", Map.of("value", 1, "unit", "bytes"));

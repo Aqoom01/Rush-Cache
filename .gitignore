@@ -26,6 +26,9 @@ codex/
 .gradle/
 build/
 
+# B3 Python 연구 backend의 로컬 bytecode
+experiments/b3-live-migration/**/__pycache__/
+
 # Experiment Runner 원본 결과(요약 CSV는 커밋한다, docs/experiments/README.md 참고)
 # Runner는 results.dir/<study>/ 아래에 쓰므로 하위 폴더의 JSON도 막는다.
 experiments/**/results/*.json

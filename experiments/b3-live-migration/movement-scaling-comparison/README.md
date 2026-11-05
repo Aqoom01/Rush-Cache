@@ -4,7 +4,7 @@
 
 B1·B2가 만든 고정 `List<Change>`를 받아 동시 실행 수·노드 경합·전송 예산이 이동에 주는 영향을 비교한다. 노드 증감 판단 및 placement 최적화와 구별한다. 기존 S1~S6 단일 이동 결과를 M 결과로 재사용하지 않았다.
 
-여기의 M1~M5는 FIFO 한 정책의 조건 변화 실험이다. MongoDB·TiDB·iter-GWIN·single-MCs·SLAMIG·VMbuddies·FPTA에서 옮긴 방법끼리의 비교와 CAMIG의 목적지 후보 선택 평가는 [선행 Scheduler 비교](../scheduler-comparison/README.md)에서 별도 입력·schema·run으로 실행한다. 두 실험의 순위를 합치지 않는다.
+여기의 M1~M5는 FIFO 한 정책의 조건 변화 실험이다. MongoDB·TiDB·iter-GWIN·single-MCs·SLAMIG·VMbuddies·FPTA에서 옮긴 실행 방법끼리의 비교는 [선행 Scheduler 비교](../scheduler-comparison/README.md)에서 별도 입력·schema·run으로 실행한다. 두 실험의 순위를 합치지 않는다.
 
 ## 구현
 
@@ -77,3 +77,8 @@ java -Xmx1g -cp "cache-core/build/classes/java/main;cache-core/build/classes/jav
 schema는 `b3-movement-json-1`이다. 각 JSON은 condition·고정 Change 목록·seed·생성 규격 workloadHash·inputHash·evidenceHash, source/backend/runner hash, job별 lifecycle·정합성 hash·상태, tick/job/node 예산, phase/round 이벤트를 담는다. workloadHash는 실제 trace 전체 파일이 아닌 생성 규격의 SHA-256이다.
 
 파생 파일은 `cases.csv`, `runs.csv`, `summary.csv`, `jobs.csv`, `budgets.csv`, `rounds.csv`, `results.md`다. `rounds.csv`는 job ID가 있는 phase·라운드 번호 전환이며 v2의 전체 dirty generation 상세 형식을 구현한 것은 아니다. Runner의 manifest·로그·완료 표시·원본과 상세 CSV는 로컬에 남고, Git에는 정식 반복의 `summary.csv`·`results.md`만 보관한다. [공통 Runner 계약](../../research-backends.md)을 따른다.
+
+
+## 새 실행의 dirty 상세 (2026-11-04)
+
+Pre-copy generation의 시작·ACK·취소 관측을 추가했다. 현재 config는 이 backend의 schema 2로 새 결과를 생성하고 이전 schema 1 원본도 재생성할 수 있다. 검증된 원본에서 dirty-rounds.csv와 dirty-rounds.md를 생성한다. 기존 단계 기록과 정식 run은 보존한다. [필드·시간·종료 판단·호환성 안내](../migration-comparison/dirty-rounds.md)를 따른다.

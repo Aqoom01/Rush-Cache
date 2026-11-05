@@ -57,6 +57,25 @@ public final class PreCopyProtocol implements MigrationProtocol {
 
     public enum StopReason { THRESHOLD, ROUND_LIMIT, NOT_SHRINKING }
 
+    /** STARTED는 generation 교체 직후, ACKNOWLEDGED는 마지막 ACK 뒤, ABORTED는 중단 직전이다. */
+    public enum RoundEventType { STARTED, ACKNOWLEDGED, ABORTED }
+
+    /**
+     * 값 payload를 보관하지 않는 불변 라운드 관측. 모든 byte 값은 헤더를 포함한다.
+     * dirtyBytes는 시작 경계에서 계산한 예상량이고 roundSentBytes는 실제 지급된 전송량이다.
+     * generation은 final을 포함해 1부터 증가하며 liveRound는 완료 여부와 무관한 live 라운드 번호다.
+     * previousDirtyBytes는 직전 live generation 예상량이며 첫 generation에서는 null이다.
+     * tombstoneKeys는 시작 경계의 삭제 수이며 live 중 값이 바뀌면 실제 전송 레코드 종류와 다를 수 있다.
+     * sequenceBefore/lastSequence는 생성 전/후 delta seq, acknowledgedSequence는 실제 확인된 seq다.
+     * 프로토콜은 시계를 읽지 않는다. caller가 같은 controller 작업 안에서 가상 tick 또는 실제 시각을 붙인다.
+     */
+    public record RoundEvent(int generation, int liveRound, boolean finalRound, RoundEventType event,
+            int dirtyKeys, int tombstoneKeys, long dirtyBytes, Long previousDirtyBytes, StopReason stopReason,
+            long roundSentBytes, long sentBytes, long sequenceBefore, long lastSequence, long acknowledgedSequence) {}
+
+    private record RoundStart(int generation, int liveRound, boolean finalRound, int dirtyKeys, int tombstoneKeys,
+            long dirtyBytes, Long previousDirtyBytes, StopReason reason, long sentBytes, long sequence) {}
+
     private final Source source;
     private final Destination destination;
     private final RoutingTable expectedTable;
@@ -79,6 +98,9 @@ public final class PreCopyProtocol implements MigrationProtocol {
     private long previousDirtyBytes = Long.MAX_VALUE;
     private int rounds;
     private StopReason stopReason;
+    private final List<RoundEvent> roundEvents = new ArrayList<>();
+    private RoundStart activeRound;
+    private int generation;
 
     public PreCopyProtocol(Source source, Destination destination, RoutingTable expectedTable) {
         this(source, destination, expectedTable, Settings.defaults());
@@ -98,6 +120,8 @@ public final class PreCopyProtocol implements MigrationProtocol {
     public int rounds() { return rounds; }
     public long acknowledgedSequence() { return acknowledgedSequence; }
     public Optional<StopReason> stopReason() { return Optional.ofNullable(stopReason); }
+    /** 동일 controller thread에서 읽는다. 이후 진행·취소에 영향받지 않는 관측 목록의 복사본이다. */
+    public List<RoundEvent> roundEvents() { return List.copyOf(roundEvents); }
     private Tablet tablet() { return expectedTable.get(session.change().unit()); }
 
     @Override
@@ -180,6 +204,10 @@ public final class PreCopyProtocol implements MigrationProtocol {
             paidBytes = 0;
             dispatched = false;
             if (last) {
+                if (!copying) {
+                    observeRound(RoundEventType.ACKNOWLEDGED);
+                    activeRound = null;
+                }
                 if (!finalBatch) prepareRound();
                 break; // 라운드 사이에 caller가 write를 공급할 수 있도록 다음 tick까지 기다린다.
             }
@@ -221,8 +249,11 @@ public final class PreCopyProtocol implements MigrationProtocol {
     private void prepareRound() {
         long dirtyBytes = DeltaBatch.HEADER_BYTES;
         long batchSize = DeltaBatch.HEADER_BYTES;
+        int tombstones = 0;
         for (Bytes key : collecting) {
-            long size = 17L + key.size() + source.read(tablet(), key).map(Bytes::size).orElse(0);
+            Optional<Bytes> value = source.read(tablet(), key);
+            if (value.isEmpty()) tombstones++;
+            long size = 17L + key.size() + value.map(Bytes::size).orElse(0);
             if (batchSize > DeltaBatch.HEADER_BYTES && batchSize + size > settings.batchBytes()) {
                 dirtyBytes = Math.addExact(dirtyBytes, DeltaBatch.HEADER_BYTES);
                 batchSize = DeltaBatch.HEADER_BYTES;
@@ -233,6 +264,7 @@ public final class PreCopyProtocol implements MigrationProtocol {
         StopReason reason = dirtyBytes <= settings.stopThresholdBytes() ? StopReason.THRESHOLD
                 : rounds >= settings.maxRounds() ? StopReason.ROUND_LIMIT
                 : dirtyBytes >= previousDirtyBytes ? StopReason.NOT_SHRINKING : null;
+        Long previous = generation == 0 ? null : previousDirtyBytes;
         if (reason != null) {
             ownsFreeze = source.freeze(tablet());
             if (!ownsFreeze) { abort(); return; }
@@ -246,9 +278,21 @@ public final class PreCopyProtocol implements MigrationProtocol {
             update(JobState.CATCHING_UP, job.progress());
         }
         sending = List.copyOf(collecting);
+        activeRound = new RoundStart(++generation, rounds, reason != null, sending.size(), tombstones,
+                dirtyBytes, previous, reason, job.progress().sentBytes(), sequence);
+        observeRound(RoundEventType.STARTED);
         collecting = new LinkedHashSet<>();
         snapshot = List.of();
         offset = 0;
+    }
+
+    private void observeRound(RoundEventType event) {
+        if (activeRound == null) return;
+        RoundStart r = activeRound;
+        roundEvents.add(new RoundEvent(r.generation(), r.liveRound(), r.finalRound(), event,
+                r.dirtyKeys(), r.tombstoneKeys(), r.dirtyBytes(), r.previousDirtyBytes(), r.reason(),
+                job.progress().sentBytes() - r.sentBytes(), job.progress().sentBytes(),
+                r.sequence(), sequence, acknowledgedSequence));
     }
 
     /** snapshot과 final seq ACK 및 freeze가 모두 유지될 때만 외부 CAS를 요청한다. */
@@ -281,6 +325,8 @@ public final class PreCopyProtocol implements MigrationProtocol {
     public JobState abort() {
         if (job == null) throw new IllegalStateException("begin first");
         if (state() == JobState.CLEANING_UP || state() == JobState.DONE || state() == JobState.ABORTED) return state();
+        observeRound(RoundEventType.ABORTED);
+        activeRound = null;
         if (prepared) destination.discard(session);
         if (tracking) source.stopTracking(tablet());
         if (ownsFreeze) source.unfreeze(tablet());

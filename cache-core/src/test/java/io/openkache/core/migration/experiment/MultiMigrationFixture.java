@@ -8,6 +8,7 @@ import io.openkache.core.migration.JobState;
 import io.openkache.core.migration.MigrationJob;
 import io.openkache.core.migration.MigrationPublication;
 import io.openkache.core.migration.MigrationScheduler;
+import io.openkache.core.migration.strategy.CopyDrivers;
 import io.openkache.core.migration.TransferBatch;
 import io.openkache.core.migration.postcopy.PostCopyProtocol;
 import io.openkache.core.migration.postcopy.PostCopyState;
@@ -129,22 +130,37 @@ final class MultiMigrationFixture {
         MigrationJob session;
         long startTick = -1, commitTick = -1;
         long writes, accepted, writeBusy, reads, readBusy, blockedTicks;
+        int cleanupFailures, cleanupCalls;
+        boolean partialCleanup;
+        final PreCopyRoundTrace dirtyTrace = new PreCopyRoundTrace();
 
         Handle(Change change, String variant, int batchBytes, long threshold) {
             this.change = change; this.variant = variant; this.batchBytes = batchBytes; this.threshold = threshold;
             nodes.get(change.from()).tablets.put(change.unit(), () -> sourceData);
         }
 
+        CopyDrivers.Session selectedDriver;
+
         @Override public void begin() {
             expected = routing.get();
             session = MigrationJob.pending(change, variant);
-            switch (variant) {
-                case "stop-and-copy" -> { stop = new StopAndCopyProtocol(source, snapshotReceiver, expected, batchBytes); stop.begin(session); }
-                case "pre-copy" -> { pre = new PreCopyProtocol(source, receiver, expected,
-                        new PreCopyProtocol.Settings(batchBytes, threshold, 10)); pre.begin(session); }
-                case "post-copy" -> { post = new PostCopyProtocol(source, expected); post.begin(session); }
-                default -> throw new IllegalArgumentException(variant);
-            }
+            selectedDriver = CopyDrivers.create(variant, change, new CopyDrivers.Binding() {
+                @Override public RoutingTable current() { return routing.get(); }
+                @Override public boolean compareAndSet(RoutingTable before, RoutingTable after) { return routing.compareAndSet(before, after); }
+                @Override public PreCopyProtocol.Source source() { return source; }
+                @Override public StopAndCopyProtocol.Destination stopDestination() { return snapshotReceiver; }
+                @Override public PreCopyProtocol.Destination preDestination() { return receiver; }
+                @Override public PostCopyProtocol.Source postSource() { return source; }
+                @Override public void installed(Change move, String copy, RoutingTable before, RoutingTable after) {
+                    if (post == null) {
+                        destinationData.putAll(stop == null ? receiver.data() : snapshotReceiver.data);
+                        nodes.get(change.to()).tablets.put(change.unit(), () -> destinationData);
+                    } else nodes.get(change.to()).tablets.put(change.unit(), post::data);
+                    commits++;
+                }
+            }, new CopyDrivers.Settings(batchBytes, threshold, 10));
+            selectedDriver.begin();
+            stop = selectedDriver.stopProtocol(); pre = selectedDriver.preProtocol(); post = selectedDriver.postProtocol();
         }
 
         boolean ready() { return stop != null ? stop.readyToCommit() : pre != null ? pre.readyToCommit() : post != null && post.readyToCommit(); }
@@ -153,22 +169,7 @@ final class MultiMigrationFixture {
         }
 
         @Override public void step(long budget) {
-            if (ready()) {
-                RoutingTable before = routing.get();
-                RoutingTable after = before.apply(change);
-                MigrationPublication.verify(session, expected, before, after);
-                if (!routing.compareAndSet(before, after)) throw new IllegalStateException("routing CAS lost");
-                if (stop != null) stop.committed(before, after);
-                else if (pre != null) pre.committed(before, after);
-                else post.committed(before, after);
-                if (post == null) {
-                    destinationData.putAll(stop == null ? receiver.data() : snapshotReceiver.data);
-                    nodes.get(change.to()).tablets.put(change.unit(), () -> destinationData);
-                } else nodes.get(change.to()).tablets.put(change.unit(), post::data);
-                commits++;
-            } else if (stop != null) stop.step(budget);
-            else if (pre != null) pre.step(budget);
-            else post.step(budget);
+            selectedDriver.step(budget);
         }
 
         @Override public long sentBytes() { return stop != null ? stop.job().progress().sentBytes()
@@ -183,6 +184,7 @@ final class MultiMigrationFixture {
             else if (post != null) post.fail();
         }
         int rounds() { return pre == null ? 0 : pre.rounds(); }
+        void recordDirty(long tick) { if (pre != null) dirtyTrace.capture(pre.roundEvents(), tick); }
         String reason() { return pre == null ? "" : pre.stopReason().map(Enum::name).orElse(""); }
         Map<Bytes, Bytes> finalData() { return post == null ? destinationData : post.data(); }
 
@@ -275,6 +277,11 @@ final class MultiMigrationFixture {
                 return Optional.of(PullReply.create(job, epoch, id, key, Optional.ofNullable(sourceData.get(key))));
             }
             @Override public boolean cleanup(Tablet tablet) {
+                cleanupCalls++;
+                if (cleanupFailures-- > 0) {
+                    if (partialCleanup && !sourceData.isEmpty()) sourceData.remove(sourceData.keySet().iterator().next());
+                    return false;
+                }
                 sourceData.clear(); node().tablets.remove(tablet.id()); return true;
             }
         }

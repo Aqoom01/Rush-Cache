@@ -35,6 +35,92 @@ class PreCopyProtocolTest {
     }
 
     @Test
+    void dirtyHistoryShowsDecreaseThenGrowthAndStopsAtActualDecision() {
+        var f = new LiveMigrationFixture(false);
+        var keys = List.of(Bytes.utf8("k0"), Bytes.utf8("k1"), Bytes.utf8("k2"));
+        keys.forEach(k -> f.source.put(k, OLD));
+        var p = protocol(f, 0, 10);
+        p.begin(f.job(p.name()));
+        keys.forEach(k -> f.source.put(k, NEW));
+        p.step(10_000); // generation 1: dirty 3
+        f.source.put(keys.getFirst(), NEW);
+        p.step(10_000); // generation 2: dirty 1
+        f.source.put(keys.get(0), NEW);
+        f.source.put(keys.get(1), NEW);
+        p.step(10_000); // generation 3: dirty 2, freeze
+        assertEquals(PreCopyProtocol.StopReason.NOT_SHRINKING, p.stopReason().orElseThrow());
+        var starts = p.roundEvents().stream().filter(e -> e.event() == PreCopyProtocol.RoundEventType.STARTED).toList();
+        assertEquals(List.of(3, 1, 2), starts.stream().map(PreCopyProtocol.RoundEvent::dirtyKeys).toList());
+        assertTrue(starts.get(0).dirtyBytes() > starts.get(1).dirtyBytes());
+        assertTrue(starts.get(1).dirtyBytes() < starts.get(2).dirtyBytes());
+        assertNull(starts.getFirst().previousDirtyBytes());
+        assertEquals(starts.get(1).dirtyBytes(), starts.get(2).previousDirtyBytes());
+        assertEquals(2, p.rounds());
+        assertTrue(starts.getLast().finalRound());
+        finish(f, p);
+        assertEquals(6, p.roundEvents().size());
+        var end = p.roundEvents().getLast();
+        assertEquals(PreCopyProtocol.RoundEventType.ACKNOWLEDGED, end.event());
+        assertEquals(end.dirtyBytes(), end.roundSentBytes());
+        assertEquals(6, end.acknowledgedSequence());
+        assertThrows(UnsupportedOperationException.class, () -> p.roundEvents().clear());
+    }
+
+    @Test
+    void historyKeepsTombstonesAndDistinguishesEstimateFromLiveTransfer() {
+        var f = new LiveMigrationFixture(false);
+        Bytes deleted = Bytes.utf8("deleted");
+        f.source.put(KEY, OLD); f.source.put(deleted, OLD);
+        var p = protocol(f, 0, 10);
+        p.begin(f.job(p.name()));
+        f.source.put(KEY, NEW); f.source.delete(deleted);
+        p.step(10_000);
+        var start = p.roundEvents().getFirst();
+        assertEquals(2, start.dirtyKeys()); assertEquals(1, start.tombstoneKeys());
+        f.source.put(KEY, Bytes.utf8("longer-value-created-after-the-generation-boundary"));
+        p.step(10_000);
+        var ack = p.roundEvents().get(1);
+        assertEquals(start.dirtyBytes(), ack.dirtyBytes());
+        assertNotEquals(ack.dirtyBytes(), ack.roundSentBytes());
+        finish(f, p);
+        assertFalse(f.link.receiver.data().containsKey(deleted));
+    }
+
+    @Test
+    void missingAckIsNotCompletionAndAbortPreservesPartialObservation() {
+        for (long budget : new long[] {1, 10_000}) {
+            var f = new LiveMigrationFixture(false);
+            f.source.put(KEY, OLD);
+            var p = protocol(f, 1_000, 10);
+            p.begin(f.job(p.name())); f.source.put(KEY, NEW); p.step(10_000);
+            f.link.holdFinalAck = true;
+            p.step(budget);
+            var before = p.roundEvents();
+            assertEquals(1, before.size()); // full transfer alone is not an ACK
+            p.abort(); p.abort();
+            assertEquals(1, before.size());
+            assertEquals(2, p.roundEvents().size());
+            var aborted = p.roundEvents().getLast();
+            assertEquals(PreCopyProtocol.RoundEventType.ABORTED, aborted.event());
+            assertEquals(Math.min(budget, before.getFirst().dirtyBytes()), aborted.roundSentBytes());
+            assertEquals(0, aborted.acknowledgedSequence());
+            assertEquals(Map.of(KEY, NEW), f.source.data);
+        }
+    }
+
+    @Test
+    void emptyFinalRoundStillRecordsHeaderAndAckWithoutSequenceGrowth() {
+        var f = new LiveMigrationFixture(false);
+        var p = protocol(f, 1_000, 10);
+        p.begin(f.job(p.name())); finish(f, p);
+        var end = p.roundEvents().getLast();
+        assertEquals(0, end.dirtyKeys());
+        assertEquals(DeltaBatch.HEADER_BYTES, end.dirtyBytes());
+        assertEquals(DeltaBatch.HEADER_BYTES, end.roundSentBytes());
+        assertEquals(0, end.lastSequence());
+    }
+
+    @Test
     void snapshotBarrierKeepsWritesAndDeletesUntilFinalSequenceAck() {
         var f = new LiveMigrationFixture(false);
         Bytes deleted = Bytes.utf8("deleted");

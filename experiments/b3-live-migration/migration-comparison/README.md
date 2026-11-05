@@ -300,3 +300,8 @@ suite 실행마다 이 폴더의 새 `runs/<execution_id>/`에 저장한다. 다
 ### 구현 완료 조건
 
 공통 요청열 재현, Baseline 회귀, pre-copy 정합성·종료 조건, S1~S6와 민감도, JSON 라운드 원본·자동 비교 보고서, 누락·중복·중단된 실행 처리까지 확인해야 전체 비교 완료로 표시한다. 빈 결과 파일이나 예상 수치를 미리 만들지 않는다.
+
+
+## 새 실행의 dirty 상세 (2026-11-04)
+
+Pre-copy generation의 시작·ACK·취소 관측을 추가했다. 현재 config는 이 backend의 schema 2로 새 결과를 생성하고 이전 schema 1 원본도 재생성할 수 있다. 검증된 원본에서 dirty-rounds.csv와 dirty-rounds.md를 생성한다. 기존 단계 기록과 정식 run은 보존한다. [필드·시간·종료 판단·호환성 안내](dirty-rounds.md)를 따른다.
