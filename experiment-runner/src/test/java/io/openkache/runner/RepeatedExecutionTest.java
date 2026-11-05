@@ -223,6 +223,7 @@ class RepeatedExecutionTest {
                 new EnumMap<>(Outcome.class),
                 "none",
                 Optional.empty(),
+                List.of(),
                 List.of());
     }
 }

@@ -34,6 +34,40 @@ final class ResultWriter {
         }
     }
 
+    /**
+     * window 실행 결과를 {@code resultsDir/<study>/windows-<executionId>.csv}에 쓴다. window 실행이 아니면 아무것도 쓰지 않고
+     * {@code null}.
+     */
+    static Path writeWindowsCsv(ExperimentResult result, Path resultsDir) {
+        if (result.windows().isEmpty()) {
+            return null;
+        }
+        try {
+            Path studyDir = resultsDir.resolve(sanitize(result.study()));
+            Files.createDirectories(studyDir);
+            Path file = studyDir.resolve("windows-" + result.executionId() + ".csv");
+            List<String> lines = new ArrayList<>();
+            lines.add("executionId,window,address,burst,movedTablets,requests,hit,miss,writeOk,failed,p50Nanos,p99Nanos,"
+                    + "elapsedNanos,cpuUtilization,refills");
+            for (WindowResult w : result.windows()) {
+                Map<Outcome, Long> c = w.outcomeCounts();
+                long failed = c.getOrDefault(Outcome.BUSY, 0L) + c.getOrDefault(Outcome.TIMEOUT, 0L)
+                        + c.getOrDefault(Outcome.UNAVAILABLE, 0L) + c.getOrDefault(Outcome.SERVER_ERROR, 0L)
+                        + c.getOrDefault(Outcome.CLIENT_FAILURE, 0L);
+                lines.add(String.format(Locale.ROOT, "%s,%d,%s,%b,%d,%d,%d,%d,%d,%d,%d,%d,%d,%s,%d",
+                        result.executionId(), w.window(), w.address(), w.burst(), w.movedTablets(), w.requests(),
+                        c.getOrDefault(Outcome.HIT, 0L), c.getOrDefault(Outcome.MISS, 0L), c.getOrDefault(Outcome.WRITE_OK, 0L),
+                        failed, w.p50Nanos(), w.p99Nanos(), w.elapsedNanos(),
+                        Double.isNaN(w.cpuUtilization()) ? "NA" : String.format(Locale.ROOT, "%.4f", w.cpuUtilization()),
+                        w.refills()));
+            }
+            Files.write(file, lines, StandardCharsets.UTF_8);
+            return file;
+        } catch (IOException e) {
+            throw new UncheckedIOException("failed to write window CSV", e);
+        }
+    }
+
     static Path appendCsv(ExperimentResult result, Path resultsDir) {
         try {
             Path studyDir = resultsDir.resolve(sanitize(result.study()));

@@ -9,6 +9,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Properties;
 import java.util.Set;
 import java.util.TreeMap;
@@ -54,6 +55,12 @@ import java.util.TreeMap;
  *     경계 미만인 가장 앞 구간의 서버로 보낸다. 경계 k개면 앞 k+1개 서버를 쓴다. 비어 있으면 모든 요청이 첫 서버로 간다
  * @param hotRangeKeyFraction {@link Distribution#HOT_RANGE}에서 뜨거운 key 비율(해시값이 작은 쪽, 0 초과 1 미만)
  * @param hotRangeRequestFraction {@link Distribution#HOT_RANGE}에서 뜨거운 key로 가는 요청 비율(0-1)
+ * @param hotRangeShiftPerWindow {@link Distribution#HOT_RANGE}의 뜨거운 구간이 window마다 이동하는 비율(key 수 대비, 0-1, 기본 0)
+ * @param zipfExponent {@link Distribution#ZIPF}의 지수(0 초과, 기본 1.0)
+ * @param burstEveryWindows 이 window 수마다 마지막 window에 burst를 넣는다. 0이면 burst 없음
+ * @param burstFactor burst window에 추가하는 요청 = 기본 요청 × 이 값. 추가분은 임의의 burst 구간에 몰린다
+ * @param burstWidth burst 구간 폭(key 수 대비, 해시 순서로 이어진 구간)
+ * @param windowed {@code schedule.file}이 있으면 window 단위 실행 설정. 없으면 기존처럼 warm-up + 측정 한 구간
  */
 public record RunnerConfig(
         String targetHost,
@@ -85,7 +92,27 @@ public record RunnerConfig(
         List<Target> targets,
         List<Long> routingBoundaries,
         double hotRangeKeyFraction,
-        double hotRangeRequestFraction) {
+        double hotRangeRequestFraction,
+        double hotRangeShiftPerWindow,
+        double zipfExponent,
+        int burstEveryWindows,
+        double burstFactor,
+        double burstWidth,
+        Optional<Windowed> windowed) {
+
+    /**
+     * window 단위 실행: {@link Schedule}의 window마다 그 window의 라우팅과 부하로 요청 {@code windowRequests}건(burst window는 더 많이)을
+     * 보내고, window × 서버별 결과와 서버 CPU를 기록한다.
+     *
+     * @param schedule window별 라우팅 계획
+     * @param windowRequests window 하나의 기본 요청 수
+     * @param prefill true면 측정 전에 모든 key를 한 번씩 SET한다(window 0 라우팅). 이동 뒤의 MISS가 "옮긴 Tablet이 빈 상태"만 뜻하게
+     *     하려고 쓴다
+     * @param metricsPort 서버 {@code /metrics} 포트(CPU 수집)
+     * @param refillOnMiss true면 GET이 MISS일 때 같은 서버에 그 key를 바로 SET한다(cache-aside: 원본에서 읽어 다시 채움). 다시 채우는
+     *     SET은 지연·결과 통계에 넣지 않고 window별 횟수만 센다
+     */
+    public record Windowed(Schedule schedule, long windowRequests, boolean prefill, int metricsPort, boolean refillOnMiss) {}
 
     /** 요청 대상 서버. */
     public record Target(String host, int port) {
@@ -143,7 +170,17 @@ public record RunnerConfig(
                     "target.hosts",
                     "routing.boundaries",
                     "hot.range.key.fraction",
-                    "hot.range.request.fraction");
+                    "hot.range.request.fraction",
+                    "hot.range.shift.per.window",
+                    "zipf.exponent",
+                    "burst.every.windows",
+                    "burst.factor",
+                    "burst.width",
+                    "schedule.file",
+                    "window.requests",
+                    "prefill",
+                    "metrics.port",
+                    "refill.on.miss");
 
     /** {@code path}의 properties 파일을 읽어 검증한다. */
     public static RunnerConfig load(Path path) {
@@ -216,6 +253,12 @@ public record RunnerConfig(
                 p.errors.add("'hot.range.key.fraction' must leave at least one hot and one cold key: " + hotRangeKeyFraction);
             }
         }
+        double hotRangeShiftPerWindow = p.doubleValue("hot.range.shift.per.window", "0", 0.0, 1.0);
+        double zipfExponent = p.doubleValue("zipf.exponent", "1.0", 1e-9, 10.0);
+        int burstEveryWindows = (int) p.optionalLongValue("burst.every.windows", "0", 0, 10_000);
+        double burstFactor = p.doubleValue("burst.factor", "3.0", 0.0, 1000.0);
+        double burstWidth = p.doubleValue("burst.width", "0.05", 1e-9, 1.0);
+        Optional<Windowed> windowed = p.windowed(targets.size(), routingBoundaries);
 
         if (!p.errors.isEmpty()) {
             throw new ConfigException("invalid config: " + String.join("; ", p.errors));
@@ -256,7 +299,13 @@ public record RunnerConfig(
                 targets,
                 routingBoundaries,
                 hotRangeKeyFraction,
-                hotRangeRequestFraction);
+                hotRangeRequestFraction,
+                hotRangeShiftPerWindow,
+                zipfExponent,
+                burstEveryWindows,
+                burstFactor,
+                burstWidth,
+                windowed);
     }
 
     private static final long ONE_HOUR_MS = 3_600_000;
@@ -347,6 +396,42 @@ public record RunnerConfig(
             return targets.isEmpty() ? List.of(new Target(defaultHost, defaultPort)) : List.copyOf(targets);
         }
 
+        Optional<Windowed> windowed(int targetCount, List<Long> boundaries) {
+            String file = optionalText("schedule.file", "");
+            if (file.isEmpty()) {
+                for (String key : List.of("window.requests", "prefill", "metrics.port", "refill.on.miss")) {
+                    if (properties.getProperty(key) != null) {
+                        errors.add("'" + key + "' is only used with schedule.file");
+                    }
+                }
+                return Optional.empty();
+            }
+            if (!boundaries.isEmpty()) {
+                errors.add("'routing.boundaries' and 'schedule.file' cannot be used together");
+            }
+            long windowRequests = longValue("window.requests", 1, Long.MAX_VALUE);
+            String prefill = optionalText("prefill", "true");
+            if (!prefill.equals("true") && !prefill.equals("false")) {
+                errors.add("'prefill' must be true or false: " + prefill);
+            }
+            int metricsPort = (int) optionalLongValue("metrics.port", "9091", 1, 65535);
+            String refill = optionalText("refill.on.miss", "false");
+            if (!refill.equals("true") && !refill.equals("false")) {
+                errors.add("'refill.on.miss' must be true or false: " + refill);
+            }
+            Schedule schedule;
+            try {
+                schedule = Schedule.load(Path.of(file));
+            } catch (ConfigException e) {
+                errors.add(e.getMessage());
+                return Optional.empty();
+            }
+            if (schedule.maxTarget() >= targetCount) {
+                errors.add("schedule uses target " + schedule.maxTarget() + " but target.hosts has " + targetCount);
+            }
+            return Optional.of(new Windowed(schedule, windowRequests, prefill.equals("true"), metricsPort, refill.equals("true")));
+        }
+
         List<Long> boundaries(int targetCount) {
             String value = optionalText("routing.boundaries", "");
             if (value.isEmpty()) {
@@ -385,7 +470,7 @@ public record RunnerConfig(
                                 + key
                                 + "' must be one of "
                                 + List.of(type.getEnumConstants())
-                                + " (zipfian is not supported yet): "
+                                + ": "
                                 + value);
                 return type.getEnumConstants()[0];
             }

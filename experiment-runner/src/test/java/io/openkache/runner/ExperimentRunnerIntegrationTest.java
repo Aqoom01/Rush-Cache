@@ -156,6 +156,60 @@ class ExperimentRunnerIntegrationTest {
         }
     }
 
+    @Test
+    void windowedRunFollowsScheduleAndShowsMissesAfterMove() throws Exception {
+        ServerConfig secondConfig =
+                new ServerConfig(
+                        new NodeId(2), "runner-it", "127.0.0.1", "127.0.0.1",
+                        freePort(), freePort(), freePort(), 2, Duration.ofSeconds(2));
+        ServerApplication second = ServerApplication.start(secondConfig);
+        try {
+            // Tablet 2개: 앞 절반은 서버 0, 뒤 절반은 서버 1. window 1부터 앞 절반을 서버 1로 옮긴다.
+            Path schedule = resultsDir.resolve("two.schedule");
+            Files.write(schedule, List.of(
+                    "tablets 2", "tablet 0 0", "tablet 9223372036854775808 1",
+                    "window 0", "window 1", "move 0 1", "window 2"));
+            Properties p = runnerProperties(0, 1, 4);
+            p.setProperty("key.count", "200");
+            p.setProperty("mix.get", "100");
+            p.setProperty("mix.set", "0");
+            p.setProperty("mix.delete", "0");
+            p.setProperty(
+                    "target.hosts",
+                    "127.0.0.1:" + serverConfig.clientPort() + ",127.0.0.1:" + secondConfig.clientPort());
+            p.setProperty("schedule.file", schedule.toString());
+            p.setProperty("window.requests", "400");
+            p.setProperty("metrics.port", String.valueOf(serverConfig.adminPort()));
+            p.setProperty("refill.on.miss", "true");
+            RunnerConfig config = RunnerConfig.from(p);
+
+            ExperimentResult result = new ExperimentRunner(config).run();
+
+            assertEquals(1200, result.measuredRequests());
+            assertEquals(6, result.windows().size(), "window 3개 × 서버 2대");
+            for (WindowResult w : result.windows()) {
+                long misses = w.outcomeCounts().get(Outcome.MISS);
+                assertEquals(misses, w.refills(), "MISS마다 한 번 다시 채운다");
+                if (w.window() == 1 && w.address().endsWith(":" + secondConfig.clientPort())) {
+                    assertTrue(misses > 0, "옮긴 Tablet은 서버 1에서 비어 있어 MISS가 난다");
+                    assertTrue(misses <= 100, "다시 채우므로 MISS는 옮긴 key(약 100개) 수를 넘지 않는다: " + misses);
+                } else if (w.window() == 0) {
+                    assertEquals(0L, misses, "미리 채워서 window 0은 MISS가 없다");
+                }
+                if (w.window() >= 1 && w.address().endsWith(":" + serverConfig.clientPort())) {
+                    assertEquals(0L, w.requests(), "window 1부터 서버 0은 요청을 받지 않는다");
+                }
+            }
+            assertEquals(1, result.windows().stream().filter(w -> w.window() == 1).findFirst().orElseThrow().movedTablets());
+            assertTrue(!Double.isNaN(result.windows().getFirst().cpuUtilization()), "서버 0의 CPU는 /metrics에서 읽힌다");
+
+            Path csv = ResultWriter.writeWindowsCsv(result, config.resultsDir());
+            assertEquals(7, Files.readAllLines(csv).size(), "header + 6행");
+        } finally {
+            second.close();
+        }
+    }
+
     private RunnerConfig runnerConfig(long warmup, long measured, int concurrency) {
         return RunnerConfig.from(runnerProperties(warmup, measured, concurrency));
     }

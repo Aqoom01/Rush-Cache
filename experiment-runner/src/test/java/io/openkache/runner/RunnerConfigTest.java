@@ -71,14 +71,16 @@ class RunnerConfigTest {
     }
 
     @Test
-    void rejectsZipfianAsUnsupportedDistribution() {
+    void rejectsUnknownDistributionNameButAcceptsZipf() {
         Properties p = valid();
         p.setProperty("distribution", "zipfian");
 
         assertEquals(
-                "invalid config: 'distribution' must be one of [UNIFORM, FIXED_HOT_KEY, HOT_RANGE] (zipfian is not"
-                        + " supported yet): zipfian",
+                "invalid config: 'distribution' must be one of [UNIFORM, FIXED_HOT_KEY, HOT_RANGE, ZIPF]: zipfian",
                 errorOf(p));
+
+        p.setProperty("distribution", "zipf");
+        assertEquals(Distribution.ZIPF, RunnerConfig.from(p).distribution());
     }
 
     @Test

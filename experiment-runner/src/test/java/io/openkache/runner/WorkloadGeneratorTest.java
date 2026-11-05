@@ -142,4 +142,66 @@ class WorkloadGeneratorTest {
         }
         assertEquals(0.8, hotCount / (double) total, 0.01);
     }
+
+    private static RunnerConfig with(String distribution, String... keyValues) {
+        Properties p = new Properties();
+        p.putAll(config(distribution, 100, 0, 0).configSnapshot());
+        for (int i = 0; i < keyValues.length; i += 2) {
+            p.setProperty(keyValues[i], keyValues[i + 1]);
+        }
+        return RunnerConfig.from(p);
+    }
+
+    @Test
+    void zipfFavorsTheTopRankedKey() {
+        RunnerConfig cfg = with("ZIPF");
+        KeySpace keys = KeySpace.of(cfg);
+        WorkloadGenerator generator = new WorkloadGenerator(cfg, keys, new Random(3), 0);
+        Bytes top = WorkloadGenerator.key(keys.keyOfRank[0], cfg.keyLength());
+
+        int topCount = 0;
+        int total = 50_000;
+        for (int i = 0; i < total; i++) {
+            if (((Command.Get) generator.next()).key().equals(top)) {
+                topCount++;
+            }
+        }
+        // key 50개, s = 1: 1위 몫 = 1 / H(50) ≈ 0.222
+        assertEquals(0.222, topCount / (double) total, 0.01);
+    }
+
+    @Test
+    void movingHotspotShiftsTheHotRangeEachWindow() {
+        RunnerConfig cfg = with("HOT_RANGE", "hot.range.request.fraction", "1.0", "hot.range.shift.per.window", "0.2");
+        KeySpace keys = KeySpace.of(cfg);
+        // window 1이면 해시 순서 10-19번(key 50개의 20%)만 나온다.
+        Set<Bytes> expected = new HashSet<>();
+        for (int i = 10; i < 20; i++) {
+            expected.add(WorkloadGenerator.key(keys.hashOrder[i], cfg.keyLength()));
+        }
+        WorkloadGenerator generator = new WorkloadGenerator(cfg, keys, new Random(5), 1);
+        for (int i = 0; i < 2_000; i++) {
+            assertTrue(expected.contains(((Command.Get) generator.next()).key()));
+        }
+    }
+
+    @Test
+    void burstWindowAddsRequestsConcentratedInOneRange() {
+        RunnerConfig cfg = with("UNIFORM", "burst.every.windows", "5", "burst.factor", "3", "burst.width", "0.1");
+        assertTrue(!WorkloadGenerator.isBurst(cfg, 3));
+        assertTrue(WorkloadGenerator.isBurst(cfg, 4));
+        assertEquals(100, WorkloadGenerator.requestsIn(cfg, 100, 3));
+        assertEquals(400, WorkloadGenerator.requestsIn(cfg, 100, 4));
+
+        KeySpace keys = KeySpace.of(cfg);
+        WorkloadGenerator generator = new WorkloadGenerator(cfg, keys, new Random(9), 4);
+        java.util.Map<Bytes, Integer> counts = new java.util.HashMap<>();
+        int total = 40_000;
+        for (int i = 0; i < total; i++) {
+            counts.merge(((Command.Get) generator.next()).key(), 1, Integer::sum);
+        }
+        // burst 구간(5개 key)이 추가분 3/4를 받는다 → 상위 5개 key 합이 75% 이상
+        int top5 = counts.values().stream().sorted(java.util.Comparator.reverseOrder()).limit(5).mapToInt(Integer::intValue).sum();
+        assertTrue(top5 / (double) total > 0.75, "top5=" + top5);
+    }
 }
