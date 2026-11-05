@@ -30,6 +30,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Properties;
 import java.util.Random;
+import java.util.TreeMap;
 import java.util.function.Supplier;
 
 /**
@@ -69,7 +70,18 @@ final class ClusterPlacementPlanner {
                 new Bundle("bundle2", List.of(new Scenario("MOVING_HOTSPOT", moving, 4, 4), new Scenario("BURSTY", bursty, 4, 4)),
                         List.of("greedy-load-placement", "slicer-inspired", "weighted-rendezvous", "hysteresis-rebalancing")),
                 new Bundle("bundle3", List.of(new Scenario("SCALE_OUT", zipf, 3, 4)),
-                        List.of("greedy-load-placement", "slicer-inspired", "weighted-rendezvous", "cost-aware-rebalancing")));
+                        List.of("greedy-load-placement", "slicer-inspired", "weighted-rendezvous", "cost-aware-rebalancing")),
+                // 기본 단가(1MB = 요청 1,000건)는 이 규모에서 한 번도 옮기지 않았다. 계산 실험과 같은 상대 비용(20)과 실측 중간값(200)으로 다시 잰다
+                new Bundle("bundle4-cost-aware",
+                        List.of(new Scenario("HOT_RANGE", hotRange, 4, 4), new Scenario("ZIPF", zipf, 4, 4),
+                                new Scenario("SCALE_OUT", zipf, 3, 4)),
+                        List.of("cost-aware-20perMB", "cost-aware-200perMB")));
+    }
+
+    /** 1MB를 옮기는 비용을 요청 {@code requestsPerMb}건으로 보는 cost-aware. 기간·허용치는 기본값. */
+    private static PlacementPolicy costAware(int requestsPerMb) {
+        return new CostAwareRebalancing(requestsPerMb / 1_000_000.0, CostAwareRebalancing.DEFAULT_HORIZON_WINDOWS,
+                CostAwareRebalancing.DEFAULT_TOLERANCE);
     }
 
     static PlacementPolicy policy(String name) {
@@ -79,6 +91,8 @@ final class ClusterPlacementPlanner {
             case "estore-inspired" -> new EStoreInspiredPlacement();
             case "weighted-rendezvous" -> new WeightedRendezvousPlacement();
             case "cost-aware-rebalancing" -> new CostAwareRebalancing();
+            case "cost-aware-20perMB" -> costAware(20);
+            case "cost-aware-200perMB" -> costAware(200);
             case "hysteresis-rebalancing" -> new HysteresisRebalancing();
             case "no-rebalance" -> new PlacementPolicy() {
                 @Override
@@ -231,7 +245,7 @@ final class ClusterPlacementPlanner {
         lines.add("mix.get=90");
         lines.add("mix.set=10");
         lines.add("mix.delete=0");
-        new LinkedHashMap<>(scenario.workload()).forEach((k, v) -> lines.add(k + "=" + v));
+        new TreeMap<>(scenario.workload()).forEach((k, v) -> lines.add(k + "=" + v));
         lines.add("concurrency=" + CONCURRENCY);
         lines.add("warmup.requests=20000");
         lines.add("measured.requests=" + WINDOW_REQUESTS * WINDOWS);
