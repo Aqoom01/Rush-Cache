@@ -27,7 +27,10 @@ final class ClusterPlacementReport {
 
     static final String BASELINE = "greedy-load-placement";
 
-    /** 실행 하나의 지표. 이용률·지연은 window 평균이다. */
+    /** 이 window부터 비율 지표를 센다. 서버 재시작 직후 앞쪽 window는 JIT 예열로 정책과 무관하게 느리다. */
+    static final int STEADY_FROM = 10;
+
+    /** 실행 하나의 지표. 처리량·불균형·CPU·p99·miss는 {@link #STEADY_FROM}부터의 window, 이동·재적재는 전체 window 합이다. */
     record Run(String scenario, int seed, String variant, Map<String, Double> metrics) {}
 
     /** 지표 이름, 표 제목, 낮을수록 좋은가. */
@@ -76,6 +79,9 @@ final class ClusterPlacementReport {
         if (csv == null) {
             return null;
         }
+        String scenario = p.getProperty("scenario");
+        int dash = scenario.lastIndexOf("-s");
+        String scenarioName = scenario.substring(0, dash);
         // window → 서버별 행
         Map<Integer, List<String[]>> byWindow = new TreeMap<>();
         List<String> lines = Files.readAllLines(csv, StandardCharsets.UTF_8);
@@ -93,20 +99,28 @@ final class ClusterPlacementReport {
         double misses = 0;
         double moved = 0;
         double refills = 0;
-        for (List<String[]> rows : byWindow.values()) {
-            double[] perNode = rows.stream().mapToDouble(r -> num(r, header, "requests")).filter(x -> x > 0).toArray();
+        int steadyWindows = 0;
+        for (Map.Entry<Integer, List<String[]>> entry : byWindow.entrySet()) {
+            List<String[]> rows = entry.getValue();
+            moved += num(rows.getFirst(), header, "movedTablets");
+            refills += rows.stream().mapToDouble(r -> num(r, header, "refills")).sum();
+            if (entry.getKey() < STEADY_FROM) {
+                continue;
+            }
+            steadyWindows++;
+            double[] perNode = rows.stream().mapToDouble(r -> num(r, header, "requests")).toArray();
             double total = Arrays.stream(perNode).sum();
             requests += total;
             elapsed += num(rows.getFirst(), header, "elapsedNanos") / 1e9;
-            imbalance += perNode.length == 0 ? 1 : Arrays.stream(perNode).max().orElse(0) / (total / perNode.length);
+            // 요청 0인 노드도 클러스터 구성원이면 평균에 넣는다(노드를 추가하고 쓰지 않으면 불균형으로 잡혀야 한다)
+            int members = members(scenarioName, entry.getKey(), rows.size());
+            imbalance += total == 0 ? 1 : Arrays.stream(perNode).max().orElse(0) / (total / members);
             maxCpu += rows.stream().mapToDouble(r -> num(r, header, "cpuUtilization")).filter(x -> !Double.isNaN(x)).max().orElse(Double.NaN);
             worstP99 += rows.stream().filter(r -> num(r, header, "requests") > 0).mapToDouble(r -> num(r, header, "p99Nanos")).max().orElse(0) / 1e3;
             hits += rows.stream().mapToDouble(r -> num(r, header, "hit")).sum();
             misses += rows.stream().mapToDouble(r -> num(r, header, "miss")).sum();
-            moved += num(rows.getFirst(), header, "movedTablets");
-            refills += rows.stream().mapToDouble(r -> num(r, header, "refills")).sum();
         }
-        int windows = byWindow.size();
+        int windows = steadyWindows;
         Map<String, Double> m = new LinkedHashMap<>();
         m.put("throughput", requests / elapsed);
         m.put("mean_imbalance", imbalance / windows);
@@ -115,17 +129,26 @@ final class ClusterPlacementReport {
         m.put("miss_rate", hits + misses == 0 ? 0 : misses / (hits + misses));
         m.put("moved_tablets", moved);
         m.put("refills", refills);
-        String scenario = p.getProperty("scenario");
-        int dash = scenario.lastIndexOf("-s");
-        return new Run(scenario.substring(0, dash), Integer.parseInt(scenario.substring(dash + 2)), p.getProperty("variant"), m);
+        return new Run(scenarioName, Integer.parseInt(scenario.substring(dash + 2)), p.getProperty("variant"), m);
+    }
+
+    /** 그 window의 클러스터 노드 수. 계획 생성기의 시나리오 정의를 따르고, 모르는 시나리오는 결과 행 수로 본다. */
+    static int members(String scenario, int window, int rows) {
+        return ClusterPlacementPlanner.bundles().stream()
+                .flatMap(b -> b.scenarios().stream())
+                .filter(s -> s.name().equals(scenario))
+                .findFirst()
+                .map(s -> window < ClusterPlacementPlanner.SCALE_EVENT_WINDOW ? s.initialNodes() : s.finalNodes())
+                .orElse(rows);
     }
 
     static List<String> markdown(List<Run> runs) {
         List<String> md = new ArrayList<>();
         md.add("# cluster-placement EC2 결과 요약 (ClusterPlacementReport 자동 생성)");
         md.add("");
-        md.add("값은 seed 평균 (최소-최대). 괄호 아래 줄은 `" + BASELINE + "` 대비 개선율(같은 seed끼리 짝지은 평균, 양수가 개선). "
-                + "실행 수: " + runs.size());
+        md.add("값은 seed 평균 (최소-최대). 아래 줄은 `" + BASELINE + "` 대비 개선율(같은 seed끼리 짝지은 평균, 양수가 개선). "
+                + "처리량·불균형·CPU·p99·miss는 window " + STEADY_FROM + "부터, 이동 Tablet·다시 채운 SET은 전체 window 합이다. "
+                + "처리량은 측정 요청만 센다(다시 채운 SET 제외). 실행 수: " + runs.size());
         Map<String, Map<String, List<Run>>> grouped = new TreeMap<>();
         for (Run r : runs) {
             grouped.computeIfAbsent(r.scenario(), k -> new TreeMap<>()).computeIfAbsent(r.variant(), k -> new ArrayList<>()).add(r);
