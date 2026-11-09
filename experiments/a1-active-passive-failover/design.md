@@ -237,3 +237,65 @@ FULL_LOG 모드는 기존 실험의 정확한 재현을 위해 유지했다. [�
 외부 master는 정확한 원래 Primary crash만 제외하고 가장 긴 생존 적용 prefix를 선택한다. 기존 NodeId 고정 승계와 다르며 master 합의·통신 비용을 모델링하지 않는다. 다중 파티션 snapshot·coordinated apply·지역 복제·영속 WAL을 재현한 Rosé 전체 구현이 아니다. §4 조사 표의 일반적인 논문 보장을 실제 구현 결과로 혼동하지 않는다.
 
 [240조건의 성공·유실·lag trade-off](rose-comparison/results.md)를 실행했다. 기존 네 방식 288조건은 CSV가 그대로 재현된다. 논문 재현 범위·동시성 통제·상태 전달 우선순위는 [최신 멘토 질문](mentoring/2026-10-29-questions.md)으로 정리했다.
+
+## 17. PB 실제 서버 연결 (2026-11-04)
+
+`PbServerMain`은 기존 PB·crash-only 엔진에 실제 TCP·system monotonic·owner worker를 연결한다. 기본 단일 노드 실행과 core API는 유지한다. [EC2 3대 실측 12회](real-server/results.md)에서 정상 비용·최초 Primary JVM 영구 crash 이후 첫 새 쓰기·성공 쓰기 보존을 측정했다. 최초 heartbeat 이후 감지를 시작하며 startup 준비 조건을 테스트와 실험에 동일하게 적용한다.
+
+기본 12회는 정상 부하 종료 후 crash를 주입한 실험이다. [연속 SET의 client-inflight crash 12회](real-server/load-results.md)를 별도로 추가해 전송~응답 사이 종료, 같은 논리 SET 재시도, 성공 쓰기 보존과 최대 성공 응답 공백을 확인했다. 서버 내부의 특정 미완료 단계 강제·partition·재시작·다른 프로토콜의 실서버 비교는 후속이다. 교차 호스트 nanoTime을 직접 차감하지 않고 전체 복구는 controller 하나의 시계로, 감지 후 전환은 승격 JVM의 duration으로 기록한다.
+
+## 18. PB·VR 실제 서버 공통 비교 (2026-11-04)
+
+실험 전용 서버는 protocol 설정으로 PB/VR을 선택하며, VR은 기본 INCREMENTAL core 엔진을 동일 TCP/owner/KV에 연결한다. 명시적 길이·명령 tag로 모든 VR peer 메시지를 encode/decode하며 기존 client Frame과 core 계약은 유지한다. 로컬 TCP에서 과반수 쓰기, Primary crash/view change, committed 값 보존, 중복 ID 재시도와 다른 명령의 재사용 거절을 검증했다.
+
+[별도 공통 cohort 24회](real-server/compare-results.md)는 값64B/8KiB·감지500/1000ms·3회·warmup30/측정128건으로 PB/VR을 각각 재측정했다. VR 전체 로그가2MiB frame 안에 들어오도록 요청 수를 제한했으며 checkpoint·분할 전송은 없다. 기존 PB1000건 측정과 섞지 않는다. 양쪽 Backup 값을 확인한 뒤 종료하는 settled idle crash이며 성공 쓰기3072건·장애 후6192값복사본을 확인했다. 상태 전송의 원인별 계측, 지연 Backup의 VR 실측, 다른 프로토콜 연결은 후속이다.
+
+## 19. Raft 실제 TCP 선출·리더 crash 비교 (2026-11-04)
+
+`protocol=RAFT`에서 4종 RPC를 명시적 codec으로 전송하고 모든 노드가 timer를 실행해 초기 리더를 선출한다. 최초 리더를 고정하지 않고 실제 선출 리더 호스트의 controller가 해당 JVM에 SIGKILL을 보내며 생존 리더의 새 쓰기를 기다린다. Raft 엔진에는 최신 로컬 선거의 시각 진단을 별도로 추가해 초기 선거 누적값이 장애 후 선거 시간에 섞이지 않도록 했다. 기존 알고리즘·공통 core 계약은 유지한다.
+
+PB/VR/RAFT를 같은 배포본으로36회 재측정했다. Raft 선거timeout은[기준,2×기준), PB/VR은 고정 감지timeout이라 실제 감지 지연 동일성을 주장하지 않는다. seed·리더 ID·이전/이후 term을 남기고 전체 failover와 최신 승리 선거/전환 duration을 나눈다. 정상4608건 OK와 장애 후9288개 값 복사본 일치를 확인했다. 장기 로그·재시작·SSD·최대 처리량은 범위 밖이며 [실측 조건·결과](real-server/election-results.md)에서 한계를 함께 보고한다.
+
+## 20. VR 정상 전송량 원인 분해 (2026-11-04)
+
+Transport의 고정 opcode별 송신 성공 frame/byte와 VR 상태 요청 원인 카운터를 추가했다. 알고리즘·재전송 정책은 유지했다. [실서버12회](real-server/traffic-results.md)는 warm30건 적용·전송 안정화 후 정상128건을 측정하고 부하 직후와 안정화 후를 구분한다. GET_STATE67건이 모두 COMMIT이 Backup 로그보다 앞선 경우였고 START_VIEW23건이 전체 byte 합계의52.2%였다. 다만12회 중8회는 전체 로그 전송이 없었다.
+
+결정론적 대조군은 빠른 ACK로 순차 쓰기 시 전체 전송0, Backup2 ACK만40ms 늦춘 경우 view change나 유실 없이 COMMIT gap→GET_STATE→전체 로그 전달을 재현했다. 전송 창이 Backup의 ACK를 기다리는 사이 다른 Backup과의 과반수로 쓰기가 진행되는 경로다. 실제 ACK 지연이40ms라는 뜻은 아니다. 원인 확인에 집중했으며 COMMIT 통지 조절·증분 catch-up 최적화 및 전후 비교는 후속이다.
+
+## 21. VR 전송 경로 개선: INCREMENTAL_CATCHUP (2026-11-04)
+
+§20의 원인(뒤처진 Backup에 로그보다 앞선 COMMIT이 도착해 GET_STATE→전체 START_VIEW)을 줄이기 위해 `VrEngine.Mode.INCREMENTAL_CATCHUP`을 추가했다. 기존 INCREMENTAL은 그대로 두어 이전 결과를 재현할 수 있다.
+
+- Primary는 Backup별로 이미 보낸 로그 길이(확인된 길이와 확인 대기 중 전송의 상한)를 넘지 않는 COMMIT만 통지한다. 통지 값은 항상 실제 commit 이하다.
+- 같은 view에서 PREPARE_OK를 보낸 적 있는 정상 Backup의 GET_STATE는 그 Backup의 로그가 이 view 로그의 prefix이므로 확인 위치 이후 DeltaPrepare로 처리한다. 다른 view·확인 prefix 없음·전체 로그 설치 진행 중이면 기존 전체 로그 경로다.
+- 과반수 확정·view change·로그 선택·전송 창·1~4초 backoff는 바꾸지 않았다. 유실된 DeltaPrepare는 재전송 timer로 복구되므로 기존 모드의 즉시 전체 로그보다 늦을 수 있다. 뒤처진 Backup이 확정을 아는 시점도 그 Backup의 ACK 왕복 이후로 늦어질 수 있다. client 응답 시점은 같다.
+
+검증: INCREMENTAL과 같은 안전성 검사 전체·선형화 검사·8시나리오 행렬을 새 모드에 적용했고, 전달 시점마다 통지 commit ≤ Primary commit과 Backup applied ≤ Primary commit을 검사했다. 실제 TCP는 `vr.mode` 설정과 crash 후 committed 값 보존을 로컬 3노드에서 확인했다. [실서버 전후 비교24회](real-server/catchup-results.md)는 같은 배포본·부하로 조건마다 두 모드를 번갈아 측정했다. 개선 전12회는 전체 로그118회·전체 byte의75.6%, 개선 후12회는 전체 로그0·전체 peer byte75.4% 감소였다. 8KiB 조건의 정상 p99 중앙값은12.84~14.76ms에서7.25~7.39ms로 낮아졌지만 같은 host의 controller 경합을 포함한 단일 client 128표본이라 전송량만큼 일관된 지연 개선으로 일반화하지 않는다.
+
+## 22. Chain·CRAQ 실서버 연결과 외부 master 역할 (2026-11-04)
+
+`protocol=CHAIN`으로 기존 `ChainEngine`을 같은 `PbServerMain` 조립부에 연결했다(opcode80~85, Result 직렬화 포함). Chain은 자체 failure detector가 없으므로 실험 controller가 **정확한 영구 crash를 아는 외부 master** 역할을 맡아 peer 제어 opcode38(FREEZE/REPAIR/OPEN)과 37(로그 SHA-256 digest)로 복구를 조정한다. 감지는 controller의 고정 대기(timeout.ms)다. 이는 §13의 가상 master 모델을 실제 TCP로 옮긴 것이며 master 합의·분단 fencing은 여전히 없다.
+
+[위치별 crash36회](real-server/chain-results.md): 세 위치 모두 같은 master 절차로 복구되고 값은 전부 보존됐다. 감지 대기 이후 비용은 freeze 약12ms·repair 약20ms(제어 왕복+상태 확인+digest 비교)·open 약5ms다. 첫 cohort에서는 digest의 JCA 초기화·JIT 콜드 비용(70~330ms)이 repair에 섞여 crash 전 digest warm-up을 추가하고 다시 측정했다(첫 cohort 원본은 보존, 집계 제외). 정상 SET p50 약5~6ms에는 head가 역방향 Ack 전 새 쓰기에 돌려주는 BUSY 재시도가 포함된다.
+
+`feat/craq-reads`의 CRAQ 구현(`ReadMode.CRAQ`, `CraqVersions`, VersionQuery/Reply)을 실서버 worktree에 통합했다(core main 4파일, ChainCluster·LogicalMessageSize·CraqTest). 가상 비교 실험(`craq-comparison`, `craq-mixed`)은 원래 브랜치에 둔다. [읽기 경로12회](real-server/craq-results.md)는 clean 로컬 읽기의 효과와 dirty 읽기의 버전 조회 비용, 쓰기 경합을 실측했다.
+
+## 23. Rosé 변형 실서버 연결 (2026-11-04)
+
+`protocol=ROSE`(`rose.limit`)로 `RoseEngine`을 같은 조립부에 연결했다(opcode96~97). master 역할·고정 감지 대기는 §22의 Chain과 같다. [L별30회](real-server/rose-results.md)에서 client 8개 동시 쓰기의 유실 상한을 확인했다: L=0 유실 0, L=1 0, L=4 최대 2, L=16 최대 9, L=∞ 168~188/실행. peakLag 최대는 정확히 L이고 backpressure는 L=1~16에서 3회 합 1,300~1,600회였다. 정상 지연(p50 약20ms)은 8 client가 한 Primary를 공유하며 적용 중 BUSY 재시도를 반복한 값이라 단일 client cohort와 비교하지 않는다. 로그 digest는 처음에 2MiB frame 한도 검사에 걸려 8KiB 조건이 실패했고, 항목별 incremental digest로 고친 뒤 다시 측정했다(첫 3회 원본은 보존·집계 제외).
+
+## 24. 실서버 종합 비교 (2026-11-04)
+
+[overall-results.md](real-server/overall-results.md)는 각 cohort 요약 CSV를 `analyze_overall.py`로 모은 표다. PB/VR/Raft(자체 감지·settled idle crash), VR catch-up(전송 비교), Chain(controller 고정 대기·위치별), CRAQ(읽기 경로), Rosé(쓰기 중 crash·8 client)는 감지 모델·장애 모델·부하가 다르므로 한 표 안의 failover·지연 절대값을 순위로 읽지 않고 조건 열과 함께 본다. 모든 엔진은 연구 prototype이며 영속화·재시작·membership 변경·분단 fencing·checkpoint는 구현하지 않았다.
+
+## 25. CRAQ 읽기 경로 추가 (2026-11-03, S15P31D111-181)
+
+기존 Chain의 기본 TAIL_ONLY 동작을 유지하고 ReadMode.CRAQ를 추가했다. GET/EXISTS는 key별 clean이면 로컬 응답하고 dirty면 tail의 확정 버전을 조회하여 해당 로컬 버전을 반환한다. 프로토콜 버전은 전역 로그 위치이며 DELETE tombstone과 초기 부재도 보존한다. 조회 중 버전 GC를 막고 timeout/epoch/구성 변경으로 오래된 응답을 차단한다. 공통 KV/API와 쓰기 확정·master 가정은 변경하지 않았다.
+
+[별도 32조건](craq-comparison/README.md)은 정상/미전달 쓰기/ACK 차단/tail crash 복구 이후 읽기의 분산과 조회 메시지 비용을 검증한다. CPU·client 링크·값 응답 비용을 모델링하지 않으므로 처리량 비교가 아니다. 이전 Chain 실험은 TAIL_ONLY 결과로 유지한다. 동시 쓰기 확대·weak consistency·신규 가입·영속화·master 합의는 제외한다.
+
+## 26. CRAQ 혼합 부하 추가 (2026-11-04)
+
+[288조건 × 2회](craq-mixed/results.md)에서 쓰기 제출 비율·key 충돌 범위·값 크기·Tail 확인 지연을 바꾸고 로컬/dirty 읽기와 Tail 조회, 성공/거절을 함께 기록했다. 고정 1500건 open-loop 요청열을 두 모드에 동일하게 제공한다. 테스트 관찰자는 Tail KV 적용 및 GET 호출~응답 순서를 대조하고 실제 엔진 결정에는 관여하지 않는다.
+
+높은 제출 비율과 실제 성공 비율은 기존 단일 in-flight 입장 제한으로 다를 수 있다. CPU/client 값 응답 모델이 없으므로 경로별 비용과 검증 결과로 한정한다. 목표 서비스의 대표 workload는 후속으로 확정한다.

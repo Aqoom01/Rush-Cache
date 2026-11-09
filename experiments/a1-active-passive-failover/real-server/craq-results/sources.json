@@ -1,0 +1,23 @@
+{
+  "runCount": 12,
+  "cleanReads": 4608,
+  "mixedWrites": 1536,
+  "mixedReads": 6284,
+  "verifiedCopies": 1080,
+  "monotonicViolations": 0,
+  "distributionSha256": "97eba2a91062b57c66c20e3b30092335a393a3180ee37d38369393ded4c71068",
+  "rawSha256": {
+    "CRAQ-CRAQ-v64-r1.json": "86a2911bb768ec7f6c874eb6a7f7eb826666ddaeb83bca236cec122c974322b9",
+    "CRAQ-CRAQ-v64-r2.json": "6e98e92e952737efcc2c609b960740d5e6a2f6d6a8dba8e431ffe50295d9b09d",
+    "CRAQ-CRAQ-v64-r3.json": "51492811ff6161117237226d6413d4d13b50ec4b3c6ce16fcec697b90f37c3ae",
+    "CRAQ-CRAQ-v8192-r1.json": "1029ab1eefe534d798b8d2e98a9a48b5db35dce4cb8281435fc21eb5b32c9c2a",
+    "CRAQ-CRAQ-v8192-r2.json": "309254ebb7fdc0a2d5bd027055b1a7dc8ed32a52ee4f64199384e4f2c305d342",
+    "CRAQ-CRAQ-v8192-r3.json": "4b842c2e696eb2e058fe9bd631d8731222496137fc8d57d6b4a9f650c6e40c62",
+    "CRAQ-TAIL_ONLY-v64-r1.json": "dca53d22782fad1d25ea05b9a48f69f62fae220c898a137c33df6df672d539c8",
+    "CRAQ-TAIL_ONLY-v64-r2.json": "4816964f0bff75905945f56b9419be6dcb0037d4abf851d2be1917cde2aff605",
+    "CRAQ-TAIL_ONLY-v64-r3.json": "672ea815ae911276ab2f01e8ac5a8ad4381022211f890b468d97b0ba57f12bbb",
+    "CRAQ-TAIL_ONLY-v8192-r1.json": "3454d29521b1f409a927acd2cc5d5aa3c84e3fb1ac92ca497226cdaa2f7acb9d",
+    "CRAQ-TAIL_ONLY-v8192-r2.json": "f828c8942baa4d0cf3d8f1e58de8c1af6a122b347a3a20f2ab4c842ab03ee9d0",
+    "CRAQ-TAIL_ONLY-v8192-r3.json": "e04f9d23316c8167b98d18943247754ca43ea883aa679b7f65ead7895b16a181"
+  }
+}

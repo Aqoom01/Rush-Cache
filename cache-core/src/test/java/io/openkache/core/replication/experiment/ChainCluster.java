@@ -11,9 +11,12 @@ import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Predicate;
+import java.util.function.Consumer;
 
 /** 외부 master는 정확한 영구 crash만 제거한다. 데이터 복사는 엔진의 peer 경로로 수행한다. */
 final class ChainCluster implements AutoCloseable {
+    /** 실제 KV 적용 완료를 관찰하는 테스트 전용 이벤트. 프로토콜 결정에는 사용하지 않는다. */
+    record AppliedWrite(int node,long at,Command command) {}
     final ReplicationExperiment.Scheduler scheduler=new ReplicationExperiment.Scheduler();
     final List<ChainEngine> nodes=new ArrayList<>();
     final List<KvEngine> stores=new ArrayList<>();
@@ -27,6 +30,12 @@ final class ChainCluster implements AutoCloseable {
     private final int detectionMs;
     private List<NodeId> installed=List.of(new NodeId(0),new NodeId(1),new NodeId(2));
     ChainCluster(int delay,int timeout,long rate) {
+        this(delay,timeout,rate,ChainEngine.ReadMode.TAIL_ONLY);
+    }
+    ChainCluster(int delay,int timeout,long rate,ChainEngine.ReadMode readMode) {
+        this(delay,timeout,rate,readMode,null);
+    }
+    ChainCluster(int delay,int timeout,long rate,ChainEngine.ReadMode readMode,Consumer<AppliedWrite> observer) {
         detectionMs=timeout; network=new LinkNetwork(scheduler,delay,rate);
         Transport transport=e->{
             int from=(int)e.from().value(),to=(int)e.to().value();
@@ -41,7 +50,21 @@ final class ChainCluster implements AutoCloseable {
         };
         for(int i=0;i<3;i++) {
             NodeId id=new NodeId(i); var kv=new KvEngine(id,List.of(new DirectMailbox()),scheduler.time); stores.add(kv);
-            nodes.add(new ChainEngine(id,installed,1,kv,new DirectMailbox(),transport,scheduler.time,Duration.ofSeconds(1)));
+            CacheEngine storage=observer==null?kv:new CacheEngine() {
+                @Override public java.util.concurrent.CompletionStage<Result> execute(Command command,RequestContext context) {
+                    return kv.execute(command,context).thenApply(result->{
+                        if((command instanceof Command.Set || command instanceof Command.Delete)
+                                && (result.status()==ResultStatus.OK || result.status()==ResultStatus.MISS))
+                            observer.accept(new AppliedWrite((int)id.value(),now(),command));
+                        return result;
+                    });
+                }
+                @Override public void onPeerMessage(NodeId from,PeerMessage message) { kv.onPeerMessage(from,message); }
+                @Override public void onTimer(TimerEvent timer) { kv.onTimer(timer); }
+                @Override public EngineSnapshot snapshot() { return kv.snapshot(); }
+                @Override public void close() { kv.close(); }
+            };
+            nodes.add(new ChainEngine(id,installed,1,storage,new DirectMailbox(),transport,scheduler.time,Duration.ofSeconds(1),readMode));
         }
         tick();
     }

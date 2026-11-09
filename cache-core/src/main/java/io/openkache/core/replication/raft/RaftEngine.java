@@ -22,6 +22,10 @@ public final class RaftEngine implements CacheEngine {
     public enum Role { FOLLOWER, CANDIDATE, LEADER, FAILED }
     public record Observation(long term, Role role, NodeId leader, int logLength, int commit, int applied,
                               int elections, long detectedAt, long readyAt) {}
+    /** 최근 로컬 선거 하나의 시각. 초기 선거 누적 관측과 구분하며 같은 JVM 안에서만 차감한다. */
+    public record ElectionObservation(long term,long detectedAt,long readyAt) {}
+    private long localElectionTerm,localElectionAt=-1,localReadyAt=-1;
+    private volatile ElectionObservation electionObservation=new ElectionObservation(0,-1,-1);
     private record Key(ClientId client,OperationId operation) {}
     private record Waiting(Request request,RequestContext context,CompletableFuture<Result> future) {}
     private record Flight(Append message,long due,long interval) {}
@@ -153,6 +157,7 @@ public final class RaftEngine implements CacheEngine {
     }
     private void elect() {
         term=Math.addExact(term,1); role=Role.CANDIDATE; votedFor=self; leader=null; elections++;
+        localElectionTerm=term; localElectionAt=time.monotonicNanos(); localReadyAt=-1;
         if(detectedAt<0) detectedAt=time.monotonicNanos(); readyAt=-1;
         finishWaiting(ResultStatus.UNAVAILABLE); votes.clear(); votes.add(self); data.clear(); pulses.clear(); resetElection();
         for(NodeId n:members) if(!n.equals(self)) send(n,new Vote(term,log.size(),lastTerm()));
@@ -242,9 +247,14 @@ public final class RaftEngine implements CacheEngine {
     private void finishWaiting(ResultStatus status) { waiting.forEach(w->w.future().complete(status(status))); waiting.clear(); }
     private void publish() {
         if(role==Role.LEADER && applied==log.size() && readyAt<0) readyAt=time.monotonicNanos();
+        if(role==Role.LEADER && term==localElectionTerm && applied==log.size() && localReadyAt<0)
+            localReadyAt=time.monotonicNanos();
+        electionObservation=new ElectionObservation(localElectionTerm,localElectionAt,localReadyAt);
         observation=new Observation(term,role,leader,log.size(),commit,applied,elections,detectedAt,readyAt);
     }
     public Observation observation() { return observation; }
+    /** owner가 발행한 불변 값. 장애 후 term과 일치하는 경우에만 해당 선거의 duration으로 사용한다. */
+    public ElectionObservation electionObservation() { return electionObservation; }
     public CompletionStage<List<Entry>> logSnapshot() {
         CompletableFuture<List<Entry>> f=new CompletableFuture<>();
         if(!owner.offer(()->f.complete(List.copyOf(log)))) f.completeExceptionally(new IllegalStateException("diagnostic mailbox full"));

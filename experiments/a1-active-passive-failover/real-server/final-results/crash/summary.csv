@@ -1,0 +1,9 @@
+scenario,protocol,mode,target,value,clients,repeats,opsPerSecond_median,opsPerSecond_min,opsPerSecond_max,p99Ms_median,p99Ms_min,p99Ms_max,failoverMs_median,failoverMs_min,failoverMs_max,peerBytes_median,peerBytes_min,peerBytes_max
+crash,PB,INCREMENTAL,,64,1,5,,,,,,,498.138398,471.122042,531.242999,,,
+crash,VR,INCREMENTAL_CATCHUP,,8192,1,5,,,,,,,589.287789,585.607492,594.035114,,,
+crash,VR,INCREMENTAL,,64,1,5,,,,,,,550.086372,547.096733,557.247309,,,
+crash,VR,INCREMENTAL,,8192,1,5,,,,,,,590.040512,585.739561,593.976959,,,
+crash,RAFT,INCREMENTAL,,64,1,5,,,,,,,749.152605,687.408153,927.204848,,,
+crash,RAFT,INCREMENTAL,,8192,1,5,,,,,,,652.43318,526.489694,771.170998,,,
+crash,VR,INCREMENTAL_CATCHUP,,64,1,5,,,,,,,551.353777,545.177546,556.45655,,,
+crash,PB,INCREMENTAL,,8192,1,5,,,,,,,492.562817,484.941992,524.427639,,,

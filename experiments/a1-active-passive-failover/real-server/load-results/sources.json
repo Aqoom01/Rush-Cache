@@ -1,0 +1,38 @@
+{
+  "schema": "a1-real-pb-load-summary-1",
+  "runs": 12,
+  "preFaultOk": 3600,
+  "newPrimaryOk": 3600,
+  "oldPrimaryLateOk": 0,
+  "preservedSuccesses": 7200,
+  "verifiedCopies": 14400,
+  "initialInflightOutcomes": {
+    "CLIENT_FAILURE": 12
+  },
+  "candidateObservedCopiesBeforeRetry": {
+    "0": 7,
+    "2": 5
+  },
+  "attemptStatuses": {
+    "0": 7200,
+    "CLIENT_FAILURE": 410,
+    "4": 398,
+    "5": 12,
+    "8": 1
+  },
+  "distributionSha256": "80c860cd3f3ae48870f3868c3b85726ec7efa4340692c962cafd99c4ffa13883",
+  "rawSha256": {
+    "v64-t1000-r1.json": "09e7dd92a640ab9fedd353d9e980183006f190a09b4ed77c9e6eda4c8665a95e",
+    "v64-t1000-r2.json": "b061e2648bcb3f421746a8e812a701ad9fef29c6362e0dfb776918aadeb745f7",
+    "v64-t1000-r3.json": "f70cb62409ed32d433ceb97c8e52e4773751cc991941d2a2ed25b16caf6dac13",
+    "v64-t500-r1.json": "80d950476d99282b9f7e7d2ac5ff63a3490c5f7467c82d8e57c0ce17bcd50a0b",
+    "v64-t500-r2.json": "38900e25d2528a56678c0201c0c40dd10674887d7b4e61c3a9229fc8c6a6bf0a",
+    "v64-t500-r3.json": "f988d36a59b316b9083d7ef0fbedd77b1d0d172cfbc1fbaf7097cb88d770eb48",
+    "v8192-t1000-r1.json": "31564ef9b8418275f1dd703ce6ef280e1f8c46018241e82e53c2a6744e3f0989",
+    "v8192-t1000-r2.json": "7b468eabec0a6895adc5c4046ddf5aaf0c068e3b75bebf5b23fb89cf08f5d6fd",
+    "v8192-t1000-r3.json": "bb064c1a9569bbcf01e0b3fac709e777e3f5a153d8ac8866d9e916c1e5d76e2c",
+    "v8192-t500-r1.json": "2081042d91cdaf00530d93ef4de74e68e9c45c1fcaa397790663a986e8e2d94f",
+    "v8192-t500-r2.json": "e2faf08355050dd584a352cb815b78007cf1884aa7d0eb0f895dad6c17d9562a",
+    "v8192-t500-r3.json": "de48908ddb2940fc676b893ca85a727107af04bced6932aea54d4f62f71b27ac"
+  }
+}

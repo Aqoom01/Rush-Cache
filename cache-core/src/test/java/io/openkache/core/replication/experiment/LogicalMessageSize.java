@@ -19,6 +19,8 @@ final class LogicalMessageSize {
         if(message instanceof RoseMessage.Append m) return new Size(52+command(m.request().command()),true);
         if(message instanceof RoseMessage.Applied) return new Size(36,false);
         if(message instanceof ChainMessage.Forward m) return new Size(52+command(m.request().command()),true);
+        if(message instanceof ChainMessage.VersionQuery m) return new Size(44L+m.key().size(),false);
+        if(message instanceof ChainMessage.VersionReply m) return new Size(48L+m.key().size(),false);
         if(message instanceof ChainMessage.Ack || message instanceof ChainMessage.Progress) return new Size(36,false);
         if(message instanceof ChainMessage.Completed m) return new Size(65+m.result().value().map(v->(long)v.size()).orElse(0L),false);
         if(message instanceof RaftMessage.Vote) return new Size(44,false);

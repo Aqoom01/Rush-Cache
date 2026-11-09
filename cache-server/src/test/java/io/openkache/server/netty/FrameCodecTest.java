@@ -171,7 +171,7 @@ class FrameCodecTest {
     }
 
     @Test
-    void movedResultRedirectIsRejectedAsUnsupported() {
+    void movedResultRedirectUsesTaggedDetail() {
         Result moved =
                 Result.redirect(
                         ResultStatus.MOVED,
@@ -179,8 +179,10 @@ class FrameCodecTest {
                         RoutingVersion.ZERO,
                         OwnershipEpoch.ZERO);
 
-        assertThrows(
-                UnsupportedOperationException.class, () -> Frame.response(1, Protocol.OP_GET, moved, ""));
+        Frame frame=Frame.response(1, Protocol.OP_GET, moved, "");
+        java.nio.ByteBuffer body=java.nio.ByteBuffer.wrap(frame.body().toByteArray());
+        body.getLong(); body.getLong(); byte[] detail=new byte[body.getInt()]; body.get(detail);
+        assertEquals("redirect-node=1",new String(detail,StandardCharsets.UTF_8));
     }
 
     @Test
