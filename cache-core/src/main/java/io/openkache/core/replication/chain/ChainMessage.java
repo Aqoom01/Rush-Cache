@@ -4,6 +4,7 @@ import io.openkache.core.api.Command;
 import io.openkache.core.api.Result;
 import io.openkache.core.model.ClientId;
 import io.openkache.core.model.OperationId;
+import io.openkache.core.model.Bytes;
 import io.openkache.core.spi.PeerMessage;
 import java.util.Objects;
 
@@ -30,6 +31,14 @@ public sealed interface ChainMessage extends PeerMessage {
     /** CacheEngine future를 가진 head로 tail이 결과를 중계한다. 역방향 Ack와 별개다. */
     record Completed(long epoch,int index,ClientId client,OperationId operation,Result result) implements ChainMessage {
         public Completed { check(epoch,index); Objects.requireNonNull(client); Objects.requireNonNull(operation); Objects.requireNonNull(result); }
+    }
+    /** CRAQ dirty 읽기의 tail 조회. queryId는 요청 노드에서 단조 증가하며 key 값은 보내지 않는다. */
+    record VersionQuery(long epoch,long queryId,Bytes key) implements ChainMessage {
+        public VersionQuery { check(epoch,0); if(queryId<1) throw new IllegalArgumentException(); Objects.requireNonNull(key); }
+    }
+    /** tail에서 확정된 key의 로그 위치. 0은 해당 key를 한 번도 쓰지 않았음을 뜻한다. */
+    record VersionReply(long epoch,long queryId,Bytes key,int version) implements ChainMessage {
+        public VersionReply { check(epoch,version); if(queryId<1) throw new IllegalArgumentException(); Objects.requireNonNull(key); }
     }
     private static void check(long epoch,int position) {
         if(epoch<1 || position<0) throw new IllegalArgumentException();

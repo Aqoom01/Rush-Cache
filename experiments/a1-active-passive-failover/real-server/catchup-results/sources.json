@@ -1,0 +1,64 @@
+{
+  "runCount": 24,
+  "runsPerMode": {
+    "INCREMENTAL": 12,
+    "INCREMENTAL_CATCHUP": 12
+  },
+  "normalSuccesses": 3072,
+  "verifiedCopiesIncludingWarmup": 11376,
+  "totals": {
+    "INCREMENTAL": {
+      "totalBytes": 54930865,
+      "snapshotBytes": 41555087,
+      "snapshotFrames": 118,
+      "getStateFrames": 380,
+      "commitGap": 380,
+      "commitBounded": 0,
+      "catchupRequests": 0,
+      "catchupThrottled": 0,
+      "transferResends": 0,
+      "snapshotThrottled": 262,
+      "runsWithSnapshot": 10
+    },
+    "INCREMENTAL_CATCHUP": {
+      "totalBytes": 13536680,
+      "snapshotBytes": 0,
+      "snapshotFrames": 0,
+      "getStateFrames": 0,
+      "commitGap": 0,
+      "commitBounded": 145,
+      "catchupRequests": 0,
+      "catchupThrottled": 0,
+      "transferResends": 0,
+      "snapshotThrottled": 0,
+      "runsWithSnapshot": 0
+    }
+  },
+  "distributionSha256": "9c5300c727b5087d0094b0aa6c3a110270f7e27b5122804171cd668fcd350f25",
+  "rawSha256": {
+    "VR-INCREMENTAL-v64-t1000-r1.json": "70e127c3a78461d62531f3faedad38cb6dc9c61f49b59701f9089bf7201f5ed2",
+    "VR-INCREMENTAL-v64-t1000-r2.json": "9909c4aedb2443ad76c39b483a607568b53f0523ac8676d141f37103c9086ce8",
+    "VR-INCREMENTAL-v64-t1000-r3.json": "d9f6317ebf211e3508c22179451fd4b45fa0b89ba326da8c2746f9f3fff9e2a9",
+    "VR-INCREMENTAL-v64-t500-r1.json": "2828dea1b409d6e010a0b94b4578bc32b5db4e782a40abe237e693b629fd6077",
+    "VR-INCREMENTAL-v64-t500-r2.json": "a692b8e160bbe6b2d804d280d2f5dcc3cf2fd8a31ea4255c1f1a59b3e6b7193c",
+    "VR-INCREMENTAL-v64-t500-r3.json": "27c97a4c9b022353b16498aade75321f7c095e77c6916ad8943a9611b1b7c28e",
+    "VR-INCREMENTAL-v8192-t1000-r1.json": "3f7b62afd3ddc35d862a26f4e165191ebb9b0d36e710acd0e112f6baf67db63e",
+    "VR-INCREMENTAL-v8192-t1000-r2.json": "6cb4fd9c3cb81201b8e63ac78179dbcbb5847b2e7bdf0e40151876ca1d13b29f",
+    "VR-INCREMENTAL-v8192-t1000-r3.json": "8202237b92b2cc2fadffcc2a0e85c130582aa34fc7d1a8652fadfce5515ac6f6",
+    "VR-INCREMENTAL-v8192-t500-r1.json": "fabf68d595b50c6f39b845817d6938732b88b1cb6a2999ce9460f094d5e277a6",
+    "VR-INCREMENTAL-v8192-t500-r2.json": "59f16b84453947b33d43246cc9d570f2c11b4f119714061e3184bc54ec442a5a",
+    "VR-INCREMENTAL-v8192-t500-r3.json": "5b750375c783b72ac3b2c41940b78250c6cbfbac2b5d550426cea450d62a6aa5",
+    "VR-INCREMENTAL_CATCHUP-v64-t1000-r1.json": "26b07fa7b83cccc808da8f0e650ea3fb39f2727f1c6ef62b805db057345b3ebd",
+    "VR-INCREMENTAL_CATCHUP-v64-t1000-r2.json": "e5b67cbb7274219650979d4c31ca93900ecd46a3d4d76206d0cde69f465f3da9",
+    "VR-INCREMENTAL_CATCHUP-v64-t1000-r3.json": "3666de5d11bb062c8e3b23238f49fe3312d61071ed5228ec3b114f265efbd938",
+    "VR-INCREMENTAL_CATCHUP-v64-t500-r1.json": "b9ba03ce75a40568401cebbc2b493ae1a2dcc401869303f83637a892da618544",
+    "VR-INCREMENTAL_CATCHUP-v64-t500-r2.json": "e07cc5fcfbc17ad51f138eca0e6c29e81304d5b1deab4a66c488edbb015888de",
+    "VR-INCREMENTAL_CATCHUP-v64-t500-r3.json": "b7c565408b138c04defe817d7e35ff423e83634923bb9335571ffacfe2e4ad5f",
+    "VR-INCREMENTAL_CATCHUP-v8192-t1000-r1.json": "420eba998dd948092855d3996eb95272f451ba74a23d31e6c3c5fdb4591eba46",
+    "VR-INCREMENTAL_CATCHUP-v8192-t1000-r2.json": "a6d774f39e8de60bc1941fba76aeb07489ec843a3fc320e6a5d8440a09879b63",
+    "VR-INCREMENTAL_CATCHUP-v8192-t1000-r3.json": "695fc2642ab6d335692605ad94a7a7a88fdd2ee44132b9ec60b0762a11554e9e",
+    "VR-INCREMENTAL_CATCHUP-v8192-t500-r1.json": "1d2750273be9a49cff2e3895f95c10f09d7a858ad3621bcc974ee93cb90453d8",
+    "VR-INCREMENTAL_CATCHUP-v8192-t500-r2.json": "7bd02e4ca394de48ee0e2c66ad001c865fb200142449804bd0cf7bc3c45ed6dd",
+    "VR-INCREMENTAL_CATCHUP-v8192-t500-r3.json": "5cd970f41ddb53f6c37e709d9b0b992ee29993880379c3d7a2c73d3b9508bb62"
+  }
+}
