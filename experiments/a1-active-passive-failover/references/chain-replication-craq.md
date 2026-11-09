@@ -126,13 +126,19 @@ tail이 v5를 적용하면 ack가 올라가면서 각 노드가 v5를 clean으�
 | head가 아닌 노드가 쓰기 받음 | `NOT_PRIMARY` + `Redirect(head)` |
 | tail이 아닌 노드가 읽기 받음 (Chain 모드) | `NOT_PRIMARY` + `Redirect(tail)` — 읽기와 쓰기의 redirect 대상이 다름 (현재 `Redirect`는 노드 하나만 가리키므로 확인 필요) |
 | 쓰기 전달 / ack | `PeerMessage` record 2개 (Forward, Ack) |
-| clean/dirty 버전 (CRAQ) | `KvStore.Entry.version` 확장 필요 |
+| clean/dirty 버전 (CRAQ) | `ChainEngine`의 선택적 CRAQ 모드와 전용 `CraqVersions`. 공통 KV 계약을 바꾸지 않고 로그 위치로 버전을 식별 |
 
-## 현재 구현 (2026-10-29)
+## Chain 구현 이력 (2026-10-29)
 
 `cache-core/.../replication/chain/ChainEngine`에 Chain만 구현했고 CRAQ는 미구현이다. head 쓰기·tail 읽기, 역방향 Ack, client/operation 중복 응답, 전 생존자 freeze·KV 적용 완료·peer suffix 복구·open을 제공한다. CacheEngine future 때문에 tail 결과를 head로 중계한다. 실제 tail→client 연결, master 합의, 노드 재시작/추가는 포함하지 않는다.
 
 [네 방식 288조건 + 위치별 crash 24조건](../chain-comparison/results.md)을 실행했다. head/middle/tail crash와 두 번의 순차 crash를 검증했지만 이는 신뢰 master 가정 아래의 결과다. 위 조사 항목의 CRAQ 읽기·신규 tail 추가 등은 완료된 기능이 아니다.
+
+## CRAQ 추가 (2026-11-03, S15P31D111-181)
+
+`ChainEngine.ReadMode.CRAQ`에 전 노드 GET/EXISTS와 key별 clean/dirty 다중 버전 읽기를 추가했다. dirty일 때 tail에서 확정 버전 번호만 받고 보존한 로컬 값으로 응답한다. DELETE tombstone·초기 부재·조회 중 버전 보존·timeout·epoch·재구성 중 읽기 차단을 검증했다. 공통 KV의 Entry/API는 바꾸지 않았다.
+
+[읽기 경로 32조건 비교](../craq-comparison/results.md)를 별도로 실행했다. 기존 Chain 실험은 TAIL_ONLY 결과로 유지한다. CPU와 client 값 응답 비용을 모델링하지 않으므로 논문의 처리량 향상을 재현한 결과는 아니다. 신규 tail 추가·master 합의·재시작·weak consistency 모드는 여전히 범위 밖이다.
 
 ### 참고 링크
 

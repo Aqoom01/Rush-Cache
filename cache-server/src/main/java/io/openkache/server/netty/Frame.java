@@ -53,12 +53,9 @@ public record Frame(
         return response(requestId, opcode, status, 0, 0, 0, Bytes.empty(), detail);
     }
 
-    /** 엔진이 처리한 {@link Result}로 응답 frame을 만든다. MOVED/NOT_PRIMARY의 redirect 인코딩은 아직 정의되지 않았다. */
+    /** 엔진 응답. redirect는 기존 detail 필드에 redirect-node=정수 형식으로 인코딩한다. */
     public static Frame response(long requestId, int opcode, Result result, String detail) {
-        if (result.redirect().isPresent()) {
-            throw new UnsupportedOperationException(
-                    "MOVED/NOT_PRIMARY redirect wire 인코딩은 아직 정의되지 않았다 (docs/protocol-v1.md 참고)");
-        }
+        if (result.redirect().isPresent()) detail = "redirect-node=" + result.redirect().orElseThrow().target().value();
         byte[] valueBytes = result.value().map(Bytes::toByteArray).orElseGet(() -> new byte[0]);
         return response(
                 requestId,

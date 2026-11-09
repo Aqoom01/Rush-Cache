@@ -15,7 +15,7 @@ import java.util.function.Predicate;
 
 /** PB/VR에서 동일하게 사용하는 이벤트 실행기. 연구 테스트와 Runner가 함께 사용한다. */
 final class ProtocolCluster implements AutoCloseable {
-    enum Variant { PB, VR, VR_INCREMENTAL }
+    enum Variant { PB, VR, VR_INCREMENTAL, VR_CATCHUP }
     final Variant variant;
     final ReplicationExperiment.Scheduler scheduler = new ReplicationExperiment.Scheduler();
     final Map<Integer, CacheEngine> nodes = new LinkedHashMap<>();
@@ -61,7 +61,7 @@ final class ProtocolCluster implements AutoCloseable {
             NodeId id = ids.get(i); KvEngine kv = new KvEngine(id,List.of(new DirectMailbox()),scheduler.time);
             stores.put(i,kv);
             nodes.put(i,variant != Variant.PB ? new VrEngine(id,ids,kv,new DirectMailbox(),transport,scheduler.time,
-                    Duration.ofMillis(10),Duration.ofMillis(timeout),variant==Variant.VR?VrEngine.Mode.FULL_LOG:VrEngine.Mode.INCREMENTAL)
+                    Duration.ofMillis(10),Duration.ofMillis(timeout),variant==Variant.VR?VrEngine.Mode.FULL_LOG:variant==Variant.VR_CATCHUP?VrEngine.Mode.INCREMENTAL_CATCHUP:VrEngine.Mode.INCREMENTAL)
                     : new CrashOnlyPrimaryBackupEngine(new PrimaryBackupConfig(id,ids.get(0),ids.subList(1,3),new OwnershipEpoch(1)),
                     kv,new DirectMailbox(),transport,scheduler.time,Duration.ofMillis(10),Duration.ofMillis(timeout)));
         }

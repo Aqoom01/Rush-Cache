@@ -29,7 +29,7 @@ class RegisterHistoryTest {
         assertTrue(linearizable(List.of(new Op(0,2,true,"maybe",false),new Op(3,4,false,"maybe",true))));
     }
     @Test void minorityAndMajorityOverlappingWritesHaveLegalReadHistory() {
-        for(var variant:List.of(ProtocolCluster.Variant.VR,ProtocolCluster.Variant.VR_INCREMENTAL))
+        for(var variant:List.of(ProtocolCluster.Variant.VR,ProtocolCluster.Variant.VR_INCREMENTAL,ProtocolCluster.Variant.VR_CATCHUP))
             for(int seed=1;seed<=10;seed++) try(var c=new ProtocolCluster(variant,1,100,seed)) {
             c.jitter=5; c.duplicate=true;
             List<Op> h=new ArrayList<>();

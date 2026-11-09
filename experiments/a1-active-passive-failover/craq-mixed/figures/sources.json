@@ -1,0 +1,6 @@
+{
+  "source": "runs\\run-2026-11-04T00-17-53.018686100Z-ea670367\\repeat-001\\summary.csv",
+  "sha256": "4684781b76ab5766942eaaaddd66d07f3d49f9a913e3567957133ca492e8bad6",
+  "conditions": 288,
+  "scope": "virtual read routing and peer cost; no CPU/client value response model"
+}
