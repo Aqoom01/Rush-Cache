@@ -16,11 +16,13 @@ import com.openkache.failuredetector.swim.SwimLifeguardDetector;
 
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.PriorityQueue;
 import java.util.Random;
 import java.util.Set;
 
@@ -88,6 +90,7 @@ public final class ProductBenchmarkRunner {
                     harness.send(now, target, outcome.delivered(), outcome.delayNanos());
                 }
             }
+            harness.deliverDue(now);
             harness.tick(now);
             harness.advanceAgreement(now);
 
@@ -166,6 +169,7 @@ public final class ProductBenchmarkRunner {
         Long convergence = first(events, BenchmarkEventType.MEMBERSHIP_CONVERGED) == null
                 ? null : first(events, BenchmarkEventType.MEMBERSHIP_CONVERGED) - FAULT_START;
         Cost cost = harness.cost();
+        events.sort(Comparator.comparingLong(BenchmarkEvent::atNanos));
         return new ProductRunResult(
                 algorithm.id() + "-" + scenario.id() + "-n" + nodeCount + "-s" + seed,
                 algorithm,
@@ -321,6 +325,8 @@ public final class ProductBenchmarkRunner {
 
         void tick(long nowNanos);
 
+        void deliverDue(long nowNanos);
+
         void advanceAgreement(long nowNanos);
 
         List<DetectorEvent> drainEvents();
@@ -341,6 +347,8 @@ public final class ProductBenchmarkRunner {
 
     private abstract static class CostedHarness implements Harness {
         protected final Cost cost = new Cost();
+        private final PriorityQueue<ScheduledDelivery> deliveries = new PriorityQueue<>();
+        private long deliverySequence;
 
         @Override
         public Cost cost() {
@@ -352,6 +360,17 @@ public final class ProductBenchmarkRunner {
             cost.rxMessages += rxFrames;
             cost.txBytes += (long) txFrames * frameBytes;
             cost.rxBytes += (long) rxFrames * frameBytes;
+        }
+
+        protected void schedule(long atNanos, Runnable action) {
+            deliveries.add(new ScheduledDelivery(atNanos, ++deliverySequence, action));
+        }
+
+        @Override
+        public void deliverDue(long nowNanos) {
+            while (!deliveries.isEmpty() && deliveries.peek().atNanos <= nowNanos) {
+                deliveries.remove().action.run();
+            }
         }
     }
 
@@ -368,7 +387,7 @@ public final class ProductBenchmarkRunner {
             long observedAt = delivered
                     ? now + delay
                     : now + 2 * detector.effectiveProbeTimeoutNanos();
-            detector.recordProbe(observedAt, target, delivered, 1);
+            schedule(observedAt, () -> detector.recordProbe(observedAt, target, delivered, 1));
         }
 
         @Override public void tick(long now) { detector.tick(now); }
@@ -386,6 +405,7 @@ public final class ProductBenchmarkRunner {
     private static final class RedisHarness extends CostedHarness {
         private final RedisClusterFailureDetector detector;
         private final List<String> masters;
+        private final Map<String, Long> lastDeliveredAt = new HashMap<>();
 
         private RedisHarness(List<String> nodes) {
             masters = nodes.stream().filter(node -> !node.equals("node-1")).toList();
@@ -399,7 +419,11 @@ public final class ProductBenchmarkRunner {
             detector.recordPingSent(now, target);
             exchange(1, delivered ? 1 : 0, 2256);
             if (delivered) {
-                detector.recordPong(now + delay, target);
+                long deliveredAt = now + delay;
+                schedule(deliveredAt, () -> {
+                    detector.recordPong(deliveredAt, target);
+                    lastDeliveredAt.put(target, deliveredAt);
+                });
             }
         }
 
@@ -412,7 +436,11 @@ public final class ProductBenchmarkRunner {
                     continue;
                 }
                 for (String master : masters) {
-                    if (!detector.reportingMasters(now, target).contains(master)) {
+                    boolean reporterReachable = master.equals(OBSERVER)
+                            || now - lastDeliveredAt.getOrDefault(master, Long.MIN_VALUE / 2)
+                            <= RedisClusterConfig.defaults().nodeTimeout().toNanos();
+                    if (reporterReachable
+                            && !detector.reportingMasters(now, target).contains(master)) {
                         detector.recordFailureReport(now, target, master);
                         exchange(1, 1, 2256);
                         break;
@@ -447,8 +475,9 @@ public final class ProductBenchmarkRunner {
             exchange(1, delivered ? 1 : 0, 160);
             if (delivered) {
                 long version = versions.merge(target, 1L, Long::sum);
-                detector.recordHeartbeat(new GossipHeartbeat(
-                        target, 1, version, now + delay), true);
+                long deliveredAt = now + delay;
+                schedule(deliveredAt, () -> detector.recordHeartbeat(new GossipHeartbeat(
+                        target, 1, version, deliveredAt), true));
             }
         }
 
@@ -465,6 +494,7 @@ public final class ProductBenchmarkRunner {
 
     private static final class IgniteHarness extends CostedHarness {
         private final IgniteTcpRingFailureDetector detector;
+        private final Map<String, Long> lastDeliveredAt = new HashMap<>();
 
         private IgniteHarness(List<String> nodes) {
             detector = new IgniteTcpRingFailureDetector(
@@ -475,7 +505,11 @@ public final class ProductBenchmarkRunner {
         public void send(long now, String target, boolean delivered, long delay) {
             exchange(1, delivered ? 1 : 0, 128);
             if (delivered) {
-                detector.recordNeighborMessage(now + delay, target);
+                long deliveredAt = now + delay;
+                schedule(deliveredAt, () -> {
+                    detector.recordNeighborMessage(deliveredAt, target);
+                    lastDeliveredAt.put(target, deliveredAt);
+                });
             }
         }
 
@@ -485,7 +519,18 @@ public final class ProductBenchmarkRunner {
         public void advanceAgreement(long now) {
             String neighbor = detector.nextAliveNeighbor(OBSERVER);
             if (neighbor != null && detector.status(neighbor) == NodeStatus.SUSPECT) {
-                detector.coordinatorConfirmFailure(now, OBSERVER, neighbor);
+                String validator = detector.members().stream()
+                        .filter(member -> !member.equals(OBSERVER) && !member.equals(neighbor))
+                        .filter(member -> now - lastDeliveredAt.getOrDefault(
+                                member, Long.MIN_VALUE / 2)
+                                <= IgniteTcpRingConfig.defaults().neighborTimeout().toNanos())
+                        .sorted()
+                        .findFirst()
+                        .orElse(null);
+                if (validator == null) {
+                    return;
+                }
+                detector.coordinatorConfirmFailure(now, validator, neighbor);
                 exchange(1, Math.max(0, detector.members().size() - 1), 192);
             }
         }
@@ -502,6 +547,7 @@ public final class ProductBenchmarkRunner {
         private final AerospikeMeshFailureDetector detector;
         private final List<String> nodes;
         private final Map<String, Long> proposals = new LinkedHashMap<>();
+        private final Map<String, Long> lastDeliveredAt = new HashMap<>();
         private long nextEpoch = 1;
 
         private AerospikeHarness(List<String> nodes) {
@@ -514,7 +560,11 @@ public final class ProductBenchmarkRunner {
         public void send(long now, String target, boolean delivered, long delay) {
             exchange(1, delivered ? 1 : 0, 96);
             if (delivered) {
-                detector.recordHeartbeat(now + delay, target);
+                long deliveredAt = now + delay;
+                schedule(deliveredAt, () -> {
+                    detector.recordHeartbeat(deliveredAt, target);
+                    lastDeliveredAt.put(target, deliveredAt);
+                });
             }
         }
 
@@ -529,7 +579,10 @@ public final class ProductBenchmarkRunner {
                 long epoch = proposals.computeIfAbsent(target, ignored -> nextEpoch++);
                 detector.proposeMembershipRemoval(epoch, target);
                 for (String voter : nodes) {
-                    if (!voter.equals(target)) {
+                    boolean voterReachable = voter.equals(OBSERVER)
+                            || now - lastDeliveredAt.getOrDefault(voter, Long.MIN_VALUE / 2)
+                            <= AerospikeMeshConfig.defaults().heartbeatTimeout().toNanos();
+                    if (!voter.equals(target) && voterReachable) {
                         detector.acknowledgeMembershipProposal(now, epoch, voter);
                         exchange(1, 1, 144);
                         if (detector.status(target) == NodeStatus.DEAD) {
@@ -551,6 +604,15 @@ public final class ProductBenchmarkRunner {
     }
 
     private record NetworkOutcome(boolean delivered, long delayNanos) {
+    }
+
+    private record ScheduledDelivery(long atNanos, long sequence, Runnable action)
+            implements Comparable<ScheduledDelivery> {
+        @Override
+        public int compareTo(ScheduledDelivery other) {
+            int time = Long.compare(atNanos, other.atNanos);
+            return time != 0 ? time : Long.compare(sequence, other.sequence);
+        }
     }
 
     public static final class Cost {

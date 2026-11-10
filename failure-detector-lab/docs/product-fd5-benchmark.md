@@ -23,15 +23,22 @@
 - Cassandra 문서대로 heartbeat state는 gossip하지만 UP/DOWN은 observer-local 판단이며,
   DOWN을 gossip하거나 자동 membership removal로 바꾸지 않는다.
 - Ignite TCP Discovery의 logical ring, coordinator topology verification, failed neighbor 이후
-  다음 생존 이웃 연결을 모델링했다. Docker adapter는 실제 persistent TCP heartbeat를 쓰지만
-  Ignite native handshake와 wire format은 재현하지 않는다.
-- Aerospike heartbeat 탐지와 membership 변경을 분리했다. 현재 agreement adapter는 명시적인
-  epoch+majority 모델이며 Aerospike의 Paxos 기반 clustering을 재현했다고 주장하지 않는다.
-- SWIM/Lifeguard는 기존 Lab detector를 그대로 호출하며 memberlist wire compatibility는 아니다.
+  다음 생존 이웃 연결을 모델링했다. 실소켓 adapter는 successor가 predecessor로 보내는
+  persistent TCP heartbeat와 별도 helper 경유 UDP 검증을 사용한다. Ignite native handshake와
+  wire format은 재현하지 않는다.
+- Aerospike heartbeat 탐지와 membership 변경을 분리했다. 모든 peer 사이에 TCP heartbeat를
+  유지하고, removal ACK는 각 helper도 target heartbeat timeout을 관측한 경우에만 보낸다.
+  agreement adapter는 명시적인 epoch+majority 모델이며 Aerospike의 Paxos 기반 clustering을
+  재현했다고 주장하지 않는다.
+- SWIM/Lifeguard 실소켓 adapter는 LHA awareness에 따라 probe 주기와 timeout을 동적으로
+  조정하고 scheduler 지연을 local-health 입력으로 반영한다. memberlist wire compatibility는
+  아니다.
 
 Docker adapter도 모두 제품 binary가 아닌 inspired 구현이다. Redis와 Phi는 실제 UDP datagram,
-Ignite는 persistent TCP heartbeat, Aerospike는 TCP mesh heartbeat와 UDP agreement message,
-SWIM/Lifeguard는 실제 UDP probe/gossip 경로를 사용한다. 따라서 `real-socket-observed`는 OS
+Ignite는 ring TCP heartbeat와 별도 검증 UDP, Aerospike는 all-to-all TCP mesh heartbeat와
+evidence-gated UDP agreement message, SWIM/Lifeguard는 실제 UDP probe/gossip 경로를 사용한다.
+Phi heartbeat는 제3 노드 relay를 거쳐 observer에 전달되며 Redis FAIL은 master peer에
+broadcast된다. 따라서 `real-socket-observed`는 OS
 socket을 실제 통과했다는 뜻이지 제품 wire compatibility를 뜻하지 않는다.
 
 참고 자료:
@@ -124,3 +131,5 @@ results-fd5-new/
 - 실제 OpenKache `cache-server` GET/SET routing과 replica failover는 연결하지 않았다.
 - 따라서 현재 순위는 구현 검증과 다음 실험 후보 선정에만 사용하고 최종 제품 선택 근거로
   단독 사용하지 않는다.
+- 위 transport/합의/LHA 수정 이전에 생성한 결과 디렉터리는 새 구현 결과와 합치지 않는다.
+  11개 시나리오는 동일 seed로 전부 재실행해야 한다.

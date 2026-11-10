@@ -17,14 +17,15 @@ dnf install -y \
   awscli-2 \
   python3 \
   iproute \
+  iproute-tc \
   jq \
   fio \
+  nvme-cli \
   stress-ng \
   util-linux
 
 id fdlab >/dev/null 2>&1 || useradd --system --create-home --home-dir /var/lib/openkache-fd fdlab
 install -d -o root -g root -m 0755 /opt/openkache-fd/bin /opt/openkache-fd/config
-install -d -o fdlab -g fdlab -m 0755 /var/lib/openkache-fd/runs /var/lib/openkache-fd/campaign
 install -d -o fdlab -g fdlab -m 0755 /mnt/openkache-fd-data
 
 aws s3 cp --region "$aws_region" \
@@ -42,48 +43,76 @@ if [[ "$actual_jar_sha256" != "$expected_jar_sha256" ]]; then
   exit 1
 fi
 
+# Select the local NVMe instance store by its AWS model string. Device enumeration
+# order is not stable on Nitro, so choosing the first non-root disk is unsafe.
+nvme_inventory=$(mktemp)
+nvme list -o json >"$nvme_inventory"
+mapfile -t instance_store_devices < <(
+  jq -r '.Devices[] | select(.ModelNumber | contains("Amazon EC2 NVMe Instance Storage")) | .DevicePath' \
+    "$nvme_inventory"
+)
+if [[ "$${#instance_store_devices[@]}" -ne 1 ]]; then
+  echo "expected exactly one local NVMe instance-store device, found $${#instance_store_devices[@]}" >&2
+  cat "$nvme_inventory" >&2
+  exit 1
+fi
+data_device=$${instance_store_devices[0]}
+storage_model=$(jq -r --arg device "$data_device" \
+  '.Devices[] | select(.DevicePath == $device) | .ModelNumber' "$nvme_inventory")
+storage_model_env=$(printf '%q' "$storage_model")
+install -m 0644 "$nvme_inventory" /etc/openkache-fd-nvme-inventory.json
+rm -f "$nvme_inventory"
+
+if ! blkid "$data_device" >/dev/null 2>&1; then
+  # XFS filesystem labels are limited to 12 characters.
+  mkfs.xfs -f -L OKFD_NVME "$data_device"
+fi
+data_uuid=$(blkid -s UUID -o value "$data_device")
+if ! grep -Fq "$data_uuid" /etc/fstab; then
+  printf 'UUID=%s /mnt/openkache-fd-data xfs defaults,nofail 0 2\n' "$data_uuid" >>/etc/fstab
+fi
+mount /mnt/openkache-fd-data || mount -a
+findmnt --mountpoint /mnt/openkache-fd-data >/dev/null
+mounted_device=$(findmnt -n -o SOURCE --target /mnt/openkache-fd-data)
+if [[ "$(readlink -f "$mounted_device")" != "$(readlink -f "$data_device")" ]]; then
+  echo "experiment data mount is not backed by the selected instance-store device" >&2
+  exit 1
+fi
+install -d -o fdlab -g fdlab -m 0755 \
+  /mnt/openkache-fd-data/state/runs \
+  /mnt/openkache-fd-data/state/campaign \
+  /mnt/openkache-fd-data/fio-work
+
 cat >/etc/openkache-fd.env <<EOF
 AWS_REGION=$aws_region
 FD_BUCKET=$bucket
 FD_EXPERIMENT_ID=$experiment_id
 FD_NODE_ID=$node_id
 FD_NODE_ROLE=$node_role
-FD_EXPECTED_NODES=8
+FD_EXPECTED_NODES=${expected_nodes}
 FD_REPETITIONS=$repetitions
 FD_AUTO_STOP=$auto_stop
 FD_JAR_SHA256=$expected_jar_sha256
+FD_DATA_MOUNT=/mnt/openkache-fd-data
+FD_STATE_ROOT=/mnt/openkache-fd-data/state
+FD_STORAGE_DEVICE=$data_device
+FD_STORAGE_MODEL=$storage_model_env
+FD_STORAGE_MEDIUM=local-nvme-instance-store
+FD_STORAGE_CLAIM=shared-local-nvme-instance-store-detector-state-contention
+FD_FIO_MIN_IOPS=4000
+FD_FIO_MIN_DEEP_QUEUE_PERCENT=80
 EOF
 chmod 0644 /etc/openkache-fd.env
-
-# The experiment data volume is intentionally separate from the root/SSM volume.
-root_source=$(findmnt -n -o SOURCE /)
-root_parent=$(lsblk -ndo PKNAME "$root_source" 2>/dev/null || true)
-data_device=
-while read -r name type mountpoint; do
-  [[ "$type" == "disk" ]] || continue
-  [[ -z "$mountpoint" ]] || continue
-  [[ "$name" == "$root_parent" ]] && continue
-  data_device="/dev/$name"
-  break
-done < <(lsblk -nr -o NAME,TYPE,MOUNTPOINT)
-
-if [[ -n "$data_device" ]]; then
-  if ! blkid "$data_device" >/dev/null 2>&1; then
-    mkfs.xfs -f "$data_device"
-  fi
-  data_uuid=$(blkid -s UUID -o value "$data_device")
-  if ! grep -Fq "$data_uuid" /etc/fstab; then
-    printf 'UUID=%s /mnt/openkache-fd-data xfs defaults,nofail 0 2\n' "$data_uuid" >>/etc/fstab
-  fi
-  mount /mnt/openkache-fd-data || mount -a
-  chown fdlab:fdlab /mnt/openkache-fd-data
-fi
 
 cat >/etc/systemd/system/openkache-fd-campaign.service <<'EOF'
 [Unit]
 Description=OpenKache EC2 failure detector campaign coordinator
 Wants=network-online.target
-After=network-online.target cloud-final.service amazon-ssm-agent.service
+# This unit is started by cloud-init at the end of this script. Depending on
+# cloud-final.service here creates a systemd cycle: cloud-final waits for the
+# blocking `systemctl start`, while this unit waits for cloud-final to finish.
+After=network-online.target amazon-ssm-agent.service
+RequiresMountsFor=/mnt/openkache-fd-data
 StartLimitIntervalSec=900
 StartLimitBurst=3
 
@@ -116,8 +145,11 @@ jq -n \
   --arg instanceId "$instance_id" \
   --arg privateIp "$private_ip" \
   --arg jarSha256 "$actual_jar_sha256" \
+  --arg storageDevice "$data_device" \
+  --arg storageModel "$storage_model" \
+  --arg storageMedium "local-nvme-instance-store" \
   --arg readyAt "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-  '{nodeId:$nodeId,role:$role,instanceId:$instanceId,privateIp:$privateIp,jarSha256:$jarSha256,readyAt:$readyAt}' \
+  '{nodeId:$nodeId,role:$role,instanceId:$instanceId,privateIp:$privateIp,jarSha256:$jarSha256,storageDevice:$storageDevice,storageModel:$storageModel,storageMedium:$storageMedium,readyAt:$readyAt}' \
   >"$ready_file"
 aws s3 cp --region "$aws_region" "$ready_file" \
   "s3://$bucket/$experiment_id/ready/node-$node_id.json"

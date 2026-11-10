@@ -39,4 +39,18 @@ class ProductBenchmarkRunnerTest {
                 event.type() == BenchmarkEventType.CLUSTER_CONFIRMED
                         || event.type() == BenchmarkEventType.MEMBERSHIP_CHANGED));
     }
+
+    @Test
+    void delayedDeliveriesNeverCreateBackwardsDetectorEvents() {
+        for (ProductAlgorithm algorithm : ProductAlgorithm.values()) {
+            ProductRunResult result = runner.run(
+                    algorithm, ProductScenario.DELAY_JITTER, 17, 8, "native");
+            long previous = Long.MIN_VALUE;
+            for (BenchmarkEvent event : result.events()) {
+                assertTrue(event.atNanos() >= previous,
+                        algorithm.id() + " emitted a backwards event timeline");
+                previous = event.atNanos();
+            }
+        }
+    }
 }

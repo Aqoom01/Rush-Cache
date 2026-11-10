@@ -24,7 +24,10 @@ def main() -> None:
         status = list(csv.DictReader(source))
 
     passed = {int(row["sequence"]): row for row in status if row["status"] == "passed"}
-    failures = [row for row in status if row["status"] == "failed"]
+    failures = [
+        row for row in status
+        if row["status"] in {"failed", "infra-failed", "semantic-failed"}
+    ]
     profile_counts = Counter(row["profile"] for row in passed.values())
     fault_counts = Counter(row["fault"] for row in passed.values())
 

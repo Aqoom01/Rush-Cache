@@ -57,7 +57,9 @@ printf '%s\n' "$run_id" >/run/openkache-fd-current-run
 
 ready=0
 for _ in $(seq 1 100); do
-  if ss -H -lun | awk '{print $5}' | grep -Eq '(^|:)19000$'; then
+  # `ss -H -lun` columns are State, Recv-Q, Send-Q, Local Address:Port,
+  # Peer Address:Port. Inspect the local endpoint ($4), not the peer ($5).
+  if ss -H -lun | awk '{print $4}' | grep -Eq '(^|:)19000$'; then
     ready=1
     break
   fi
@@ -70,6 +72,31 @@ if [[ "$ready" != "1" ]]; then
   echo "node $FD_NODE_ID did not bind UDP 19000" >&2
   systemctl status "$FD_UNIT" --no-pager >&2 || true
   exit 1
+fi
+
+# Ignite and Aerospike use TCP heartbeats. Do not publish node-0 readiness until
+# every configured peer has completed at least one real TCP heartbeat. This keeps
+# process launch skew and a broken adapter route out of the 15-second warm-up and
+# prevents pre-fault DEAD events from being accepted as scenario outcomes.
+if [[ "$FD_NODE_ID" == "0"
+      && ("$PRODUCT_ALGORITHM" == "ignite-tcp-ring"
+          || "$PRODUCT_ALGORITHM" == "aerospike-mesh") ]]; then
+  transport_ready=0
+  for _ in $(seq 1 150); do
+    if grep -q '"kind":"transport-ready"' "$run_dir/events.log"; then
+      transport_ready=1
+      break
+    fi
+    if ! systemctl is-active --quiet "$FD_UNIT"; then
+      break
+    fi
+    sleep 0.2
+  done
+  if [[ "$transport_ready" != "1" ]]; then
+    echo "node 0 did not receive TCP heartbeats from every peer" >&2
+    systemctl status "$FD_UNIT" --no-pager >&2 || true
+    exit 1
+  fi
 fi
 
 instance_id=$(metadata instance-id)

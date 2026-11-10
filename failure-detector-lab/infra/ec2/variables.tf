@@ -16,9 +16,31 @@ variable "experiment_id" {
 }
 
 variable "instance_type" {
-  description = "Use the same non-burstable x86_64 instance type for all eight nodes."
+  description = "M6gd instance type used for every node; the experiment data path uses its local NVMe instance store."
   type        = string
-  default     = "c7i.large"
+  default     = "m6gd.medium"
+}
+
+variable "instance_architecture" {
+  description = "CPU architecture used to select the matching Amazon Linux 2023 AMI."
+  type        = string
+  default     = "arm64"
+
+  validation {
+    condition     = contains(["arm64", "x86_64"], var.instance_architecture)
+    error_message = "instance_architecture must be arm64 or x86_64."
+  }
+}
+
+variable "node_count" {
+  description = "Failure-detector cluster size. Five matches the production-sized validation topology."
+  type        = number
+  default     = 5
+
+  validation {
+    condition     = var.node_count >= 5 && var.node_count <= 8 && floor(var.node_count) == var.node_count
+    error_message = "node_count must be an integer between 5 and 8."
+  }
 }
 
 variable "repetitions" {
@@ -43,14 +65,8 @@ variable "root_volume_gib" {
   default = 20
 }
 
-variable "data_volume_gib" {
-  description = "Dedicated gp3 volume used only by the I/O contention scenario."
-  type        = number
-  default     = 20
-}
-
 variable "auto_stop_on_completion" {
-  description = "Stop all eight instances after final validation and S3 upload."
+  description = "Stop all experiment instances after final validation and S3 upload."
   type        = bool
   default     = true
 }

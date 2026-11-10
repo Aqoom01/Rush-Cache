@@ -397,6 +397,12 @@ esac
 case "$fault" in
   loss|loss15|loss45|delay)
     "$docker_bin" exec "$target" tc qdisc show dev eth0 >"$output_dir/netem.txt"
+    sleep "$fault_duration"
+    "$docker_bin" exec "$target" tc qdisc del dev eth0 root
+    send_control end
+    record_fault_event released node1
+    "$docker_bin" exec "$target" tc qdisc show dev eth0 \
+      >"$output_dir/netem-released.txt"
     ;;
 esac
 

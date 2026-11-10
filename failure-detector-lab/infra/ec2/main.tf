@@ -4,25 +4,26 @@ data "aws_availability_zones" "available" {
   state = "available"
 }
 
-data "aws_ssm_parameter" "al2023_x86_64" {
-  name = "/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64"
+data "aws_ssm_parameter" "al2023" {
+  name = "/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-${var.instance_architecture}"
+}
+
+data "aws_ec2_instance_type" "selected" {
+  instance_type = var.instance_type
 }
 
 locals {
-  node_count = 8
+  coordinator_index = var.node_count - 1
   jar_path = var.artifact_jar != "" ? abspath(var.artifact_jar) : abspath(
     "${path.module}/../../build/libs/openkache-failure-detector-lab-0.1.0-SNAPSHOT.jar"
   )
   software_dir = abspath("${path.module}/../../scripts/experiments/ec2")
   node_roles = {
-    0 = "observer"
-    1 = "target"
-    2 = "helper"
-    3 = "helper"
-    4 = "helper"
-    5 = "helper"
-    6 = "helper"
-    7 = "coordinator"
+    for index in range(var.node_count) : index => (
+      index == 0 ? "observer" :
+      index == 1 ? "target" :
+      index == local.coordinator_index ? "coordinator" : "helper"
+    )
   }
 }
 
@@ -117,7 +118,7 @@ resource "aws_route_table_association" "experiment" {
 
 resource "aws_security_group" "nodes" {
   name        = "${var.experiment_id}-nodes"
-  description = "OpenKache detector traffic restricted to the eight experiment nodes"
+  description = "OpenKache detector traffic restricted to ${var.node_count} experiment nodes"
   vpc_id      = aws_vpc.experiment.id
 
   tags = { Name = "${var.experiment_id}-nodes" }
@@ -251,14 +252,14 @@ resource "aws_iam_instance_profile" "coordinator" {
 }
 
 resource "aws_instance" "node" {
-  count = local.node_count
+  count = var.node_count
 
-  ami                         = data.aws_ssm_parameter.al2023_x86_64.value
+  ami                         = data.aws_ssm_parameter.al2023.value
   instance_type               = var.instance_type
   subnet_id                   = aws_subnet.experiment.id
   vpc_security_group_ids      = [aws_security_group.nodes.id]
   associate_public_ip_address = true
-  iam_instance_profile        = count.index == 7 ? aws_iam_instance_profile.coordinator.name : aws_iam_instance_profile.node.name
+  iam_instance_profile        = count.index == local.coordinator_index ? aws_iam_instance_profile.coordinator.name : aws_iam_instance_profile.node.name
   user_data_replace_on_change = true
 
   metadata_options {
@@ -273,22 +274,13 @@ resource "aws_instance" "node" {
     delete_on_termination = true
   }
 
-  ebs_block_device {
-    device_name           = "/dev/sdf"
-    volume_type           = "gp3"
-    volume_size           = var.data_volume_gib
-    iops                  = 3000
-    throughput            = 125
-    encrypted             = true
-    delete_on_termination = true
-  }
-
   user_data = templatefile("${path.module}/templates/user-data.sh.tftpl", {
     aws_region              = var.aws_region
     bucket                  = aws_s3_bucket.results.id
     experiment_id           = var.experiment_id
     node_id                 = count.index
     node_role               = local.node_roles[count.index]
+    expected_nodes          = var.node_count
     repetitions             = var.repetitions
     auto_stop_on_completion = var.auto_stop_on_completion ? "1" : "0"
     jar_sha256              = filesha256(local.jar_path)
@@ -302,15 +294,36 @@ resource "aws_instance" "node" {
   ]
 
   tags = {
-    Name   = format("%s-node-%02d", var.experiment_id, count.index)
-    NodeId = tostring(count.index)
-    Role   = local.node_roles[count.index]
+    Name          = format("%s-node-%02d", var.experiment_id, count.index)
+    NodeId        = tostring(count.index)
+    Role          = local.node_roles[count.index]
+    StorageMedium = "local-nvme-instance-store"
   }
 
   lifecycle {
     precondition {
       condition     = fileexists(local.jar_path)
       error_message = "Build the failure-detector-lab JAR before terraform plan/apply."
+    }
+    precondition {
+      condition     = contains(data.aws_ec2_instance_type.selected.supported_architectures, var.instance_architecture)
+      error_message = "instance_architecture must be supported by instance_type."
+    }
+    precondition {
+      condition     = data.aws_ec2_instance_type.selected.default_vcpus == 1
+      error_message = "The experiment instance type must provide exactly one vCPU."
+    }
+    precondition {
+      condition     = !data.aws_ec2_instance_type.selected.burstable_performance_supported
+      error_message = "Burstable instance types are not allowed because CPU credits bias the benchmark."
+    }
+    precondition {
+      condition     = can(regex("^m6gd\\.", var.instance_type))
+      error_message = "Use an m6gd instance type so compute and local-NVMe characteristics stay in the selected family."
+    }
+    precondition {
+      condition     = data.aws_ec2_instance_type.selected.instance_storage_supported && data.aws_ec2_instance_type.selected.total_instance_storage >= 59
+      error_message = "The selected instance type must provide at least 59 GB of local instance storage."
     }
   }
 }

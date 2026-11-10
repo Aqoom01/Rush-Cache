@@ -150,7 +150,10 @@ public final class PhiAccrualFailureDetector extends AbstractFailureDetector {
                 append(config.initialInterval().toNanos());
             } else {
                 long interval = nowNanos - lastArrivalNanos;
-                if (interval > 0 && interval <= config.maxSampleInterval().toNanos()) {
+                if (interval <= 0) {
+                    return;
+                }
+                if (interval <= config.maxSampleInterval().toNanos()) {
                     append(interval);
                 }
             }

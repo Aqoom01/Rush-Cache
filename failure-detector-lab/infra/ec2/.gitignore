@@ -2,5 +2,6 @@
 *.tfstate
 *.tfstate.*
 *.tfplan
+*.tfplan.capacity.json
 terraform.tfvars
 crash.log

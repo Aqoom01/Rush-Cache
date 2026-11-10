@@ -4,7 +4,8 @@ set -euo pipefail
 source /etc/openkache-fd.env
 
 FD_ROOT=/opt/openkache-fd
-FD_STATE=/var/lib/openkache-fd
+FD_DATA_MOUNT="${FD_DATA_MOUNT:-/mnt/openkache-fd-data}"
+FD_STATE="${FD_STATE_ROOT:-$FD_DATA_MOUNT/state}"
 FD_RUNS="$FD_STATE/runs"
 FD_CAMPAIGN="$FD_STATE/campaign"
 FD_S3_PREFIX="s3://$FD_BUCKET/$FD_EXPERIMENT_ID"

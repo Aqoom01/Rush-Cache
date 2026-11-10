@@ -33,6 +33,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -55,6 +56,7 @@ public final class ProductUdpExperimentNodeMain {
     private static final long PHI_INTERVAL_MILLIS = 1_000;
     private static final long IGNITE_INTERVAL_MILLIS = 1_000;
     private static final long AEROSPIKE_INTERVAL_MILLIS = 150;
+    private static final long IGNITE_VALIDATION_TIMEOUT_MILLIS = 1_000;
 
     private ProductUdpExperimentNodeMain() {
     }
@@ -100,6 +102,10 @@ public final class ProductUdpExperimentNodeMain {
         private final AtomicLong receivedBytes = new AtomicLong();
         private final CountDownLatch finished = new CountDownLatch(1);
         private final List<DetectorEvent> detectorEvents = new ArrayList<>();
+        private final Set<Integer> tcpHeartbeatSenders = new LinkedHashSet<>();
+        private final Map<Integer, Long> lastTcpHeartbeatBySender = new LinkedHashMap<>();
+        private final Map<Integer, Socket> tcpClients = new LinkedHashMap<>();
+        private final Map<Integer, DataOutputStream> tcpOutputs = new LinkedHashMap<>();
         private final long startedAtNanos = System.nanoTime();
         private final RedisClusterFailureDetector redisDetector;
         private final FailureDetector observerDetector;
@@ -107,10 +113,13 @@ public final class ProductUdpExperimentNodeMain {
         private final Set<String> redisMasters;
         private ServerSocket tcpServer;
         private Thread tcpAcceptor;
-        private Socket tcpClient;
-        private DataOutputStream tcpOutput;
         private long sequence;
         private long aerospikeEpoch;
+        private long lastAerospikeProposalAtNanos = -1;
+        private boolean tcpTransportReady;
+        private boolean igniteValidationInFlight;
+        private long igniteValidationSequence;
+        private int igniteValidator = -1;
         private Long faultAtNanos;
         private Long faultEndAtNanos;
 
@@ -173,7 +182,7 @@ public final class ProductUdpExperimentNodeMain {
             }
             this.redisDetector = redis;
             this.observerDetector = observer;
-            if (usesTcpHeartbeat() && config.nodeId() == OBSERVER_ID) {
+            if (usesTcpHeartbeat()) {
                 startTcpServer();
             }
         }
@@ -217,8 +226,9 @@ public final class ProductUdpExperimentNodeMain {
         private void handleUdp(UdpWireMessage message) {
             switch (message.type()) {
                 case PING -> {
-                    if (config.algorithm() == ProductAlgorithm.REDIS_CLUSTER
-                            && config.nodeId() == TARGET_ID) {
+                    if ((config.algorithm() == ProductAlgorithm.REDIS_CLUSTER
+                            || config.algorithm() == ProductAlgorithm.IGNITE_TCP_RING)
+                            && config.nodeId() == message.target()) {
                         sendUdp(message.origin(), new UdpWireMessage(
                                 UdpWireMessage.Type.ACK,
                                 message.sequence(), config.nodeId(),
@@ -228,10 +238,17 @@ public final class ProductUdpExperimentNodeMain {
                 case ACK -> onAck(message);
                 case HEARTBEAT -> onUdpHeartbeat(message);
                 case SUSPECT -> onRedisFailureReport(message);
-                case PING_REQUEST -> onAerospikeProposal(message);
+                case PING_REQUEST -> {
+                    if (config.algorithm() == ProductAlgorithm.IGNITE_TCP_RING) {
+                        onIgniteValidationRequest(message);
+                    } else {
+                        onAerospikeProposal(message);
+                    }
+                }
                 case FAULT_START -> recordFaultStart();
                 case FAULT_END -> recordFaultEnd();
-                case MEMBERSHIP_REMOVE, EXPERIMENT_FINISH, PROCESS_CRASH, ALIVE -> {
+                case MEMBERSHIP_REMOVE -> onRedisFailMessage(message);
+                case EXPERIMENT_FINISH, PROCESS_CRASH, ALIVE -> {
                     // Reserved by the other real-socket harnesses.
                 }
             }
@@ -243,6 +260,15 @@ public final class ProductUdpExperimentNodeMain {
                     && redisDetector != null && message.sender() == TARGET_ID) {
                 redisDetector.recordPong(now, nodeName(TARGET_ID));
                 drainRedisEvents();
+            } else if (config.algorithm() == ProductAlgorithm.IGNITE_TCP_RING
+                    && config.nodeId() == OBSERVER_ID
+                    && observerDetector instanceof IgniteTcpRingFailureDetector ignite
+                    && igniteValidationInFlight
+                    && message.sequence() == igniteValidationSequence
+                    && message.sender() == TARGET_ID) {
+                igniteValidationInFlight = false;
+                ignite.recordNeighborMessage(now, nodeName(TARGET_ID));
+                drainObserverEvents();
             } else if (config.algorithm() == ProductAlgorithm.AEROSPIKE_MESH
                     && config.nodeId() == OBSERVER_ID
                     && observerDetector instanceof AerospikeMeshFailureDetector aerospike
@@ -255,13 +281,42 @@ public final class ProductUdpExperimentNodeMain {
 
         private void onUdpHeartbeat(UdpWireMessage message) {
             if (config.algorithm() != ProductAlgorithm.PHI_GOSSIP
-                    || config.nodeId() != OBSERVER_ID || message.sender() != TARGET_ID) {
+                    || message.origin() != TARGET_ID) {
+                return;
+            }
+            if (config.nodeId() != OBSERVER_ID) {
+                if (message.sender() == message.origin()) {
+                    sendUdp(OBSERVER_ID, new UdpWireMessage(
+                            UdpWireMessage.Type.HEARTBEAT,
+                            message.sequence(), config.nodeId(), message.origin(), OBSERVER_ID));
+                }
                 return;
             }
             PhiAccrualFailureDetector phi = (PhiAccrualFailureDetector) observerDetector;
             phi.recordHeartbeat(new GossipHeartbeat(
                     nodeName(TARGET_ID), 1, message.sequence(), elapsedNanos()), true);
             drainObserverEvents();
+        }
+
+        private void onRedisFailMessage(UdpWireMessage message) {
+            if (config.algorithm() != ProductAlgorithm.REDIS_CLUSTER
+                    || redisDetector == null || message.target() != TARGET_ID) {
+                return;
+            }
+            redisDetector.recordFailMessage(
+                    elapsedNanos(), nodeName(TARGET_ID), nodeName(message.sender()));
+            drainRedisEvents();
+        }
+
+        private void onIgniteValidationRequest(UdpWireMessage message) {
+            if (config.algorithm() != ProductAlgorithm.IGNITE_TCP_RING
+                    || config.nodeId() == OBSERVER_ID || config.nodeId() == TARGET_ID
+                    || message.target() != TARGET_ID) {
+                return;
+            }
+            sendUdp(TARGET_ID, new UdpWireMessage(
+                    UdpWireMessage.Type.PING,
+                    message.sequence(), config.nodeId(), OBSERVER_ID, TARGET_ID));
         }
 
         private void onRedisFailureReport(UdpWireMessage message) {
@@ -279,6 +334,12 @@ public final class ProductUdpExperimentNodeMain {
             if (config.algorithm() != ProductAlgorithm.AEROSPIKE_MESH
                     || config.nodeId() == OBSERVER_ID || config.nodeId() == TARGET_ID
                     || message.target() != TARGET_ID) {
+                return;
+            }
+            Long lastHeartbeat = lastTcpHeartbeatBySender.get(TARGET_ID);
+            if (lastHeartbeat == null
+                    || elapsedNanos() - lastHeartbeat
+                    < AerospikeMeshConfig.defaults().heartbeatTimeout().toNanos()) {
                 return;
             }
             sendUdp(OBSERVER_ID, new UdpWireMessage(
@@ -332,14 +393,22 @@ public final class ProductUdpExperimentNodeMain {
             if (config.nodeId() != TARGET_ID) {
                 return;
             }
-            sendUdp(OBSERVER_ID, new UdpWireMessage(
+            int recipient = phiGossipRecipient(
+                    config.nodeId(), config.allNodeIds());
+            sendUdp(recipient, new UdpWireMessage(
                     UdpWireMessage.Type.HEARTBEAT, ++sequence, config.nodeId(),
-                    config.nodeId(), OBSERVER_ID));
+                    config.nodeId(), recipient));
         }
 
         private void tick() {
             long now = elapsedNanos();
             if (now < TimeUnit.MILLISECONDS.toNanos(STARTUP_GRACE_MILLIS)) {
+                return;
+            }
+            // TCP-backed profiles must not turn process-start skew or a broken testbed
+            // connection into a detector result. The EC2 runner also waits for the
+            // transport-ready marker before it starts the warm-up clock.
+            if (usesTcpHeartbeat() && !tcpTransportReady) {
                 return;
             }
             if (config.algorithm() == ProductAlgorithm.REDIS_CLUSTER) {
@@ -365,6 +434,15 @@ public final class ProductUdpExperimentNodeMain {
             for (DetectorEvent event : redisDetector.drainEvents()) {
                 if (config.nodeId() == OBSERVER_ID) {
                     recordObserverEvent(event);
+                    if (event.newStatus() == NodeStatus.DEAD) {
+                        for (int peer : config.allNodeIds()) {
+                            if (peer != OBSERVER_ID && peer != TARGET_ID) {
+                                sendUdp(peer, new UdpWireMessage(
+                                        UdpWireMessage.Type.MEMBERSHIP_REMOVE,
+                                        ++sequence, OBSERVER_ID, OBSERVER_ID, TARGET_ID));
+                            }
+                        }
+                    }
                 } else if (event.newStatus() == NodeStatus.SUSPECT) {
                     sendUdp(OBSERVER_ID, new UdpWireMessage(
                             UdpWireMessage.Type.SUSPECT, ++sequence, config.nodeId(),
@@ -379,6 +457,11 @@ public final class ProductUdpExperimentNodeMain {
             }
             for (DetectorEvent event : observerDetector.drainEvents()) {
                 recordObserverEvent(event);
+                if (event.newStatus() == NodeStatus.ALIVE
+                        && observerDetector instanceof AerospikeMeshFailureDetector) {
+                    aerospikeEpoch = 0;
+                    lastAerospikeProposalAtNanos = -1;
+                }
             }
         }
 
@@ -386,6 +469,7 @@ public final class ProductUdpExperimentNodeMain {
             detectorEvents.add(event);
             System.out.println("EVENT_JSON={\"kind\":\"detector\",\"algorithm\":\""
                     + config.algorithm().id() + "\",\"atNanos\":" + event.atNanos()
+                    + ",\"target\":\"" + escape(event.target()) + "\""
                     + ",\"oldStatus\":\"" + event.oldStatus()
                     + "\",\"newStatus\":\"" + event.newStatus()
                     + "\",\"reason\":\"" + escape(event.reason()) + "\"}");
@@ -397,13 +481,39 @@ public final class ProductUdpExperimentNodeMain {
                 return;
             }
             if (observerDetector instanceof IgniteTcpRingFailureDetector ignite) {
-                ignite.coordinatorConfirmFailure(
-                        now, nodeName(OBSERVER_ID), nodeName(TARGET_ID));
-            } else if (observerDetector instanceof AerospikeMeshFailureDetector aerospike
-                    && aerospikeEpoch == 0) {
-                aerospikeEpoch = Math.max(1, aerospike.viewVersion() + 1);
-                if (aerospike.proposeMembershipRemoval(
-                        aerospikeEpoch, nodeName(TARGET_ID))) {
+                if (!igniteValidationInFlight) {
+                    Set<Integer> validators = independentValidators(
+                            OBSERVER_ID, TARGET_ID, config.allNodeIds());
+                    if (validators.isEmpty()) {
+                        return;
+                    }
+                    igniteValidator = validators.iterator().next();
+                    igniteValidationInFlight = true;
+                    igniteValidationSequence = ++sequence;
+                    long validationSequence = igniteValidationSequence;
+                    for (int validator : validators) {
+                        sendUdp(validator, new UdpWireMessage(
+                                UdpWireMessage.Type.PING_REQUEST,
+                                validationSequence, OBSERVER_ID, OBSERVER_ID, TARGET_ID));
+                    }
+                    state.schedule(
+                            () -> completeIgniteValidation(validationSequence),
+                            IGNITE_VALIDATION_TIMEOUT_MILLIS,
+                            TimeUnit.MILLISECONDS);
+                }
+            } else if (observerDetector instanceof AerospikeMeshFailureDetector aerospike) {
+                if (aerospikeEpoch == 0) {
+                    aerospikeEpoch = Math.max(1, aerospike.viewVersion() + 1);
+                    if (!aerospike.proposeMembershipRemoval(
+                            aerospikeEpoch, nodeName(TARGET_ID))) {
+                        aerospikeEpoch = 0;
+                        return;
+                    }
+                }
+                if (lastAerospikeProposalAtNanos < 0
+                        || now - lastAerospikeProposalAtNanos
+                        >= TimeUnit.MILLISECONDS.toNanos(AEROSPIKE_INTERVAL_MILLIS)) {
+                    lastAerospikeProposalAtNanos = now;
                     for (int peer : config.allNodeIds()) {
                         if (peer != OBSERVER_ID && peer != TARGET_ID) {
                             sendUdp(peer, new UdpWireMessage(
@@ -413,6 +523,18 @@ public final class ProductUdpExperimentNodeMain {
                     }
                 }
             }
+        }
+
+        private void completeIgniteValidation(long validationSequence) {
+            if (!igniteValidationInFlight || igniteValidationSequence != validationSequence
+                    || !(observerDetector instanceof IgniteTcpRingFailureDetector ignite)
+                    || ignite.status(nodeName(TARGET_ID)) != NodeStatus.SUSPECT) {
+                return;
+            }
+            igniteValidationInFlight = false;
+            ignite.coordinatorConfirmFailure(
+                    elapsedNanos(), nodeName(igniteValidator), nodeName(TARGET_ID));
+            drainObserverEvents();
         }
 
         private void sendUdp(int peer, UdpWireMessage message) {
@@ -474,7 +596,14 @@ public final class ProductUdpExperimentNodeMain {
                     }
                     receivedFrames.incrementAndGet();
                     receivedBytes.addAndGet(TCP_APPLICATION_BYTES);
-                    state.execute(() -> onTcpHeartbeat(sender, heartbeatSequence));
+                    try {
+                        state.execute(() -> onTcpHeartbeat(sender, heartbeatSequence));
+                    } catch (RejectedExecutionException exception) {
+                        if (running.get()) {
+                            throw exception;
+                        }
+                        return;
+                    }
                 }
             } catch (EOFException ignored) {
                 // A closed connection is converted to a detector timeout by the state thread.
@@ -486,37 +615,55 @@ public final class ProductUdpExperimentNodeMain {
         }
 
         private void onTcpHeartbeat(int sender, long heartbeatSequence) {
+            long now = elapsedNanos();
+            lastTcpHeartbeatBySender.put(sender, now);
             if (config.nodeId() != OBSERVER_ID || observerDetector == null) {
                 return;
             }
-            long now = elapsedNanos();
             if (observerDetector instanceof IgniteTcpRingFailureDetector ignite) {
                 ignite.recordNeighborMessage(now, nodeName(sender));
             } else if (observerDetector instanceof AerospikeMeshFailureDetector aerospike) {
                 aerospike.recordHeartbeat(now, nodeName(sender));
             }
+            tcpHeartbeatSenders.add(sender);
+            if (!tcpTransportReady
+                    && tcpHeartbeatSenders.containsAll(expectedTcpHeartbeatSenders(
+                    config.algorithm(), config.allNodeIds()))) {
+                tcpTransportReady = true;
+                System.out.println("EVENT_JSON={\"kind\":\"transport-ready\",\"atNanos\":"
+                        + now + ",\"peerCount\":" + tcpHeartbeatSenders.size() + "}");
+            }
             drainObserverEvents();
         }
 
         private void sendTcpHeartbeat() {
-            if (config.nodeId() == OBSERVER_ID) {
-                return;
+            for (int peer : tcpHeartbeatRecipients(
+                    config.algorithm(), config.nodeId(), config.allNodeIds())) {
+                sendTcpHeartbeatTo(peer);
             }
+        }
+
+        private void sendTcpHeartbeatTo(int peer) {
             try {
-                if (tcpClient == null || tcpClient.isClosed()) {
-                    tcpClient = new Socket();
-                    tcpClient.connect(new InetSocketAddress("node0", config.tcpPort()), 200);
-                    tcpClient.setTcpNoDelay(true);
-                    tcpOutput = new DataOutputStream(tcpClient.getOutputStream());
+                Socket client = tcpClients.get(peer);
+                DataOutputStream output = tcpOutputs.get(peer);
+                if (client == null || client.isClosed() || output == null) {
+                    client = new Socket();
+                    client.connect(tcpPeerAddress(
+                            config.peers(), peer, config.tcpPort()), 200);
+                    client.setTcpNoDelay(true);
+                    output = new DataOutputStream(client.getOutputStream());
+                    tcpClients.put(peer, client);
+                    tcpOutputs.put(peer, output);
                 }
-                tcpOutput.writeInt(TCP_MAGIC);
-                tcpOutput.writeInt(config.nodeId());
-                tcpOutput.writeLong(++sequence);
-                tcpOutput.flush();
+                output.writeInt(TCP_MAGIC);
+                output.writeInt(config.nodeId());
+                output.writeLong(++sequence);
+                output.flush();
                 sentFrames.incrementAndGet();
                 sentBytes.addAndGet(TCP_APPLICATION_BYTES);
             } catch (IOException exception) {
-                closeTcpClient();
+                closeTcpClient(peer);
             }
         }
 
@@ -529,21 +676,31 @@ public final class ProductUdpExperimentNodeMain {
                 return;
             }
             long runDurationNanos = elapsedNanos();
-            Long suspectAt = firstEventAtOrAfter(faultAtNanos, NodeStatus.SUSPECT);
-            Long deadAt = firstEventAtOrAfter(faultAtNanos, NodeStatus.DEAD);
-            Long recoveredAt = firstEventAtOrAfter(faultEndAtNanos, NodeStatus.ALIVE);
+            String target = nodeName(TARGET_ID);
+            Long suspectAt = firstTargetEventAtOrAfter(
+                    detectorEvents, target, faultAtNanos, NodeStatus.SUSPECT);
+            Long deadAt = firstTargetEventAtOrAfter(
+                    detectorEvents, target, faultAtNanos, NodeStatus.DEAD);
+            Long recoveredAt = firstTargetEventAtOrAfter(
+                    detectorEvents, target, faultEndAtNanos, NodeStatus.ALIVE);
             long preFaultDeadEvents = detectorEvents.stream()
+                    .filter(event -> event.target().equals(target))
                     .filter(event -> event.newStatus() == NodeStatus.DEAD)
                     .filter(event -> faultAtNanos == null || event.atNanos() < faultAtNanos)
                     .count();
             long preFaultSuspectEvents = detectorEvents.stream()
+                    .filter(event -> event.target().equals(target))
                     .filter(event -> event.newStatus() == NodeStatus.SUSPECT)
                     .filter(event -> faultAtNanos == null || event.atNanos() < faultAtNanos)
                     .count();
+            NodeStatus finalTargetStatus = observerDetector == null
+                    ? null : observerDetector.status(target);
             System.out.println("RESULT_JSON={"
                     + "\"profile\":\"" + config.algorithm().id() + "\","
                     + "\"implementationType\":\"inspired-real-socket-adapter\","
                     + "\"nodeId\":" + config.nodeId() + ","
+                    + "\"target\":\"" + target + "\","
+                    + "\"finalTargetStatus\":" + nullable(finalTargetStatus) + ","
                     + "\"timeSource\":\"observer-monotonic\","
                     + "\"wireSource\":\"" + wireSource() + "\","
                     + "\"runDurationNanos\":" + runDurationNanos + ","
@@ -562,7 +719,7 @@ public final class ProductUdpExperimentNodeMain {
                     + "\"receivedBytes\":" + receivedBytes.get()
                     + "}");
             udpSocket.close();
-            closeTcpClient();
+            closeTcpClients();
             if (tcpServer != null) {
                 try {
                     tcpServer.close();
@@ -572,18 +729,6 @@ public final class ProductUdpExperimentNodeMain {
             }
             state.shutdownNow();
             finished.countDown();
-        }
-
-        private Long firstEventAtOrAfter(Long threshold, NodeStatus status) {
-            if (threshold == null) {
-                return null;
-            }
-            return detectorEvents.stream()
-                    .filter(event -> event.newStatus() == status)
-                    .map(DetectorEvent::atNanos)
-                    .filter(at -> at >= threshold)
-                    .findFirst()
-                    .orElse(null);
         }
 
         private String wireSource() {
@@ -601,16 +746,26 @@ public final class ProductUdpExperimentNodeMain {
             return value == null ? "null" : Long.toString(value);
         }
 
-        private void closeTcpClient() {
-            if (tcpClient != null) {
+        private static String nullable(NodeStatus value) {
+            return value == null ? "null" : "\"" + value + "\"";
+        }
+
+        private void closeTcpClient(int peer) {
+            Socket client = tcpClients.remove(peer);
+            tcpOutputs.remove(peer);
+            if (client != null) {
                 try {
-                    tcpClient.close();
+                    client.close();
                 } catch (IOException ignored) {
                     // Best-effort reconnect cleanup.
                 }
             }
-            tcpClient = null;
-            tcpOutput = null;
+        }
+
+        private void closeTcpClients() {
+            for (int peer : List.copyOf(tcpClients.keySet())) {
+                closeTcpClient(peer);
+            }
         }
 
         @Override
@@ -628,6 +783,111 @@ public final class ProductUdpExperimentNodeMain {
             case SWIM_LIFEGUARD -> throw new IllegalArgumentException(
                     "SWIM uses the dedicated UDP harness");
         };
+    }
+
+    static Long firstTargetEventAtOrAfter(
+            List<DetectorEvent> events,
+            String target,
+            Long threshold,
+            NodeStatus status
+    ) {
+        if (threshold == null) {
+            return null;
+        }
+        return events.stream()
+                .filter(event -> event.target().equals(target))
+                .filter(event -> event.newStatus() == status)
+                .map(DetectorEvent::atNanos)
+                .filter(at -> at >= threshold)
+                .findFirst()
+                .orElse(null);
+    }
+
+    static InetSocketAddress tcpObserverAddress(
+            Map<Integer, InetSocketAddress> peers,
+            int tcpPort
+    ) {
+        return tcpPeerAddress(peers, OBSERVER_ID, tcpPort);
+    }
+
+    static InetSocketAddress tcpPeerAddress(
+            Map<Integer, InetSocketAddress> peers,
+            int peer,
+            int tcpPort
+    ) {
+        InetSocketAddress address = peers.get(peer);
+        if (address == null) {
+            throw new IllegalArgumentException(
+                    "TCP heartbeat peer map must contain node " + peer);
+        }
+        // Socket.connect rejects an unresolved InetSocketAddress. Resolve the configured
+        // Docker hostname or EC2 private IP here so the TCP heartbeat can actually open.
+        return new InetSocketAddress(address.getHostString(), tcpPort);
+    }
+
+    static Set<Integer> expectedTcpHeartbeatSenders(
+            ProductAlgorithm algorithm,
+            Set<Integer> allNodeIds
+    ) {
+        Set<Integer> expected = new LinkedHashSet<>();
+        for (int sender : allNodeIds) {
+            if (sender != OBSERVER_ID && tcpHeartbeatRecipients(
+                    algorithm, sender, allNodeIds).contains(OBSERVER_ID)) {
+                expected.add(sender);
+            }
+        }
+        return Set.copyOf(expected);
+    }
+
+    static Set<Integer> tcpHeartbeatRecipients(
+            ProductAlgorithm algorithm,
+            int sender,
+            Set<Integer> allNodeIds
+    ) {
+        List<Integer> ordered = allNodeIds.stream().sorted().toList();
+        int index = ordered.indexOf(sender);
+        if (index < 0 || ordered.size() < 2) {
+            throw new IllegalArgumentException("invalid TCP heartbeat membership");
+        }
+        if (algorithm == ProductAlgorithm.IGNITE_TCP_RING) {
+            return Set.of(ordered.get((index - 1 + ordered.size()) % ordered.size()));
+        }
+        if (algorithm == ProductAlgorithm.AEROSPIKE_MESH) {
+            Set<Integer> recipients = new LinkedHashSet<>(ordered);
+            recipients.remove(sender);
+            return Set.copyOf(recipients);
+        }
+        throw new IllegalArgumentException("algorithm does not use TCP heartbeat: " + algorithm);
+    }
+
+    static int phiGossipRecipient(int origin, Set<Integer> allNodeIds) {
+        return allNodeIds.stream()
+                .filter(node -> node != origin && node != OBSERVER_ID)
+                .sorted()
+                .findFirst()
+                .orElseGet(() -> allNodeIds.stream()
+                        .filter(node -> node != origin)
+                        .sorted()
+                        .findFirst()
+                        .orElseThrow(() -> new IllegalArgumentException(
+                                "phi gossip requires at least two nodes")));
+    }
+
+    static int independentValidator(int observer, int target, Set<Integer> allNodeIds) {
+        return independentValidators(observer, target, allNodeIds).stream()
+                .findFirst()
+                .orElse(-1);
+    }
+
+    static Set<Integer> independentValidators(
+            int observer,
+            int target,
+            Set<Integer> allNodeIds
+    ) {
+        return allNodeIds.stream()
+                .filter(node -> node != observer && node != target)
+                .sorted()
+                .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
     }
 
     private static String nodeName(int nodeId) {

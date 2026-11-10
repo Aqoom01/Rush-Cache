@@ -41,7 +41,7 @@ sequence=$SEQUENCE
 seed=$SEED
 profile=$REQUESTED_PROFILE
 fault=$FAULT
-nodes=8
+nodes=$FD_EXPECTED_NODES
 node_id=$FD_NODE_ID
 environment=ec2-multi-host
 instance_id=$(metadata instance-id)
@@ -54,6 +54,12 @@ warmup_seconds=$WARMUP_SECONDS
 fault_duration_seconds=$FAULT_DURATION_SECONDS
 recovery_seconds=$RECOVERY_SECONDS
 jar_sha256=$FD_JAR_SHA256
+data_mount=$FD_DATA_MOUNT
+state_root=$FD_STATE
+state_device=$(findmnt -n -o SOURCE --target "$FD_STATE")
+storage_medium=$FD_STORAGE_MEDIUM
+storage_model=$FD_STORAGE_MODEL
+storage_fault_contract=$FD_STORAGE_CLAIM
 EOF
 
 if [[ "$FD_NODE_ID" == "0" ]]; then
