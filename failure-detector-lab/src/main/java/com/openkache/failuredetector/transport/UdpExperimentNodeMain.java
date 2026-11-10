@@ -115,6 +115,7 @@ public final class UdpExperimentNodeMain {
         private long confirmationProbeSuccesses;
         private long confirmationProbeFailures;
         private long localIncarnation = 1;
+        private long nextSwimProbeAtNanos;
 
         private Node(NodeConfig config) throws SocketException {
             this.config = config;
@@ -146,12 +147,17 @@ public final class UdpExperimentNodeMain {
             Runtime.getRuntime().addShutdownHook(new Thread(this::close, "udp-fd-shutdown"));
             receiver.start();
             state.scheduleAtFixedRate(this::tick, 0, 50, TimeUnit.MILLISECONDS);
-            state.scheduleAtFixedRate(
-                    this::sendProtocolTraffic,
-                    protocolInitialDelayMillis(config.profile()),
-                    HEARTBEAT_INTERVAL_MILLIS,
-                    TimeUnit.MILLISECONDS
-            );
+            if (isSwimProfile()) {
+                scheduleNextSwimProbe(TimeUnit.MILLISECONDS.toNanos(
+                        protocolInitialDelayMillis(config.profile())));
+            } else {
+                state.scheduleAtFixedRate(
+                        this::sendProtocolTraffic,
+                        protocolInitialDelayMillis(config.profile()),
+                        HEARTBEAT_INTERVAL_MILLIS,
+                        TimeUnit.MILLISECONDS
+                );
+            }
             state.schedule(this::finish, config.durationSeconds(), TimeUnit.SECONDS);
             finished.await();
         }
@@ -292,10 +298,47 @@ public final class UdpExperimentNodeMain {
             if (config.nodeId() == OBSERVER_ID) {
                 state.schedule(
                         () -> onProbeTimeout(probeId),
-                        PROBE_TIMEOUT_MILLIS,
-                        TimeUnit.MILLISECONDS
+                        currentProbeTimeoutNanos(),
+                        TimeUnit.NANOSECONDS
                 );
             }
+        }
+
+        private boolean isSwimProfile() {
+            return switch (config.profile()) {
+                case F2_SWIM_BASE, F3_SWIM_LIFEGUARD,
+                        F7A_SWIM_LHA_PROBE, F7B_SWIM_LHA_SUSPICION,
+                        F7C_SWIM_BUDDY -> true;
+                default -> false;
+            };
+        }
+
+        private void scheduleNextSwimProbe(long delayNanos) {
+            nextSwimProbeAtNanos = elapsedNanos() + delayNanos;
+            state.schedule(this::runScheduledSwimProbe, delayNanos, TimeUnit.NANOSECONDS);
+        }
+
+        private void runScheduledSwimProbe() {
+            if (!running.get()) {
+                return;
+            }
+            if (detector instanceof SwimLifeguardDetector swim) {
+                long lateness = Math.max(0, elapsedNanos() - nextSwimProbeAtNanos);
+                if (lateness > swim.config().probeInterval().toNanos() / 2) {
+                    swim.observeLocalDelay(swim.config().probeInterval().toNanos() + lateness);
+                }
+            }
+            sendProtocolTraffic();
+            long nextDelay = detector instanceof SwimLifeguardDetector swim
+                    ? swim.effectiveProbeIntervalNanos()
+                    : TimeUnit.MILLISECONDS.toNanos(HEARTBEAT_INTERVAL_MILLIS);
+            scheduleNextSwimProbe(nextDelay);
+        }
+
+        private long currentProbeTimeoutNanos() {
+            return detector instanceof SwimLifeguardDetector swim
+                    ? swim.effectiveProbeTimeoutNanos()
+                    : TimeUnit.MILLISECONDS.toNanos(PROBE_TIMEOUT_MILLIS);
         }
 
         private void onProbeTimeout(long probeId) {
@@ -319,8 +362,8 @@ public final class UdpExperimentNodeMain {
                 ));
                 state.schedule(
                         () -> onProbeTimeout(probeId),
-                        PROBE_TIMEOUT_MILLIS,
-                        TimeUnit.MILLISECONDS
+                        currentProbeTimeoutNanos(),
+                        TimeUnit.NANOSECONDS
                 );
                 return;
             }
@@ -525,8 +568,8 @@ public final class UdpExperimentNodeMain {
                     targetId));
             state.schedule(
                     () -> onConfirmationProbeTimeout(probeId),
-                    PROBE_TIMEOUT_MILLIS,
-                    TimeUnit.MILLISECONDS);
+                    currentProbeTimeoutNanos(),
+                    TimeUnit.NANOSECONDS);
         }
 
         private void onConfirmationProbeTimeout(long probeId) {
@@ -548,8 +591,8 @@ public final class UdpExperimentNodeMain {
                             probe.targetId()));
                     state.schedule(
                             () -> onConfirmationProbeTimeout(probeId),
-                            PROBE_TIMEOUT_MILLIS,
-                            TimeUnit.MILLISECONDS);
+                            currentProbeTimeoutNanos(),
+                            TimeUnit.NANOSECONDS);
                     return;
                 }
             }
@@ -697,7 +740,8 @@ public final class UdpExperimentNodeMain {
             for (DetectorEvent event : detector.drainEvents()) {
                 detectorEvents.add(event);
                 System.out.println("EVENT_JSON={\"kind\":\"detector\",\"atNanos\":"
-                        + event.atNanos() + ",\"oldStatus\":\"" + event.oldStatus()
+                        + event.atNanos() + ",\"target\":\""
+                        + escape(event.target()) + "\",\"oldStatus\":\"" + event.oldStatus()
                         + "\",\"newStatus\":\"" + event.newStatus()
                         + "\",\"reason\":\"" + escape(event.reason()) + "\"}");
             }
@@ -727,20 +771,25 @@ public final class UdpExperimentNodeMain {
                 return;
             }
             long runDurationNanos = elapsedNanos();
-            Long suspectAt = firstEventAtOrAfterFault("SUSPECT");
-            Long deadAt = firstEventAtOrAfterFault("DEAD");
-            Long recoveredAt = firstEventAtOrAfter(faultEndAtNanos, "ALIVE");
+            String target = nodeName(TARGET_ID);
+            Long suspectAt = firstTargetEventAtOrAfter(faultAtNanos, "SUSPECT");
+            Long deadAt = firstTargetEventAtOrAfter(faultAtNanos, "DEAD");
+            Long recoveredAt = firstTargetEventAtOrAfter(faultEndAtNanos, "ALIVE");
             long preFaultDeadEvents = detectorEvents.stream()
+                    .filter(event -> event.target().equals(target))
                     .filter(event -> event.newStatus().name().equals("DEAD"))
                     .filter(event -> faultAtNanos == null || event.atNanos() < faultAtNanos)
                     .count();
             long preFaultSuspectEvents = detectorEvents.stream()
+                    .filter(event -> event.target().equals(target))
                     .filter(event -> event.newStatus().name().equals("SUSPECT"))
                     .filter(event -> faultAtNanos == null || event.atNanos() < faultAtNanos)
                     .count();
             System.out.println("RESULT_JSON={"
                     + "\"profile\":\"" + config.profile().id() + "\","
                     + "\"nodeId\":" + config.nodeId() + ","
+                    + "\"target\":\"" + target + "\","
+                    + "\"finalTargetStatus\":" + nullable(detector.status(target)) + ","
                     + "\"verificationHelperCount\":"
                     + config.verificationHelperCount() + ","
                     + "\"verificationFailureQuorum\":"
@@ -788,15 +837,13 @@ public final class UdpExperimentNodeMain {
             finished.countDown();
         }
 
-        private Long firstEventAtOrAfterFault(String status) {
-            return firstEventAtOrAfter(faultAtNanos, status);
-        }
-
-        private Long firstEventAtOrAfter(Long threshold, String status) {
+        private Long firstTargetEventAtOrAfter(Long threshold, String status) {
             if (threshold == null) {
                 return null;
             }
+            String target = nodeName(TARGET_ID);
             return detectorEvents.stream()
+                    .filter(event -> event.target().equals(target))
                     .filter(event -> event.newStatus().name().equals(status))
                     .map(DetectorEvent::atNanos)
                     .filter(atNanos -> atNanos >= threshold)
@@ -1062,6 +1109,10 @@ public final class UdpExperimentNodeMain {
 
     private static String nullable(Long value) {
         return value == null ? "null" : value.toString();
+    }
+
+    private static String nullable(NodeStatus value) {
+        return value == null ? "null" : "\"" + value + "\"";
     }
 
     private static String escape(String value) {

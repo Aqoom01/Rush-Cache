@@ -77,6 +77,8 @@ public final class IgniteTcpRingFailureDetector extends AbstractFailureDetector 
         if (!observer().equals(coordinator)
                 || !members.contains(reporter)
                 || !members.contains(target)
+                || reporter.equals(coordinator)
+                || reporter.equals(target)
                 || status(target) != NodeStatus.SUSPECT) {
             return false;
         }

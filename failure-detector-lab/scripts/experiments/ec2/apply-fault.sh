@@ -14,6 +14,7 @@ run_id=$1
 load_manifest "$run_id"
 run_dir="$FD_RUNS/$run_id"
 events="$run_dir/fault-events.jsonl"
+fault_status=0
 pid=$(systemctl show "$FD_UNIT" --property MainPID --value)
 if [[ -z "$pid" || "$pid" == "0" ]]; then
   echo "detector process is not active for $run_id" >&2
@@ -51,6 +52,13 @@ case "$FAULT" in
       match ip protocol 6 0xff match ip dport 19001 0xffff flowid 1:3
     tc -s qdisc show dev "$iface" >"$run_dir/netem.txt"
     write_json_event "$events" applied node1
+    sleep "$FAULT_DURATION_SECONDS"
+    tc qdisc del dev "$iface" root
+    # Send the phase marker only after restoring the path: the target's egress
+    # netem filter also affects this UDP control frame.
+    send_control end
+    write_json_event "$events" released node1
+    tc -s qdisc show dev "$iface" >"$run_dir/netem-released.txt"
     ;;
   cpu-pause-target|cpu-pause-observer)
     kill -STOP "$pid"
@@ -78,13 +86,50 @@ case "$FAULT" in
     ;;
   io-contention-target)
     write_json_event "$events" applied node1
-    fio --name=openkache-fd --filename="/mnt/openkache-fd-data/$run_id.fio" \
-      --rw=randrw --rwmixread=50 --bs=4k --iodepth=32 --size=1G \
+    fio_file="$FD_DATA_MOUNT/fio-work/$run_id.fio"
+    fio_output="$run_dir/fio.json"
+    fio_validation="$run_dir/fio-validation.json"
+    cleanup_fio_file() {
+      rm -f "$fio_file"
+    }
+    trap cleanup_fio_file EXIT
+    fio_exit_code=0
+    fio_wall_started_nanos=$(date +%s%N)
+    fio --name=openkache-fd --filename="$fio_file" \
+      --allow_file_create=0 --ioengine=libaio --rw=randrw --rwmixread=50 \
+      --bs=4k --iodepth=32 --size=1G \
       --runtime="$FAULT_DURATION_SECONDS" --time_based=1 --direct=1 \
-      --output="$run_dir/fio.json" --output-format=json
-    rm -f "/mnt/openkache-fd-data/$run_id.fio"
+      --group_reporting=1 --eta=never \
+      --output="$fio_output" --output-format=json || fio_exit_code=$?
+    fio_wall_finished_nanos=$(date +%s%N)
+    fio_wall_duration_ms=$(((fio_wall_finished_nanos - fio_wall_started_nanos) / 1000000))
+    if ! python3 "$script_dir/validate-fio-evidence.py" \
+      --input "$fio_output" \
+      --output "$fio_validation" \
+      --fio-exit-code "$fio_exit_code" \
+      --state-path "$run_dir/events.log" \
+      --fio-path "$fio_file" \
+      --storage-device "$FD_STORAGE_DEVICE" \
+      --mounted-device "$(findmnt -n -o SOURCE --target "$FD_STATE")" \
+      --storage-model "$FD_STORAGE_MODEL" \
+      --expected-storage-model "Amazon EC2 NVMe Instance Storage" \
+      --expected-engine libaio \
+      --expected-iodepth 32 \
+      --min-iops "${FD_FIO_MIN_IOPS:-1500}" \
+      --min-deep-queue-percent "${FD_FIO_MIN_DEEP_QUEUE_PERCENT:-80}" \
+      --min-runtime-ms "$((FAULT_DURATION_SECONDS * 900))" \
+      --wall-duration-ms "$fio_wall_duration_ms" \
+      --max-wall-duration-ms "$((FAULT_DURATION_SECONDS * 1500))"; then
+      fault_status=1
+    fi
+    cleanup_fio_file
+    trap - EXIT
     send_control end
     write_json_event "$events" released node1
+    aws s3 cp --region "$AWS_REGION" "$fio_output" \
+      "$FD_S3_PREFIX/runs/$run_id/node-$FD_NODE_ID/fio.json" >/dev/null || true
+    aws s3 cp --region "$AWS_REGION" "$fio_validation" \
+      "$FD_S3_PREFIX/runs/$run_id/node-$FD_NODE_ID/fio-validation.json" >/dev/null || true
     ;;
   *)
     echo "unsupported fault for remote application: $FAULT" >&2
@@ -94,4 +139,8 @@ esac
 
 aws s3 cp --region "$AWS_REGION" "$events" \
   "$FD_S3_PREFIX/runs/$run_id/node-$FD_NODE_ID/fault-events.jsonl" >/dev/null
+if ((fault_status != 0)); then
+  echo "fault evidence validation failed run=$run_id fault=$FAULT" >&2
+  exit "$fault_status"
+fi
 echo "fault applied run=$run_id fault=$FAULT node=$FD_NODE_ID"

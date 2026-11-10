@@ -50,6 +50,7 @@ public final class AerospikeMeshFailureDetector extends AbstractFailureDetector 
         }
         lastHeartbeat.put(target, nowNanos);
         if (status(target) == NodeStatus.SUSPECT) {
+            proposals.entrySet().removeIf(entry -> entry.getValue().target.equals(target));
             transition(nowNanos, target, NodeStatus.ALIVE, "mesh heartbeat restored", Map.of());
         }
     }
@@ -78,6 +79,10 @@ public final class AerospikeMeshFailureDetector extends AbstractFailureDetector 
         if (epoch <= viewVersion || status(target) != NodeStatus.SUSPECT || !members.contains(target)) {
             return false;
         }
+        Proposal existing = proposals.get(epoch);
+        if (existing != null && !existing.target.equals(target)) {
+            return false;
+        }
         proposals.putIfAbsent(epoch, new Proposal(target));
         proposals.get(epoch).acknowledgements.add(observer());
         return true;
@@ -89,7 +94,10 @@ public final class AerospikeMeshFailureDetector extends AbstractFailureDetector 
             String voter
     ) {
         Proposal proposal = proposals.get(epoch);
-        if (proposal == null || !members.contains(voter) || epoch <= viewVersion) {
+        if (proposal == null || !members.contains(voter)
+                || voter.equals(proposal.target)
+                || epoch <= viewVersion
+                || status(proposal.target) != NodeStatus.SUSPECT) {
             return false;
         }
         proposal.acknowledgements.add(voter);

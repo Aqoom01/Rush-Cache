@@ -35,8 +35,8 @@ neighbor, AZ network, EBS latency 분포를 대표하지 않는다.
 |---|---|---|---|
 | `normal` | 장애·fault marker 없음, 60초 관찰 | 정상 상태 false positive baseline | 장시간 운영 안정성 |
 | `crash` | target 즉시 stop | fail-stop | graceful shutdown |
-| `loss15`, `loss45` | target eth0 netem | packet loss | host 간 실제 WAN loss |
-| `delay` | 250±50ms netem | network delay/jitter | EC2 latency 분포 |
+| `loss15`, `loss45` | target egress netem, 기본 10초 뒤 해제 | bounded asymmetric packet-loss episode | host 간 실제 WAN loss |
+| `delay` | 250±50ms target egress netem, 기본 10초 뒤 해제 | bounded network delay/jitter episode | EC2 latency 분포 |
 | `cpu-pause-target` | freezer cgroup | target process 전체 pause | 실제 GC 원인 |
 | `cpu-pause-observer` | freezer cgroup | observer local stall | target 장애 |
 | `cpu-throttle-*` | runtime CPU quota | scheduler throttling | 완전 정지 |
@@ -47,6 +47,13 @@ neighbor, AZ network, EBS latency 분포를 대표하지 않는다.
 heartbeat 처리 경로에서 storage를 사용하지 않으므로 I/O가 CPU/scheduler를 함께 압박하지
 않으면 직접 영향이 작아야 한다. SSD가 OpenKache 요청 경로에 미치는 영향을 평가하려면
 실제 `cache-server`와 GET/SET workload를 연결해야 한다.
+
+모든 11개 시나리오는 같은 판정 계약을 사용한다. `normal`은 fault marker가 없어야 하고,
+`crash`는 다섯 profile 모두에서 fault 이후 탐지되어야 한다. 나머지 9개 시나리오는 target
+process가 살아 있으므로 DEAD 비율을 crash 성공률로 해석하지 않는다. 네트워크·일시 자원
+장애는 설정된 fault duration 뒤 반드시 해제하고 `FAULT_END`를 기록해 recovery 관찰창을
+실제 주입 구간과 분리한다. Ignite/Aerospike TCP profile은 observer가 모든 peer의 첫
+heartbeat를 받은 뒤에만 준비 완료로 인정한다.
 
 ## 실행
 
@@ -86,7 +93,8 @@ failure-detector-lab/scripts/experiments/run-product-udp-pre-ec2-matrix.sh \
 통과한 sequence는 CSV checkpoint를 기준으로 건너뛰고, 불완전한 실행은 `-retry-N` 경로에서
 재실행하므로 기존 원시 증거를 덮어쓰지 않는다. 전체 완료 시 `COMPLETED` marker가 생성된다.
 
-이 경로는 SWIM UDP, Redis UDP, Phi UDP, Ignite persistent TCP, Aerospike TCP+UDP를 사용한다.
+이 경로는 SWIM UDP, Redis UDP, relay 기반 Phi UDP, Ignite ring TCP+검증 UDP,
+Aerospike all-to-all TCP+evidence-gated UDP를 사용한다.
 제품 native binary나 wire-compatible 구현은 아니다.
 
 분석과 SVG 생성:
@@ -119,8 +127,9 @@ python3 failure-detector-lab/scripts/analyze-udp-pre-ec2.py \
 
 1. 실제 OpenKache `cache-server`에 detector adapter를 연결하고 GET/SET 부하, 요청 성공률,
    failover와 회복 시간을 함께 측정한다.
-2. 네이티브 Linux 전용 disposable block device에 `dm-delay`를 적용해 read/write/flush
-   20/100/500ms를 분리 측정한다. Docker Desktop overlay 결과와 별도 저장한다.
+2. `m6gd` 로컬 NVMe instance store에서 detector 상태와 fio가 같은 filesystem을 사용하도록
+   검증하고 read/write/flush 지연 실험이 필요하면 별도의 `dm-delay` 계층으로 측정한다.
+   Docker Desktop overlay 및 gp3 EBS 결과와 합치지 않는다.
 
 이 두 단계에서 경향이 재현되고 30회 반복 결과와 원시 로그가 완성되면 EC2에서 동일
 manifest를 사용해 외적 타당성을 확인한다.

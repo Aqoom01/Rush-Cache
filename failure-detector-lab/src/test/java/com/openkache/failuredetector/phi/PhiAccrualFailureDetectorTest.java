@@ -59,4 +59,15 @@ class PhiAccrualFailureDetectorTest {
         assertTrue(Double.isFinite(phi));
         assertTrue(phi >= 0);
     }
+
+    @Test
+    void newerGossipVersionCannotMoveLocalArrivalClockBackwards() {
+        PhiAccrualFailureDetector detector = new PhiAccrualFailureDetector("observer");
+        detector.recordHeartbeat(new GossipHeartbeat(
+                "target", 1, 1, Duration.ofSeconds(2).toNanos()), true);
+        detector.recordHeartbeat(new GossipHeartbeat(
+                "target", 1, 2, Duration.ofSeconds(1).toNanos()), true);
+
+        assertEquals(0.0, detector.phi("target", Duration.ofSeconds(2).toNanos()));
+    }
 }

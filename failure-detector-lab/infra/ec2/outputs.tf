@@ -15,9 +15,9 @@ output "node_private_ips" {
 }
 
 output "coordinator_instance_id" {
-  value = aws_instance.node[7].id
+  value = aws_instance.node[local.coordinator_index].id
 }
 
 output "ssm_session_command" {
-  value = "aws ssm start-session --region ${var.aws_region} --target ${aws_instance.node[7].id}"
+  value = "aws ssm start-session --region ${var.aws_region} --target ${aws_instance.node[local.coordinator_index].id}"
 }

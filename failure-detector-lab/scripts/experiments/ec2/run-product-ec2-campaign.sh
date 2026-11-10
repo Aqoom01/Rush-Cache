@@ -110,7 +110,7 @@ discover_nodes() {
     --query 'Reservations[].Instances[].[Tags[?Key==`NodeId`]|[0].Value,InstanceId,PrivateIpAddress]' \
     --output text | sort -n >"$nodes"
   [[ "$(wc -l <"$nodes")" -eq "$FD_EXPECTED_NODES" ]]
-  for node_id in $(seq 0 7); do
+  for node_id in $(seq 0 $((FD_EXPECTED_NODES - 1))); do
     awk -v wanted="$node_id" '$1 == wanted { found=1 } END { exit found ? 0 : 1 }' "$nodes"
   done
 }
@@ -122,7 +122,7 @@ for _ in $(seq 1 30); do
   fi
   sleep 5
 done
-discover_nodes || { log "failed to discover all eight running nodes"; exit 1; }
+discover_nodes || { log "failed to discover all $FD_EXPECTED_NODES running nodes"; exit 1; }
 
 mapfile -t instance_ids < <(awk '{print $2}' "$nodes")
 node0_instance=$(awk '$1 == 0 {print $2}' "$nodes")
@@ -249,7 +249,7 @@ write_manifest() {
     manifest_value FAULT_DURATION_SECONDS "$fault_duration_seconds"
     manifest_value RECOVERY_SECONDS "$recovery_seconds"
     manifest_value THROTTLE_PERCENT "10"
-    manifest_value CPU_WORKERS "4"
+    manifest_value CPU_WORKERS "1"
   } >"$manifest"
   aws s3 cp --region "$AWS_REGION" "$manifest" \
     "$FD_S3_PREFIX/manifests/$run_id.env" >/dev/null
@@ -262,6 +262,12 @@ run_one_attempt() {
   # shellcheck disable=SC1090
   source "$FD_CAMPAIGN/$run_id.env"
   peer_duration=$PEER_DURATION_SECONDS
+
+  if [[ "$fault" == "io-contention-target" ]]; then
+    send_command "/opt/openkache-fd/bin/prepare-fio.sh '$run_id'" "$node1_instance" || return 1
+    command_id=$last_command_id
+    wait_command "$command_id" 1 || return 1
+  fi
 
   send_command "/opt/openkache-fd/bin/run-node.sh '$run_id'" "${instance_ids[@]}" || return 1
   command_id=$last_command_id
@@ -291,9 +297,26 @@ run_one_attempt() {
   wait_command "$command_id" "$FD_EXPECTED_NODES" || return 1
 
   local result="$FD_CAMPAIGN/$run_id-result.json"
+  local observer_events="$FD_CAMPAIGN/$run_id-events.log"
   aws s3 cp --region "$AWS_REGION" \
     "$FD_S3_PREFIX/runs/$run_id/node-0/result.json" "$result" >/dev/null || return 1
+  aws s3 cp --region "$AWS_REGION" \
+    "$FD_S3_PREFIX/runs/$run_id/node-0/events.log" "$observer_events" >/dev/null || return 1
   python3 -m json.tool "$result" >/dev/null || return 1
+  python3 "$script_dir/validate-run-evidence.py" \
+    --result "$result" \
+    --events "$observer_events" \
+    --profile "$profile" \
+    --fault "$fault" || return 1
+  if [[ "$fault" == "io-contention-target" ]]; then
+    local fio_validation="$FD_CAMPAIGN/$run_id-fio-validation.json"
+    aws s3 cp --region "$AWS_REGION" \
+      "$FD_S3_PREFIX/runs/$run_id/node-1/fio-validation.json" "$fio_validation" \
+      >/dev/null || return 1
+    jq -e \
+      '.status == "passed" and .claim == "shared-local-nvme-instance-store-detector-state-contention"' \
+      "$fio_validation" >/dev/null || return 1
+  fi
 }
 
 log "campaign start experiment=$FD_EXPERIMENT_ID expected_runs=$expected_runs repetitions=$FD_REPETITIONS"
@@ -308,6 +331,7 @@ while IFS=$'\t' read -r sequence seed fault profile <&8; do
   fi
 
   prior_failures=$(awk -F, -v wanted="$sequence" '$1 == wanted && $6 == "failed" { count++ } END { print count+0 }' "$status")
+  last_attempt=$(awk -F, -v wanted="$sequence" '$1 == wanted && $5 + 0 > max { max=$5 + 0 } END { print max+0 }' "$status")
   if (( prior_failures >= 3 )); then
     log "campaign blocked sequence=$sequence after $prior_failures failed attempts"
     printf 'blocked_at=%s\nsequence=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$sequence" \
@@ -317,7 +341,7 @@ while IFS=$'\t' read -r sequence seed fault profile <&8; do
   fi
 
   passed=0
-  for attempt in $(seq $((prior_failures + 1)) 3); do
+  for attempt in $(seq $((last_attempt + 1)) $((last_attempt + 3))); do
     run_id=$(printf 'sequence-%04d-attempt-%d' "$sequence" "$attempt")
     log "start sequence=$sequence attempt=$attempt profile=$profile fault=$fault seed=$seed run=$run_id"
     if run_one_attempt "$run_id" "$sequence" "$seed" "$fault" "$profile"; then
@@ -351,6 +375,8 @@ cat >"$FD_CAMPAIGN/COMPLETED" <<EOF
 completed_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 runs=$expected_runs
 environment=ec2-multi-host
+storage_medium=$FD_STORAGE_MEDIUM
+storage_fault_contract=$FD_STORAGE_CLAIM
 EOF
 sync_campaign_state
 aws s3 cp --region "$AWS_REGION" "$FD_CAMPAIGN/final-validation.json" \
