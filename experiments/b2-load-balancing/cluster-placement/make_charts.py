@@ -22,6 +22,8 @@ POLICIES = [  # (variant, 표시 이름, 색) — 색은 정책에 고정, 순�
     ("hysteresis-rebalancing", "hysteresis", "#e87ba4"),
     ("weighted-rendezvous", "rendezvous", "#6250d6"),
     ("no-rebalance", "no-rebalance", "#8a8984"),
+    ("cost-aware-20perMB", "cost-aware 20/MB", "#008300"),
+    ("cost-aware-200perMB", "cost-aware 200/MB", "#e34948"),
 ]
 NAME = {v: n for v, n, _ in POLICIES}
 COLOR = {v: c for v, _, c in POLICIES}
