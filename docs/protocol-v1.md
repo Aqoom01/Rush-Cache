@@ -57,7 +57,7 @@ body 길이가 짧거나 길이 필드가 남은 바이트 수를 넘으면 BAD_
 | 4 | valueLength (u32) |
 | valueLength | value. GET 성공 응답에만 내용이 있고, 그 밖에는 길이 0이다 |
 
-MOVED, NOT_PRIMARY 응답의 redirect 주소 인코딩은 §6-1을 참조한다.
+MOVED, NOT_PRIMARY 응답의 redirect는 두 가지다. B1 라우팅 서버는 §6-1의 주소 필드를 body 뒤에 덧붙이고, A1 PB 전용 서버는 기존 detail 문자열에 redirect-node=<십진 NodeId>로 인코딩한다(§7).
 
 ## 4. 구현된 범위
 
@@ -102,7 +102,8 @@ Java 구현: TableMessageCodec.encodeRedirect / decodeRedirect
 
 ### 6-2. peer opcode: 라우팅 표 메시지 (B1)
 
-messageClass = 3 (peer), flags = 0.
+messageClass = 3 (peer), flags = 0. frame body는 공통 prefix `from(u64), to(u64)` 뒤에 아래 opcode별 내용이다.
+표 직렬화(§6-3)는 payload의 마지막 필드여야 한다. Java 구현: `server.routing.B1Wire`, 서버는 `B1ServerMain`.
 
 | opcode | 이름 | 방향 | 설명 |
 |---|---|---|---|
@@ -148,6 +149,15 @@ Tablet 하나 (40 bytes):
 | 8 | rangeEnd (u64, 0 = 2^64) |
 | 8 | ownerId (u64) |
 | 8 | epoch (u64) |
+
+### 6-4. B1 실험 제어 opcode (peer listener)
+
+실험 스크립트 전용이고 인증이 없다. prefix 없이 아래 body만 갖는다.
+
+| opcode | 이름 | body | 설명 |
+|---|---|---|---|
+| 8 | CONTROL | kind(u8), expectedVersion(u64), kind별 필드 | controller 노드 전용. kind 0 = MOVE(tabletId u64, from u64, to u64), 1 = SPLIT(tabletId u64, at u64). CAS 실패는 UNAVAILABLE |
+| 9 | TABLE_DUMP | 없음 | 이 노드의 표를 §6-3 형식으로 value에 돌려준다 |
 
 ## 7. A1 PB 전용 peer 확장
 
