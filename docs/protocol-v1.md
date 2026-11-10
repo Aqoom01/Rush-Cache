@@ -175,6 +175,19 @@ Tablet 하나 (40 bytes):
 
 35~36은 실험 검증 경로다. 일반 client listener의 Backup 읽기/쓰기 거절을 우회하는 제품 API로 사용하지 않는다. 상태의 nanoTime/detectedNs/readyNs는 해당 JVM에서만 비교할 수 있다. 다른 호스트의 monotonic 값을 직접 차감하지 않는다.
 
+### 7-1. 로컬 PB 펜싱 모드
+
+`protocol=PB_FENCED`는 peer opcode 39를 추가하고 로컬 KV 진단 opcode 36을 비활성화한다. opcode 39의 body는 `from(u64), to(u64), epoch(u64), kind(u8), round(u64), durationNanos(u64), digest` 순서다.
+
+| kind | 이름 | 추가 조건 |
+|---:|---|---|
+| 0 | ACQUIRE | 양수 round와 lease 기간. digest 없음 |
+| 1 | GRANT | 요청과 같은 round와 lease 기간. digest 없음 |
+| 2 | REQUEST_VOTE | round와 기간은 0. digest 없음 |
+| 3 | VOTE | round와 기간은 0. 적용 이력의 SHA-256 32바이트 |
+
+같은 번호의 UDP peer 포트에서 SWIM opcode 16(PING), 17(ACK), 18(PING_REQ)을 사용한다. 설정과 실행 방법은 [로컬 펜싱 검증](../experiments/a1-active-passive-failover/real-server/fencing-local.md)에 있다.
+
 ## 8. A1 VR 전용 peer 확장
 
 같은 실험 진입점의 `protocol=VR`에서만 48~56을 활성화한다. 생략 시 `protocol=PB`로 기존 설정을 유지한다. PB와 VR peer 메시지를 혼용하지 않는다. 공통 prefix는 `from(u64), to(u64), view(u64)`이며 정수는 big-endian이다. 고정 세 노드 이외의 ID·오배달·잘못된 길이/명령 tag·trailing bytes를 거절한다.

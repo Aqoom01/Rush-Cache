@@ -9,7 +9,7 @@ import java.nio.ByteBuffer;
 
 /** PB 전용 v1 확장. length/header는 기존 Frame codec, body 정수는 big-endian이다. */
 public final class PbWire {
-    public static final int REPLICATE=32, ACK=33, CONTROL=34, STATUS=35, LOCAL_GET=36, LOG_DIGEST=37, MASTER_CONTROL=38;
+    public static final int REPLICATE=32, ACK=33, CONTROL=34, STATUS=35, LOCAL_GET=36, LOG_DIGEST=37, MASTER_CONTROL=38, FENCE=39;
     private PbWire() {}
     /** 불변 peer envelope를 frame으로 변환한다. 동일 연결에서 write 순서를 유지한다. */
     public static Frame encode(PeerEnvelope envelope) {
@@ -22,6 +22,9 @@ public final class PbWire {
             opcode=ACK; b=ByteBuffer.allocate(32); prefix(b,envelope,a.epoch()); b.putLong(a.opNumber());
         } else if(envelope.message() instanceof CrashOnlyPrimaryBackupEngine.Control c) {
             opcode=CONTROL; b=ByteBuffer.allocate(25); prefix(b,envelope,c.epoch()); b.put((byte)c.kind().ordinal());
+        } else if(envelope.message() instanceof PrimaryBackupFence.Message m) {
+            opcode=FENCE; b=ByteBuffer.allocate(41+m.digest().size()); prefix(b,envelope,m.epoch());
+            b.put((byte)m.kind().ordinal()).putLong(m.round()).putLong(m.durationNanos()).put(m.digest().toByteArray());
         } else throw new IllegalArgumentException("unsupported PB message");
         return new Frame(Protocol.CLASS_PEER,opcode,0,0,0,0,Bytes.copyOf(b.array()));
     }
@@ -39,6 +42,15 @@ public final class PbWire {
                 case ACK -> message=new PrimaryBackupMessage.ReplicateAck(epoch,b.getLong());
                 case CONTROL -> { int kind=Byte.toUnsignedInt(b.get()); if(kind>=CrashOnlyPrimaryBackupEngine.Kind.values().length) throw new IllegalArgumentException("unknown control");
                     message=new CrashOnlyPrimaryBackupEngine.Control(epoch,CrashOnlyPrimaryBackupEngine.Kind.values()[kind]); }
+                case FENCE -> {
+                    int kind=Byte.toUnsignedInt(b.get());
+                    if(kind>=PrimaryBackupFence.Kind.values().length) throw new IllegalArgumentException("unknown fencing kind");
+                    var type=PrimaryBackupFence.Kind.values()[kind];
+                    long round=b.getLong(), duration=b.getLong();
+                    byte[] digest=new byte[type==PrimaryBackupFence.Kind.VOTE?32:0];
+                    b.get(digest);
+                    message=new PrimaryBackupFence.Message(epoch,type,round,duration,Bytes.copyOf(digest));
+                }
                 default -> throw new IllegalArgumentException("unknown PB opcode");
             }
             if(b.hasRemaining()) throw new IllegalArgumentException("trailing PB bytes"); return new PeerEnvelope(from,to,message);

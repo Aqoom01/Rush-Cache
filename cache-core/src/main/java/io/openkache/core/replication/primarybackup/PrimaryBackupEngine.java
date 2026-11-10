@@ -25,6 +25,8 @@ import java.time.Duration;
 import java.util.HashSet;
 import java.util.Objects;
 import java.util.Set;
+import java.util.function.BooleanSupplier;
+import java.util.function.Consumer;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
 import java.util.concurrent.ConcurrentHashMap;
@@ -96,6 +98,7 @@ public final class PrimaryBackupEngine implements CacheEngine {
     private final Mailbox owner;
     private final Transport transport;
     private final TimeSource timeSource;
+    private final BooleanSupplier writeAuthority;
     private final Set<CompletableFuture<Result>> pending = ConcurrentHashMap.newKeySet();
     private final AtomicBoolean closed = new AtomicBoolean();
 
@@ -130,11 +133,17 @@ public final class PrimaryBackupEngine implements CacheEngine {
      */
     public PrimaryBackupEngine(
             PrimaryBackupConfig config, CacheEngine localKv, Mailbox owner, Transport transport, TimeSource timeSource) {
+        this(config, localKv, owner, transport, timeSource, () -> true);
+    }
+
+    PrimaryBackupEngine(PrimaryBackupConfig config, CacheEngine localKv, Mailbox owner, Transport transport,
+                        TimeSource timeSource, BooleanSupplier writeAuthority) {
         this.config = Objects.requireNonNull(config, "config");
         this.localKv = Objects.requireNonNull(localKv, "localKv");
         this.owner = Objects.requireNonNull(owner, "owner");
         this.transport = Objects.requireNonNull(transport, "transport");
         this.timeSource = Objects.requireNonNull(timeSource, "timeSource");
+        this.writeAuthority = Objects.requireNonNull(writeAuthority, "writeAuthority");
     }
 
     @Override
@@ -175,7 +184,7 @@ public final class PrimaryBackupEngine implements CacheEngine {
 
     /** owner thread. 진행 중 요청으로 등록한 뒤 모든 Backup에 Replicate를 보낸다. */
     private void startReplication(Command.Set set, RequestContext context, CompletableFuture<Result> future) {
-        if (closed.get()) {
+        if (closed.get() || !writeAuthority.getAsBoolean()) {
             future.complete(status(ResultStatus.UNAVAILABLE));
             return;
         }
@@ -233,6 +242,11 @@ public final class PrimaryBackupEngine implements CacheEngine {
             LOG.log(Level.DEBUG, "node {0}: ignored {1} from {2}", config.nodeId(), replicate, from);
             return;
         }
+        applyBackup(from, replicate, ignored -> {});
+    }
+
+    /** Called on the owner after the fenced wrapper has validated the sender, epoch and operation order. */
+    void applyBackup(NodeId from, Replicate replicate, Consumer<Boolean> applied) {
         // Primary를 대신해 적용하므로 clientId는 Primary 노드 번호, operationId는 op-number를 쓴다. 로컬 KV는 deadline만 본다.
         RequestContext applyContext =
                 new RequestContext(
@@ -244,6 +258,7 @@ public final class PrimaryBackupEngine implements CacheEngine {
         localKv.execute(replicate.command(), applyContext)
                 .whenComplete(
                         (result, error) -> {
+                            applied.accept(error == null && result.status() == ResultStatus.OK);
                             // KV worker thread일 수 있다. 엔진 상태는 건드리지 않고 ACK만 보낸다.
                             if (error == null && result.status() == ResultStatus.OK) {
                                 LOG.log(
@@ -279,6 +294,10 @@ public final class PrimaryBackupEngine implements CacheEngine {
                 || !ack.epoch().equals(config.epoch())
                 || ack.opNumber() != current.opNumber) {
             LOG.log(Level.DEBUG, "node {0} op {1}: ignored {2} from {3}", config.nodeId(), current.opNumber, ack, from);
+            return;
+        }
+        if (!writeAuthority.getAsBoolean()) {
+            finish(current, status(ResultStatus.UNAVAILABLE));
             return;
         }
         if (current.context.deadline().isExpired(timeSource)) {

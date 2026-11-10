@@ -12,9 +12,11 @@ import uuid
 import pb_control
 
 class Client:
-    def __init__(self,hosts,on_sent=None):
+    def __init__(self,hosts,on_sent=None,*,client_port=7000,peer_port=7001):
         self.hosts=hosts
         self.on_sent=on_sent
+        self.client_port=client_port
+        self.peer_port=peer_port
         self.sockets={}
         self.sequence=0
     def close(self):
@@ -22,7 +24,7 @@ class Client:
             sock.close()
         self.sockets.clear()
     def request(self,node,opcode,body=b"",peer=False):
-        port=7001 if peer else 7000
+        port=self.peer_port if peer else self.client_port
         key=(node,port)
         self.sequence+=1
         try:
