@@ -1,6 +1,6 @@
 # B2 설계
 
-상태: B1의 hash 범위 Tablet(`core.tablet.TabletRange`) 위에서 Baseline(`midpoint-split`)과 `split-for-heat`, 공통 불변식 테스트, 시나리오 S1-S3 비교 실험을 구현했다. 첫 결과는 [split-comparison/results.md](split-comparison/results.md). 분할 시작 단계(`SplitTrigger`)는 아직 구현하지 않았다. 구현 현황은 §7을 따른다.
+상태: B1의 hash 범위 Tablet(`core.tablet.TabletRange`) 위에서 Split 정책 3개(`midpoint-split` Baseline, `split-for-heat`, `estore-inspired`)와 Placement 정책 7개(§9), 공통 불변식 테스트, 벤치마크 A-C를 구현했다. 첫 결과는 [split-comparison/results.md](split-comparison/results.md), 정책 벤치마크 결과는 [policy-benchmark.md](policy-benchmark.md). 분할 시작 단계(`SplitTrigger`)는 공통 코드로는 아직 없고 Benchmark C 안에서만 같은 규칙을 쓴다. 구현 현황은 §7을 따른다.
 
 ## 1. 목표와 범위
 
@@ -10,7 +10,7 @@ B2는 Tablet의 부하를 관찰해 세 가지를 결정한다.
 |---|---|---|
 | Hot Split | 부하가 몰린 Tablet을 어디서 나눌지, 나눠도 효과가 있는지 | 1단계 (지금) |
 | Cold Merge | 부하가 낮은 인접 Tablet을 합칠지 | 이후 |
-| 재배치 | 어떤 Tablet을 어느 노드로 옮길지 | 이후 |
+| 재배치 | 어떤 Tablet을 어느 노드로 옮길지 | 2단계 (§9, 계획 계산 실험까지) |
 
 1단계는 Split 하나만 다룬다. 참고 기법은 [DynamoDB Split-for-Heat](references/dynamodb-split-for-heat.md)이고, 구간의 가운데에서 나누는 분할(Baseline)과 비교한다. 논문 §4.4가 비교 대상으로 든 방식이 이것이다.
 
@@ -60,6 +60,7 @@ SplitPolicy.decide(TabletLoad) → Split(at) | NoSplit(reason)
 | `COOLDOWN` | 직전 분할로 생긴 Tablet이 유예 기간 안에 있다 | 공통 단계 | 미구현 |
 | `NO_VALID_POINT` | 나눌 자리가 없다. 구간 폭이 1이거나, `split-for-heat`에서 key가 둘 미만 | 정책 | 구현 |
 | `SINGLE_HOT_KEY` | 부하가 key 하나에 몰려, 어디서 나눠도 그 key가 있는 쪽이 θ를 넘는다 | `split-for-heat` | 구현 |
+| `NO_HOT_DATA` | hot key가 없거나 모든 key가 hot이라 hot/cold 경계가 없다 | `estore-inspired` | 구현 |
 
 아래 값과 규칙은 참고 자료에 공개되어 있지 않아 **프로젝트에서 직접 정했다**. 근거는 각 항목에 적는다.
 
@@ -173,8 +174,14 @@ cache-core/src/main/java/io/openkache/core/balance/
     ├── NoSplitReason.java         [구현] NO_VALID_POINT, SINGLE_HOT_KEY. 공통 단계 사유는 SplitTrigger 구현 때 추가
     ├── MidpointSplitPolicy.java   [구현] Baseline
     ├── HeatSplitPolicy.java       [구현] Split-for-Heat (θ 기본 0.8, 생성자로 변경 가능)
-    └── SplitTrigger.java          두 정책 공통: 분할 시작 조건(T, K)과 분할 후 유예 (§4.1)
-(이후) merge/, placement/
+    ├── EStoreSplitPolicy.java     [구현] estore-inspired: hot key 묶음 경계에서 hot/cold 분리 (§9.2)
+    └── SplitTrigger.java          정책 공통: 분할 시작 조건(T, K)과 분할 후 유예 (§4.1). 미구현(Benchmark C 안에서만 같은 규칙)
+└── placement/                     [구현] §9
+    ├── PlacementPolicy.java, PlacementInput.java, PlacementDecision.java
+    ├── Assignment.java            정책 공통 작업용 배치(이용률 계산, 빠지는 노드 비우기)
+    └── GreedyLoadPlacement(Baseline), SlicerInspiredPlacement, EStoreInspiredPlacement, PowerOfTwoChoicesPlacement,
+        WeightedRendezvousPlacement, CostAwareRebalancing, HysteresisRebalancing
+(이후) merge/
 
 cache-core/src/test/java/io/openkache/core/balance/
 ├── TabletLoadTest.java            [구현] 입력 검증(부호 없는 정렬, 중복, 구간 밖, 음수)
@@ -182,17 +189,25 @@ cache-core/src/test/java/io/openkache/core/balance/
     ├── Loads.java                 [구현] 테스트 입력 생성 도우미 (key를 hash 구간에 고르게 배치)
     ├── SplitInvariantTest.java    [구현] §5 불변식을 모든 정책에 적용. 새 정책은 POLICIES에 추가
     ├── MidpointSplitPolicyTest.java [구현]
-    └── HeatSplitPolicyTest.java   [구현] §4.3 예시 표, θ 경계, 두 조각 모두 key
-└── experiment/                    [구현] §6 비교 실험 (JUnit이 아닌 main. B1 tablet/experiment와 같은 방식)
-    ├── SplitComparison.java       실험 러너. 결과를 long 형식 CSV로 쓰고 요약 표를 출력
+    ├── HeatSplitPolicyTest.java   [구현] §4.3 예시 표, θ 경계, 두 조각 모두 key
+    └── EStoreSplitPolicyTest.java [구현]
+├── placement/                     [구현] PlacementInvariantTest(§9.3, 모든 정책), PlacementPolicyTest(정책별 성질), Inputs
+└── experiment/                    [구현] 비교 실험 (JUnit이 아닌 main. B1 tablet/experiment와 같은 방식)
+    ├── SplitComparison.java       §6 실험 러너. 결과를 long 형식 CSV로 쓰고 요약 표를 출력
     ├── Scenarios.java             seed별 key 해시값, 시나리오 S1-S3 요청 생성
-    └── SplitComparisonTest.java   실험 틀(입력 생성, 지표 계산, 결정성) 검증
+    ├── SplitComparisonTest.java   실험 틀(입력 생성, 지표 계산, 결정성) 검증
+    ├── BalanceBenchmark.java      §9.5 Benchmark A·B·C 러너. CSV(원본)·JSON(집계)·MD(표)를 쓴다
+    ├── Workloads.java             §9.4 key 단위 시나리오(Zipf, 이동 hotspot, burst 등)
+    └── Stats.java                 평균·최소·최대·표준편차, seed 짝 개선율과 95% 신뢰구간
 
 experiments/b2-load-balancing/
 ├── README.md                      variant 목록
 ├── design.md                      이 문서
 ├── references/                    논문·시스템별 정리
-└── split-comparison/              [구현] 실행 방법(README.md), 원본(summary.csv), 해석(results.md)
+├── split-comparison/              [구현] 실행 방법(README.md), 원본(summary.csv), 해석(results.md), Benchmark A(benchmark-a.*)
+├── placement-comparison/          [구현] Benchmark B(benchmark-b.*)
+├── end-to-end/                    [구현] Benchmark C(benchmark-c.*)
+└── policy-benchmark.md            [구현] 벤치마크 A-C 해석·순위·trade-off
 ```
 
 규칙:
@@ -210,7 +225,9 @@ experiments/b2-load-balancing/
 | 실험 결과 JSON 형식 | Metrics(본인), 팀 합의 | 결과 Schema 합의 후 |
 | B1 `hash-range-tablet` 구현 시점 (실제 표 위 split 실험 조건) | B1 | B1 일정 |
 | Hot Range 패턴의 Workload 공통화 | A2 | 필요성 확인 후 |
-| Cold Merge, 재배치의 참고 기법 | B2 | Split 1단계 후 |
+| Cold Merge의 참고 기법 | B2 | 재배치 후 |
+| `SplitTrigger` 공통 코드화(지금은 Benchmark C 안에만 있음) | B2 | 실제 노드 연계 전 |
+| 실제 데이터 이동과 연결한 재배치 실측 | B2·B3 | B3 노드 간 이동 구현 후 |
 
 **결정된 사항 (프로젝트 자체 결정)**
 
@@ -222,3 +239,74 @@ experiments/b2-load-balancing/
 | Tablet 표현 | B1 hash 구간(`TabletRange`)을 쓴다. B2 임시 `KeyRange`와 바이트 key 비교 규칙은 삭제 | §2, §3 | 2026-10-22 |
 | Baseline 정의 | hash 구간의 산술적 가운데 | §4.2 | 2026-10-22 |
 | 순차 쓰기 처리 | hash 범위에서 의미가 없어 제외 (이전 결정: tail 요청을 오른쪽 몫으로 예상) | §2 | 2026-10-22 |
+| Split과 Placement 분리 | 분할은 `SplitPolicy`(경계), 배치는 `PlacementPolicy`(주인). 출력은 B1 `Change`/`Plan` 그대로, B1 계약 변경 없음 | §9.1 | 2026-11-05 |
+| 배치 정책 기준값 | §9.2 표의 값. 논문 값이 있는 것(Slicer 9%)만 따르고 나머지는 자체 결정 | §9.2 | 2026-11-05 |
+
+## 9. 재배치(Placement)와 정책 벤치마크
+
+### 9.1 인터페이스
+
+```
+PlacementPolicy.decide(PlacementInput) → PlacementDecision(List<Change>)
+PlacementInput: RoutingTable(B1), Tablet별 window 부하·byte, 노드별 용량(= 허용 노드), window, Tablet별 마지막 이동 window
+```
+
+- 분할(`SplitPolicy`)은 경계를, 배치는 주인을 바꾼다. 둘을 조합해 평가한다(Benchmark C).
+- 출력은 B1 `Change`(Javadoc상 "balance가 만든다")이고 `Plan.movesOnly`로 감싸 `RoutingTable.apply`로 반영한다. B1 계약은 바꾸지 않았다.
+- 정책은 상태가 없다. cooldown은 입력의 이동 이력으로 판단한다.
+- 노드 용량 목록에 없는 노드의 Tablet은 모든 정책이 먼저 비운다(scale-in).
+
+### 9.2 정책과 기준값
+
+| variant | 종류 | 결정 | 기준값 (출처) |
+|---|---|---|---|
+| `estore-inspired` | Split | 가장 뜨거운 hot key 묶음의 경계에서 자름, hot 없으면 `NO_HOT_DATA` | hot = key 평균의 2배 이상 (자체) |
+| `greedy-load-placement` | Placement, **Baseline** | 현재 배치 무시, 부하 큰 Tablet부터 넣은 뒤 이용률이 가장 낮은 노드로(LPT) | 없음 |
+| `slicer-inspired` | Placement | 이동 byte 예산 안에서 "최대 이용률 감소 / byte"가 큰 이동 반복 | 예산 9% (Slicer §4.4.1의 9%, 단위는 byte로 바꿈) |
+| `estore-inspired` | Placement | 과부하 노드에서 hot Tablet 먼저, 그다음 cold Tablet | hot = Tablet 평균의 2배, 과부하 = 평균 × 1.05 (자체) |
+| `power-of-two-choices` | Placement | 과부하 노드의 Tablet마다 해시로 고른 후보 2개 중 나은 곳(나아질 때만) | tolerance 1.05 (자체) |
+| `weighted-rendezvous` | Placement | 용량 가중 HRW. 부하를 보지 않음 | 없음 |
+| `cost-aware-rebalancing` | Placement | (줄어드는 초과 부하 × 기간) − (byte × 단가) > 0인 이동만 | 단가 0.001 요청/byte, 기간 5 window, tolerance 1.05 (자체, 실측 근거 없음) |
+| `hysteresis-rebalancing` | Placement | 최대/평균 > 1.25에서 시작, 1.10에서 멈춤, 최근 3 window 이동 Tablet 제외 | 1.25 / 1.10 / 3 (자체, cooldown은 §4.1 유예와 같은 길이) |
+
+참고 문헌 정리: [references/slicer.md](references/slicer.md), [references/estore.md](references/estore.md). 두 정책은 논문의 핵심 아이디어 하나씩만 가져온 경량 구현이다.
+
+### 9.3 불변식 (`PlacementInvariantTest`, 모든 정책)
+
+1. 이동마다 `from`은 현재 주인이고 `to`는 허용 노드이며 둘은 다르다. Tablet당 이동은 많아야 하나다.
+2. 적용한 표는 공간 전체를 빈틈·겹침 없이 덮고(B1 `RoutingTable` 검사), Tablet 수가 그대로이며, 모든 Tablet의 주인이 허용 노드다.
+3. 같은 입력에는 같은 결정을 내고 입력을 바꾸지 않는다.
+
+정책별 성질(cooldown 존중, 비용이 크면 이동 안 함, 예산 준수, rendezvous의 노드 제거 시 이동 범위)은 `PlacementPolicyTest`가 본다.
+
+### 9.4 워크로드 (`Workloads`, 모든 정책에 같은 seed·입력)
+
+| 시나리오 | 내용 (기준값은 자체 결정) |
+|---|---|
+| UNIFORM | 모든 key 균등 |
+| HOT_RANGE | 해시값이 작은 쪽 20% key에 80% (S2와 같은 모양) |
+| SINGLE_HOT_KEY | 가운데 key 하나에 Benchmark A 90%(S3와 같음), B·C 30% |
+| ZIPF | s = 1.0, 순위는 seed로 섞어 해시 순서와 무관 |
+| MOVING_HOTSPOT | 20% 구간에 80%, window마다 key 수의 5%씩 이동 |
+| BURSTY | 균등 + 5 window마다 기본의 3배가 임의의 5% 구간에 |
+| HETEROGENEOUS | ZIPF, 노드 용량 1:1:2:4 (합은 같음) |
+| SCALE_OUT / SCALE_IN | ZIPF, window 10에 노드 4→5 / 5→4 |
+
+### 9.5 벤치마크
+
+| | A. Split | B. Placement | C. Split + Placement |
+|---|---|---|---|
+| Baseline | `midpoint-split` | `greedy-load-placement` | `midpoint-split + greedy-load-placement` |
+| 규모 | Tablet 1개, key 1,000, 요청 4,000 | key 2만, Tablet 64개 고정, 노드 4(5), 20 window | key 2만, 처음 Tablet 8개, 노드 4(5), 20 window |
+| 결정 / 측정 | window 0 / 1 (BURSTY는 4 / 5) | window t / t+1 | window t / t+1 |
+| 주요 지표 | 다음 window 큰 쪽 비율, 분할·보류·효과 없는 분할 수 | 최대 이용률, 최대/평균, 과부하 노드·window, 불균형(>1.2) window, 이동 Tablet·MB | B + 분할 수·효과 없는 분할·최종 Tablet 수 |
+
+- 노드 용량은 평균 이용률 0.7이 되게 잡고, Tablet byte는 key 수 × 1KiB로 계산한다.
+- Benchmark C의 분할 시작 조건은 Tablet 부하 > 노드 용량/4가 3 window 연속인 것이다. 분할 후 3 window 유예, Tablet 상한은 256개다.
+- 개선율은 seed 10개 짝의 평균과 95% 신뢰구간이다. Baseline이 0이거나 정의되지 않으면(보류) 계산하지 않는다. 보류한 실행의 큰 쪽 비율은 0으로 넣지 않는다.
+- 모든 결과는 계획 계산값이다. QPS·IOPS로 표현하지 않는다.
+- 실행: `./gradlew :cache-core:testClasses` 후 `java -cp cache-core/build/classes/java/main:cache-core/build/classes/java/test io.openkache.core.balance.experiment.BalanceBenchmark experiments/b2-load-balancing [A|B|C]`
+
+### 9.6 EC2 실측 (cluster-placement)
+
+Benchmark B의 결정을 실제 노드 라우팅에 적용해 잰다. 방식은 오프라인 계획 재생이다. `ClusterPlacementPlanner`가 Runner와 같은 요청열로 window별 주인을 계산해 `schedule` 파일로 쓰고, Runner가 window 단위로 재생한다. 이동은 라우팅 변경이고 새 주인은 빈 상태에서 시작하며, MISS가 나면 클라이언트가 다시 SET한다(cache-aside). 그래서 이동 비용은 miss·다시 채운 SET으로 나타난다. 환경·묶음·실행 방법은 [cluster-placement/README.md](cluster-placement/README.md)에 있다.

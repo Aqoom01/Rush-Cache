@@ -6,6 +6,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.TreeMap;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -89,7 +90,23 @@ public final class Main {
                     result.p50Nanos() / 1_000.0,
                     result.p99Nanos() / 1_000.0);
             System.out.printf(Locale.ROOT, "outcomes: %s%n", result.outcomeCounts());
+            for (TargetResult target : result.targets()) {
+                System.out.printf(
+                        Locale.ROOT,
+                        "target %s %s: requests=%d share=%.3f p50us=%.1f p99us=%.1f%n",
+                        target.address(),
+                        target.hashRange(),
+                        target.requests(),
+                        (double) target.requests() / result.measuredRequests(),
+                        target.p50Nanos() / 1_000.0,
+                        target.p99Nanos() / 1_000.0);
+            }
             System.out.printf(Locale.ROOT, "result json: %s%n", jsonFile);
+            Path windowsFile = ResultWriter.writeWindowsCsv(result, config.resultsDir());
+            if (windowsFile != null) {
+                printWindowSummary(result);
+                System.out.printf(Locale.ROOT, "result windows: %s%n", windowsFile);
+            }
             System.out.printf(Locale.ROOT, "result csv: %s%n", csvFile);
         }
 
@@ -177,5 +194,26 @@ public final class Main {
     @FunctionalInterface
     interface ExperimentCall {
         ExperimentResult run() throws Exception;
+    }
+
+    /** window마다 한 줄: 이동 Tablet 수, 가장 바쁜 서버의 요청 비율, GET miss 비율, 최대 서버 CPU, 가장 나쁜 서버 p99. */
+    private static void printWindowSummary(ExperimentResult result) {
+        Map<Integer, List<WindowResult>> byWindow = new TreeMap<>();
+        for (WindowResult w : result.windows()) {
+            byWindow.computeIfAbsent(w.window(), k -> new ArrayList<>()).add(w);
+        }
+        byWindow.forEach((window, rows) -> {
+            long total = rows.stream().mapToLong(WindowResult::requests).sum();
+            long max = rows.stream().mapToLong(WindowResult::requests).max().orElse(0);
+            long hits = rows.stream().mapToLong(r -> r.outcomeCounts().getOrDefault(Outcome.HIT, 0L)).sum();
+            long misses = rows.stream().mapToLong(r -> r.outcomeCounts().getOrDefault(Outcome.MISS, 0L)).sum();
+            double cpu = rows.stream().mapToDouble(WindowResult::cpuUtilization).filter(x -> !Double.isNaN(x)).max().orElse(Double.NaN);
+            long p99 = rows.stream().filter(r -> r.requests() > 0).mapToLong(WindowResult::p99Nanos).max().orElse(0);
+            System.out.printf(Locale.ROOT,
+                    "window %2d moved=%d%s max_share=%.3f miss=%.3f refills=%d max_cpu=%.2f worst_p99us=%.0f%n",
+                    window, rows.getFirst().movedTablets(), rows.getFirst().burst() ? " burst" : "",
+                    total == 0 ? 0.0 : (double) max / total, hits + misses == 0 ? 0.0 : (double) misses / (hits + misses),
+                    rows.stream().mapToLong(WindowResult::refills).sum(), cpu, p99 / 1_000.0);
+        });
     }
 }
