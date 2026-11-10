@@ -16,6 +16,10 @@ variables:
     value: "memory"
     options: ["memory", "nvme"]
     description: "cache-server의 KV 저장소입니다. nvme는 노드의 NVMe SSD에 저장합니다."
+  SERVER:
+    value: "a1"
+    options: ["a1", "b1"]
+    description: "cache-server 실행 모드입니다. b1은 라우팅 클러스터(B1ServerMain, NODES대가 표를 공유)로 띄웁니다. b1은 STORAGE=memory만 됩니다."
   # git bundle을 만들려면 전체 이력이 필요하다.
   GIT_DEPTH: "0"
   # after_script 기본 제한(5분)은 노드가 많을 때 destroy에 부족하다.
@@ -50,6 +54,7 @@ aws-experiment:
       done
       export TF_VAR_max_lifetime_minutes=$(( total + 30 > 180 ? 180 : total + 30 ))
     - export TF_VAR_storage_engine="$STORAGE"
+    - export TF_VAR_server_mode="$SERVER"
     # 로컬에서 띄운 클러스터가 있으면 최대 60분 기다린다. 끝나지 않으면 지우지 않고 실패한다.
     - infra/scripts/up.sh --wait 3600 "$NODES"
     # up.sh가 기존 클러스터 없음을 확인한 뒤에만 표시한다. apply가 중간에 실패해도 지울 수 있게 apply 전에 남긴다.

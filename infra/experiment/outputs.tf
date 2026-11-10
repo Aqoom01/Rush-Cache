@@ -19,6 +19,10 @@ output "storage_engine" {
   value = var.storage_engine
 }
 
+output "server_mode" {
+  value = var.server_mode
+}
+
 output "stops_at_utc" {
   description = "자동 정지 시각(UTC)"
   value       = timeadd(time_static.created.rfc3339, "${var.max_lifetime_minutes}m")

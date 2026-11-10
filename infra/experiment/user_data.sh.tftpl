@@ -32,6 +32,33 @@ echo "ready" > /opt/openkache/STATUS
 %{ else ~}
 docker build -f deploy/docker/Dockerfile -t openkache-server .
 
+%{ if server_mode == "b1" ~}
+# B1 라우팅 클러스터(docs/protocol-v1.md §6). 모든 노드가 같은 hosts 순서를 읽어야 초기 표가 일치한다.
+# B1Server는 hosts[node.id]에 bind하므로 host 네트워크로 띄운다(포트 공개는 보안그룹이 제한).
+cat > /opt/openkache/b1.properties <<PROPS
+node.id=${node_id - 1}
+hosts=${b1_hosts}
+client.port=7000
+peer.port=7001
+tablets.per.node=2
+PROPS
+docker run -d --name openkache-server --restart unless-stopped \
+  --network host \
+  --entrypoint java \
+  -v /opt/openkache/b1.properties:/app/config/b1.properties:ro \
+  openkache-server \
+  -Xms2g -Xmx2g -cp '/app/lib/*' io.openkache.server.routing.B1ServerMain /app/config/b1.properties
+
+for _ in $(seq 1 30); do
+  if timeout 2 bash -c "</dev/tcp/${self_ip}/7000" 2>/dev/null; then
+    echo "ready" > /opt/openkache/STATUS
+    exit 0
+  fi
+  sleep 2
+done
+echo "failed" > /opt/openkache/STATUS
+exit 1
+%{ else ~}
 sed -i "s/^node.id=.*/node.id=${node_id}/" deploy/docker/server.properties
 %{ if storage_engine == "nvme" ~}
 # root EBS가 아닌 instance store를 모델명으로 찾는다. 정지하면 내용이 지워지는 장치다.
@@ -64,4 +91,5 @@ for _ in $(seq 1 30); do
 done
 echo "failed" > /opt/openkache/STATUS
 exit 1
+%{ endif ~}
 %{ endif ~}

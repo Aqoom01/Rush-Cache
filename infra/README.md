@@ -34,7 +34,7 @@ infra/
 
 | 역할 | 대수 | 내용 |
 |---|---|---|
-| cache-server 노드 | 1-8 | Docker로 `deploy/docker/Dockerfile` 이미지 실행. 지금은 단일 노드 baseline만 의미가 있다(peer 프로토콜 미구현) |
+| cache-server 노드 | 1-8 | Docker로 `deploy/docker/Dockerfile` 이미지 실행. 기본은 A1 단일 노드 서버(`Main`)이고, `SERVER=b1`이면 B1 라우팅 클러스터(`B1ServerMain`)로 띄운다. B1 모드는 모든 노드가 부팅 때 전체 주소를 알아야 해서 private IP를 고정한다(.11-.18, 부하 생성 .10) |
 | 부하 생성 노드 | 1 | `experiment-runner` 배포본만 빌드(Corretto 21). cache-server를 두지 않아 CPU를 나눠 쓰지 않는다 |
 
 - `experiment-runner`는 `target.host` 하나로만 요청한다. `NODES`가 2 이상이어도 요청은 cache-server 1번 노드로만 간다(peer 프로토콜과 다중 노드 Runner가 생기기 전까지).
@@ -133,6 +133,7 @@ terminate가 아니라 stop이므로 다음 실행 전까지 루트 EBS는 남�
 | `NODES` | 1 | cache-server 대수(1-8). 부하 생성 1대는 항상 추가된다 |
 | `CONFIG` | `experiments/baseline-single-node/config.properties` | 실행할 TCP 실험 config. 고른 브랜치에 커밋돼 있어야 한다. 공백으로 여러 개를, 폴더를 넣으면 그 안의 `*.properties` 전부(이름순)를 같은 클러스터에서 차례로 실행하고, 자동 정지 시각은 제한 시간의 합 + 30분(최대 180분)이다 |
 | `STORAGE` | `memory` | cache-server KV 저장소. `nvme`면 노드가 instance store를 포맷해 쓴다(`docs/storage-nvme.md`). 결과의 `storageLayer`에 기록된다 |
+| `SERVER` | `a1` | cache-server 실행 모드. `b1`이면 라우팅 클러스터(`B1ServerMain`, node 1 = Controller, `tablets.per.node=2`)로 띄운다. `STORAGE=memory`만 가능(plan에서 검사). Runner의 `routing.boundaries`를 B1 초기 표와 같게 맞추면 모든 요청이 주인 노드로 직행한다(표가 바뀌는 실험은 MOVED를 따라가는 Runner가 생겨야 가능). 재시작 기동 확인은 `/metrics` 대신 7000 포트 listening으로 한다 |
 
 결과 위치는 job 로그 마지막의 `결과: s3://...` 줄에 나온다. 받는 방법은 §4.
 

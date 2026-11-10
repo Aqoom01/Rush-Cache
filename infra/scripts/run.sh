@@ -68,13 +68,19 @@ ssm_run() {
   [ "$failed" -eq 0 ]
 }
 
-restart='docker restart openkache-server > /dev/null
-for _ in $(seq 1 60); do
-  curl -fsS http://127.0.0.1:9091/metrics > /dev/null 2>&1 && { echo restarted; exit 0; }
+# B1 서버는 /metrics가 없어 client 포트(7000) 연결로 기동을 확인한다.
+if [ "$(tf output -raw server_mode 2>/dev/null || echo a1)" = b1 ]; then
+  health='ss -ltn 2>/dev/null | grep -Eq ":7000\s"'
+else
+  health='curl -fsS http://127.0.0.1:9091/metrics > /dev/null 2>&1'
+fi
+restart="docker restart openkache-server > /dev/null
+for _ in \$(seq 1 60); do
+  $health && { echo restarted; exit 0; }
   sleep 2
 done
-echo "cache-server가 다시 뜨지 않았다" >&2
-exit 1'
+echo \"cache-server가 다시 뜨지 않았다\" >&2
+exit 1"
 echo "cache-server 재시작(동시): $node_ids"
 ssm_run "$node_ids" "$restart" 300 || { echo "cache-server 재시작 실패" >&2; exit 1; }
 

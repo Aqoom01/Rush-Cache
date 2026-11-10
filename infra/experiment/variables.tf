@@ -25,6 +25,17 @@ variable "storage_engine" {
   }
 }
 
+variable "server_mode" {
+  description = "cache-server 실행 모드. a1은 단일 노드 PB 서버(Main), b1은 라우팅 클러스터(B1ServerMain, docs/protocol-v1.md §6)."
+  type        = string
+  default     = "a1"
+
+  validation {
+    condition     = contains(["a1", "b1"], var.server_mode)
+    error_message = "server_mode는 a1 또는 b1이어야 한다."
+  }
+}
+
 variable "node_count" {
   description = "cache-server 노드 수. 교보재 조건상 최대 8대(부하 생성 1대는 별도)."
   type        = number
