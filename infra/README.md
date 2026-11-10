@@ -54,8 +54,8 @@ scripts/up.sh N         1. 로컬 HEAD를 git bundle로 묶어 결과 버킷에 
                            node: 이미지 빌드(arm64) → cache-server 기동
                            loadgen: experiment-runner installDist
 scripts/wait.sh         모든 노드 STATUS=ready 대기
-scripts/run.sh CONFIG   cache-server 전부 재시작(빈 저장소) → SSM으로 부하 생성 노드에 지시:
-                        target.hosts=노드 전체, results.dir 치환(요청 분배는 config의 routing.boundaries)
+scripts/run.sh CONFIG   서버 전부 동시 재시작(빈 저장소, config의 deploy.*에 따라 종류·멤버 결정) → SSM으로 부하 생성 노드에 지시:
+                        target.hosts=멤버 노드, results.dir 치환(요청 분배는 config의 routing.boundaries)
                         → experiment-runner 실행 → 결과·config·로그를 S3에 업로드(실패해도)
 scripts/down.sh         terraform destroy
 ```
@@ -144,6 +144,20 @@ terminate가 아니라 stop이므로 다음 실행 전까지 루트 EBS는 남�
 4. 로컬에서 한 번 실행해 설정 오류를 확인한 뒤(`experiments/README.md`) 커밋·push하고, Run pipeline의 `CONFIG`에 경로를 넣는다.
 
 cache-server는 단일 노드 인메모리 KV이므로 지금은 부하 모양만 바꿀 수 있다. 복제·장애·Tablet 같은 연구 알고리즘은 peer 프로토콜이 생기기 전까지 이 경로로 실험할 수 없다.
+
+**서버 종류와 멤버 수 (`deploy.*`)**
+
+config에 아래 key를 넣으면 `run.sh`가 실행 전 재시작 때 반영한다. Runner에는 넘기지 않는다. 노드 수가 다른 조건도 `NODES`를 가장 큰 값으로 띄운 클러스터 하나에서 config를 바꿔 가며 이어 실행할 수 있다.
+
+| key | 기본값 | 뜻 |
+|---|---|---|
+| `deploy.server` | `kache` | `kache`는 기존 cache-server, `b1`은 `B1ServerMain`(B1 라우팅 서버, node 0이 Controller) |
+| `deploy.members` | 띄운 노드 전부 | Terraform 노드 순서의 앞 N대만 쓴다. 나머지는 서버를 멈춘다. `target.hosts`와 결과 폴더의 `n<대수>`도 N대 기준 |
+| `deploy.b1.tablets.per.node` | 2 | B1 초기 표의 노드당 Tablet 수 |
+
+- `b1`은 노드마다 `node.id`(멤버 순서, 0부터)·`hosts`(멤버 사설 IP)를 담은 설정을 만들어 같은 이미지에서 host network로 띄운다. B1Server가 `hosts`의 자기 IP에 bind하기 때문이다.
+- `b1`은 KvEngine 메모리 저장소만 쓰고 `/metrics`가 없다. `STORAGE` 입력과 무관하게 결과의 저장소는 `memory`로 기록되고, 노드 `/metrics` 수집은 건너뛰고 window별 서버 CPU는 `NaN`으로 남는다(실험은 계속된다).
+- Runner는 아직 MOVED를 따라가지 않는다(멀티노드 클라이언트는 별도 작업). B1 초기 표와 같은 `routing.boundaries`로 보내야 MOVED 없이 처리된다.
 
 **기존 실험을 지우지 않는 규칙**
 
