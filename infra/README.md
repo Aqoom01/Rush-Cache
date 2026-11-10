@@ -54,7 +54,8 @@ scripts/up.sh N         1. 로컬 HEAD를 git bundle로 묶어 결과 버킷에 
                            node: 이미지 빌드(arm64) → cache-server 기동
                            loadgen: experiment-runner installDist
 scripts/wait.sh         모든 노드 STATUS=ready 대기
-scripts/run.sh CONFIG   SSM으로 부하 생성 노드에 지시: target.host=1번 노드, results.dir 치환
+scripts/run.sh CONFIG   cache-server 전부 재시작(빈 저장소) → SSM으로 부하 생성 노드에 지시:
+                        target.hosts=노드 전체, results.dir 치환(요청 분배는 config의 routing.boundaries)
                         → experiment-runner 실행 → 결과·config·로그를 S3에 업로드(실패해도)
 scripts/down.sh         terraform destroy
 ```
@@ -64,7 +65,7 @@ scripts/down.sh         terraform destroy
 
 ## 4. 결과 저장 (S3)
 
-- 경로: `s3://openstd-s15p31d111-results/results/<study>/<KST 날짜>/<KST 시각>_<저장소>_n<cache-server 수>_<variant>_<실행자>_<commit 8자리>/` 아래에 `results.dir` 전체, 실제 사용한 `config.properties`, `runner.log`
+- 경로: `s3://openstd-s15p31d111-results/results/<study>/<KST 날짜>/<KST 시각>_<저장소>_n<cache-server 수>_<variant>_<실행자>_<commit 8자리>/` 아래에 `results.dir` 전체, 실제 사용한 `config.properties`, `runner.log`, 실험 직후 각 cache-server의 `/metrics`(`metrics-node-<N>.txt`, 저장소 읽기·쓰기·JVM 지표)
   - 예: `results/baseline-single-node/2026-11-04/134752_memory_n1_uniform-70-20-10_hyunaeri_e9475041/`
   - 실행자는 CI면 GitLab 사용자명, 로컬이면 `local`이다. 2026-11-04 13:48 이전 결과는 `<UTC 시각>-<commit>` 형식으로 남아 있다.
 - 받기: `aws s3 cp --recursive --profile openstd s3://openstd-s15p31d111-results/results/<study>/<실행>/ <로컬 경로>`
@@ -130,7 +131,7 @@ terminate가 아니라 stop이므로 다음 실행 전까지 루트 EBS는 남�
 | 입력 | 기본값 | 뜻 |
 |---|---|---|
 | `NODES` | 1 | cache-server 대수(1-8). 부하 생성 1대는 항상 추가된다 |
-| `CONFIG` | `experiments/baseline-single-node/config.properties` | 실행할 TCP 실험 config. 고른 브랜치에 커밋돼 있어야 한다 |
+| `CONFIG` | `experiments/baseline-single-node/config.properties` | 실행할 TCP 실험 config. 고른 브랜치에 커밋돼 있어야 한다. 공백으로 여러 개를, 폴더를 넣으면 그 안의 `*.properties` 전부(이름순)를 같은 클러스터에서 차례로 실행하고, 자동 정지 시각은 제한 시간의 합 + 30분(최대 180분)이다 |
 | `STORAGE` | `memory` | cache-server KV 저장소. `nvme`면 노드가 instance store를 포맷해 쓴다(`docs/storage-nvme.md`). 결과의 `storageLayer`에 기록된다 |
 
 결과 위치는 job 로그 마지막의 `결과: s3://...` 줄에 나온다. 받는 방법은 §4.

@@ -33,7 +33,8 @@ import org.junit.jupiter.params.provider.MethodSource;
 class SplitInvariantTest {
 
     /** 검사할 정책 목록. 새 정책을 만들면 여기에 한 줄 추가한다. */
-    private static final List<SplitPolicy> POLICIES = List.of(new MidpointSplitPolicy(), new HeatSplitPolicy());
+    private static final List<SplitPolicy> POLICIES =
+            List.of(new MidpointSplitPolicy(), new HeatSplitPolicy(), new EStoreSplitPolicy());
 
     private static final TabletRange QUARTER_2 = new TabletRange(1L << 62, 1L << 63);
 

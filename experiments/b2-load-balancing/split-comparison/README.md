@@ -11,6 +11,8 @@ java -cp cache-core/build/classes/java/main:cache-core/build/classes/java/test \
     experiments/b2-load-balancing/split-comparison/summary.csv
 ```
 
+`benchmark-a.*`는 같은 S1-S3에 Zipf·이동 hotspot·burst를 더하고 `estore-inspired`까지 비교한 Benchmark A 결과다(`BalanceBenchmark ... A`로 생성, 해석은 [../policy-benchmark.md](../policy-benchmark.md)). S1-S3는 이 README의 실험과 같은 입력이라 회귀 비교에 쓴다.
+
 러너는 `cache-core/src/test/java/io/openkache/core/balance/experiment/`에 있다. JUnit 테스트가 아니라 `main`이라 `./gradlew test`에서는 돌지 않는다(돌 때마다 결과 파일을 쓰지 않기 위해). 틀 자체의 검증은 같은 패키지의 `SplitComparisonTest`가 한다. 실행은 1초 안쪽이고, 요약 표를 표준 출력으로 낸다.
 
 ## 동일 조건

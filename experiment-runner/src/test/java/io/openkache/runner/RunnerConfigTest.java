@@ -2,7 +2,9 @@ package io.openkache.runner;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.util.List;
 import java.util.Properties;
 import org.junit.jupiter.api.Test;
 
@@ -69,14 +71,16 @@ class RunnerConfigTest {
     }
 
     @Test
-    void rejectsZipfianAsUnsupportedDistribution() {
+    void rejectsUnknownDistributionNameButAcceptsZipf() {
         Properties p = valid();
         p.setProperty("distribution", "zipfian");
 
         assertEquals(
-                "invalid config: 'distribution' must be one of [UNIFORM, FIXED_HOT_KEY] (zipfian is not"
-                        + " supported yet): zipfian",
+                "invalid config: 'distribution' must be one of [UNIFORM, FIXED_HOT_KEY, HOT_RANGE, ZIPF]: zipfian",
                 errorOf(p));
+
+        p.setProperty("distribution", "zipf");
+        assertEquals(Distribution.ZIPF, RunnerConfig.from(p).distribution());
     }
 
     @Test
@@ -128,5 +132,52 @@ class RunnerConfigTest {
         Properties p = valid();
         p.setProperty("server.storage.note", "nvme");
         assertEquals("nvme", RunnerConfig.from(p).serverStorageNote());
+    }
+
+    @Test
+    void targetHostsAndRoutingBoundariesAreParsed() {
+        Properties p = valid();
+        p.setProperty("target.hosts", "10.0.0.1:7000, 10.0.0.2:7000");
+        p.setProperty("routing.boundaries", "9223372036854775808");
+
+        RunnerConfig config = RunnerConfig.from(p);
+        assertEquals(List.of(new RunnerConfig.Target("10.0.0.1", 7000), new RunnerConfig.Target("10.0.0.2", 7000)), config.targets());
+        assertEquals(2, config.routedTargetCount());
+        assertEquals(0, config.targetIndex(0x7fffffffffffffffL));
+        assertEquals(1, config.targetIndex(0x8000000000000000L));
+        assertEquals(1, config.targetIndex(-1L));
+    }
+
+    @Test
+    void withoutTargetHostsEveryKeyGoesToTargetHost() {
+        RunnerConfig config = RunnerConfig.from(valid());
+        assertEquals(List.of(new RunnerConfig.Target("127.0.0.1", 7000)), config.targets());
+        assertEquals(1, config.routedTargetCount());
+        assertEquals(0, config.targetIndex(-1L));
+    }
+
+    @Test
+    void rejectsMoreRoutingRangesThanTargets() {
+        Properties p = valid();
+        p.setProperty("routing.boundaries", "100");
+        assertTrue(errorOf(p).contains("needs 2 targets"));
+    }
+
+    @Test
+    void rejectsNonIncreasingBoundariesAndBadHosts() {
+        Properties p = valid();
+        p.setProperty("target.hosts", "a:7000,b:7000,c");
+        p.setProperty("routing.boundaries", "200,100");
+        String message = errorOf(p);
+        assertTrue(message.contains("must be host:port: c"));
+        assertTrue(message.contains("must be increasing"));
+    }
+
+    @Test
+    void hotRangeNeedsHotAndColdKeys() {
+        Properties p = valid();
+        p.setProperty("distribution", "HOT_RANGE");
+        p.setProperty("hot.range.key.fraction", "0.0");
+        assertTrue(errorOf(p).contains("hot.range.key.fraction"));
     }
 }

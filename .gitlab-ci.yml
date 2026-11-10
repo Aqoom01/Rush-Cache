@@ -11,7 +11,7 @@ variables:
     description: "실행할 cache-server 대수입니다. 부하 생성 노드 1대는 자동으로 추가됩니다."
   CONFIG:
     value: "experiments/baseline-single-node/config.properties"
-    description: "실행할 실험 config 경로입니다. 결과 위치는 job 로그 끝에 나옵니다."
+    description: "실행할 실험 config 경로입니다. 공백으로 여러 개를, 폴더를 넣으면 그 안의 config 전부를 같은 클러스터에서 차례로 실행합니다. 결과 위치는 job 로그에 나옵니다."
   STORAGE:
     value: "memory"
     options: ["memory", "nvme"]
@@ -30,15 +30,25 @@ aws-experiment:
   # job 하나로 묶어야 up과 down 사이에 다른 파이프라인이 끼어들지 않는다(resource_group은 job 단위 잠금).
   # 뒤에 온 실행은 대기하고, 먼저 요청한 순서로 진행한다(GitLab 프로젝트 설정의 resource group process mode를 oldest_first로 둔다).
   resource_group: aws-experiment
-  # 기존 클러스터 대기 60분 + 기동 15분 + 실험 최대 60분(execution.timeout.ms 상한) + 여유
-  timeout: 160m
+  # 기존 클러스터 대기 60분 + 기동 15분 + 실험(자동 정지 상한 180분 안) + 여유
+  timeout: 270m
   rules:
     - if: $CI_PIPELINE_SOURCE == "web" && $CI_COMMIT_REF_PROTECTED == "true"
   before_script:
     - apk add --no-cache bash coreutils aws-cli git > /dev/null
   script:
-    # 자동 정지 시각을 실험 제한 시간 + 30분(기동·업로드 여유)으로 잡는다.
-    - t=$(sed -n 's/^execution.timeout.ms=//p' "$CONFIG" | tr -d '\r'); export TF_VAR_max_lifetime_minutes=$(( ${t:-3600000} / 60000 + 30 ))
+    # CONFIG의 폴더는 그 안의 *.properties(이름순)로 펼친다.
+    - |
+      CONFIGS=$(for c in $CONFIG; do if [ -d "$c" ]; then find "$c" -name '*.properties' | sort; else echo "$c"; fi; done)
+      echo "실행할 config $(echo "$CONFIGS" | wc -l)개"
+    # 자동 정지 시각을 모든 config의 실험 제한 시간 합 + 30분(기동·재시작·업로드 여유)으로 잡는다. 상한은 180분이다.
+    - |
+      total=0
+      for c in $CONFIGS; do
+        t=$(sed -n 's/^execution.timeout.ms=//p' "$c" | tr -d '\r')
+        total=$(( total + ${t:-3600000} / 60000 ))
+      done
+      export TF_VAR_max_lifetime_minutes=$(( total + 30 > 180 ? 180 : total + 30 ))
     - export TF_VAR_storage_engine="$STORAGE"
     # 로컬에서 띄운 클러스터가 있으면 최대 60분 기다린다. 끝나지 않으면 지우지 않고 실패한다.
     - infra/scripts/up.sh --wait 3600 "$NODES"
@@ -47,7 +57,8 @@ aws-experiment:
     - infra/scripts/up.sh --apply
     - infra/scripts/wait.sh 900
     # 결과는 s3://openstd-s15p31d111-results/results/<study>/<KST 날짜>/<KST 시각>_<저장소>_n<대수>_<variant>_<실행자>_<commit>/
-    - infra/scripts/run.sh "$CONFIG"
+    # 하나가 실패해도 나머지 config는 실행하고, 끝에 job을 실패로 표시한다.
+    - rc=0; for c in $CONFIGS; do infra/scripts/run.sh "$c" || rc=1; done; exit $rc
   # 이 job이 만든 클러스터만 성공·실패·취소와 관계없이 지운다. 로컬에서 띄운 클러스터는 건드리지 않는다.
   after_script:
     - |

@@ -46,4 +46,6 @@ record ExperimentResult(
         long latencyTotalObserved,
         Map<Outcome, Long> outcomeCounts,
         String faultScenario,
-        Optional<String> gitCommit) {}
+        Optional<String> gitCommit,
+        List<TargetResult> targets,
+        List<WindowResult> windows) {}

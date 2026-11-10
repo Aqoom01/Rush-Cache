@@ -3,7 +3,10 @@ package io.openkache.runner;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.openkache.core.api.Command;
+import io.openkache.core.model.Bytes;
 import io.openkache.core.model.NodeId;
+import io.openkache.core.tablet.KeyHash;
 import io.openkache.server.config.ServerConfig;
 import io.openkache.server.lifecycle.ServerApplication;
 import java.io.IOException;
@@ -14,6 +17,7 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
 import java.util.Properties;
+import java.util.Random;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
@@ -99,7 +103,118 @@ class ExperimentRunnerIntegrationTest {
         Assertions.assertThrows(IOException.class, () -> new ExperimentRunner(config).run());
     }
 
+    @Test
+    void routesKeysByHashRangeToTwoServersAndReportsEachServer() throws Exception {
+        ServerConfig secondConfig =
+                new ServerConfig(
+                        new NodeId(2), "runner-it", "127.0.0.1", "127.0.0.1",
+                        freePort(), freePort(), freePort(), 2, Duration.ofSeconds(2));
+        ServerApplication second = ServerApplication.start(secondConfig);
+        try {
+            Properties p = runnerProperties(0, 2_000, 4);
+            p.setProperty("key.count", "200");
+            p.setProperty(
+                    "target.hosts",
+                    "127.0.0.1:" + serverConfig.clientPort() + ",127.0.0.1:" + secondConfig.clientPort());
+            p.setProperty("routing.boundaries", Long.toUnsignedString(1L << 63));
+            RunnerConfig config = RunnerConfig.from(p);
+
+            ExperimentResult result = new ExperimentRunner(config).run();
+
+            assertEquals(2, result.nodeCount());
+            assertEquals(2, result.targets().size());
+            TargetResult left = result.targets().get(0);
+            TargetResult right = result.targets().get(1);
+            assertEquals(2_000, left.requests() + right.requests());
+            assertTrue(left.requests() > 0 && right.requests() > 0);
+            assertEquals("[0, 9223372036854775808)", left.hashRange());
+            assertEquals(0L, result.outcomeCounts().get(Outcome.CLIENT_FAILURE));
+
+            // 같은 seed의 요청열을 해시로 나눈 수와 서버별 요청 수가 정확히 같아야 한다.
+            long expectedLeft = 0;
+            for (int thread = 0; thread < config.concurrency(); thread++) {
+                WorkloadGenerator generator = new WorkloadGenerator(config, new Random(config.seed() + thread));
+                for (int i = 0; i < 2_000 / config.concurrency(); i++) {
+                    Command command = generator.next();
+                    Bytes key = switch (command) {
+                        case Command.Get get -> get.key();
+                        case Command.Set set -> set.key();
+                        case Command.Delete delete -> delete.key();
+                        default -> throw new AssertionError(command);
+                    };
+                    if (config.targetIndex(KeyHash.of(key)) == 0) {
+                        expectedLeft++;
+                    }
+                }
+            }
+            assertEquals(expectedLeft, left.requests());
+
+            String json = Files.readString(ResultWriter.writeJson(result, config.resultsDir()));
+            assertTrue(json.contains("\"targets\": [{\"address\": \"127.0.0.1:" + serverConfig.clientPort() + "\""));
+        } finally {
+            second.close();
+        }
+    }
+
+    @Test
+    void windowedRunFollowsScheduleAndShowsMissesAfterMove() throws Exception {
+        ServerConfig secondConfig =
+                new ServerConfig(
+                        new NodeId(2), "runner-it", "127.0.0.1", "127.0.0.1",
+                        freePort(), freePort(), freePort(), 2, Duration.ofSeconds(2));
+        ServerApplication second = ServerApplication.start(secondConfig);
+        try {
+            // Tablet 2개: 앞 절반은 서버 0, 뒤 절반은 서버 1. window 1부터 앞 절반을 서버 1로 옮긴다.
+            Path schedule = resultsDir.resolve("two.schedule");
+            Files.write(schedule, List.of(
+                    "tablets 2", "tablet 0 0", "tablet 9223372036854775808 1",
+                    "window 0", "window 1", "move 0 1", "window 2"));
+            Properties p = runnerProperties(0, 1, 4);
+            p.setProperty("key.count", "200");
+            p.setProperty("mix.get", "100");
+            p.setProperty("mix.set", "0");
+            p.setProperty("mix.delete", "0");
+            p.setProperty(
+                    "target.hosts",
+                    "127.0.0.1:" + serverConfig.clientPort() + ",127.0.0.1:" + secondConfig.clientPort());
+            p.setProperty("schedule.file", schedule.toString());
+            p.setProperty("window.requests", "400");
+            p.setProperty("metrics.port", String.valueOf(serverConfig.adminPort()));
+            p.setProperty("refill.on.miss", "true");
+            RunnerConfig config = RunnerConfig.from(p);
+
+            ExperimentResult result = new ExperimentRunner(config).run();
+
+            assertEquals(1200, result.measuredRequests());
+            assertEquals(6, result.windows().size(), "window 3개 × 서버 2대");
+            for (WindowResult w : result.windows()) {
+                long misses = w.outcomeCounts().get(Outcome.MISS);
+                assertEquals(misses, w.refills(), "MISS마다 한 번 다시 채운다");
+                if (w.window() == 1 && w.address().endsWith(":" + secondConfig.clientPort())) {
+                    assertTrue(misses > 0, "옮긴 Tablet은 서버 1에서 비어 있어 MISS가 난다");
+                    assertTrue(misses <= 100, "다시 채우므로 MISS는 옮긴 key(약 100개) 수를 넘지 않는다: " + misses);
+                } else if (w.window() == 0) {
+                    assertEquals(0L, misses, "미리 채워서 window 0은 MISS가 없다");
+                }
+                if (w.window() >= 1 && w.address().endsWith(":" + serverConfig.clientPort())) {
+                    assertEquals(0L, w.requests(), "window 1부터 서버 0은 요청을 받지 않는다");
+                }
+            }
+            assertEquals(1, result.windows().stream().filter(w -> w.window() == 1).findFirst().orElseThrow().movedTablets());
+            assertTrue(!Double.isNaN(result.windows().getFirst().cpuUtilization()), "서버 0의 CPU는 /metrics에서 읽힌다");
+
+            Path csv = ResultWriter.writeWindowsCsv(result, config.resultsDir());
+            assertEquals(7, Files.readAllLines(csv).size(), "header + 6행");
+        } finally {
+            second.close();
+        }
+    }
+
     private RunnerConfig runnerConfig(long warmup, long measured, int concurrency) {
+        return RunnerConfig.from(runnerProperties(warmup, measured, concurrency));
+    }
+
+    private Properties runnerProperties(long warmup, long measured, int concurrency) {
         Properties p = new Properties();
         p.setProperty("target.host", serverConfig.bindHost());
         p.setProperty("target.port", String.valueOf(serverConfig.clientPort()));
@@ -119,7 +234,7 @@ class ExperimentRunnerIntegrationTest {
         p.setProperty("measured.requests", String.valueOf(measured));
         p.setProperty("request.timeout.ms", "2000");
         p.setProperty("results.dir", resultsDir.toString());
-        return RunnerConfig.from(p);
+        return p;
     }
 
     private static int freePort() {
