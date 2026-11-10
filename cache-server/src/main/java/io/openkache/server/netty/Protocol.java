@@ -30,6 +30,9 @@ public final class Protocol {
     /** 예약: 아직 body 형식이 정의되지 않았다. */
     public static final int OP_DELETE = 3;
     public static final int OP_PING = 4;
+    public static final int OP_SWIM_PING = 16;
+    public static final int OP_SWIM_ACK = 17;
+    public static final int OP_SWIM_PING_REQ = 18;
 
     private Protocol() {}
 
@@ -58,6 +61,9 @@ public final class Protocol {
             case OP_SET -> "set";
             case OP_DELETE -> "delete";
             case OP_PING -> "ping";
+            case OP_SWIM_PING -> "swim_ping";
+            case OP_SWIM_ACK -> "swim_ack";
+            case OP_SWIM_PING_REQ -> "swim_ping_req";
             default -> "unknown";
         };
     }

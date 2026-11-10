@@ -15,6 +15,11 @@ class PbWireTest {
         messages.add(new PrimaryBackupMessage.Replicate(new OwnershipEpoch(1),7,new Command.Set(Bytes.utf8("k"),Bytes.utf8("value"))));
         messages.add(new PrimaryBackupMessage.ReplicateAck(new OwnershipEpoch(1),7));
         for(var kind:CrashOnlyPrimaryBackupEngine.Kind.values()) messages.add(new CrashOnlyPrimaryBackupEngine.Control(new OwnershipEpoch(2),kind));
+        for (var kind : PrimaryBackupFence.Kind.values()) {
+            boolean lease = kind == PrimaryBackupFence.Kind.ACQUIRE || kind == PrimaryBackupFence.Kind.GRANT;
+            messages.add(new PrimaryBackupFence.Message(new OwnershipEpoch(2), kind, lease ? 5 : 0,
+                    lease ? 500_000_000 : 0, kind == PrimaryBackupFence.Kind.VOTE ? Bytes.copyOf(new byte[32]) : Bytes.empty()));
+        }
         for(var message:messages) {
             var e=new PeerEnvelope(new NodeId(0),new NodeId(1),message); assertEquals(e,PbWire.decode(PbWire.encode(e)));
         }
@@ -30,5 +35,13 @@ class PbWireTest {
     @Test void invalidNodeConfigFailsBeforeBind() {
         assertThrows(IllegalArgumentException.class,()->new PbNodeConfig(3,List.of("a","b","c"),7000,7001,0,50,500,10));
         assertThrows(IllegalArgumentException.class,()->new PbNodeConfig(0,List.of("a","b","c"),7000,7000,0,50,500,10));
+    }
+    @Test void truncatedFencingVoteIsRejected() {
+        var vote = new PrimaryBackupFence.Message(new OwnershipEpoch(2), PrimaryBackupFence.Kind.VOTE,
+                0, 0, Bytes.copyOf(new byte[32]));
+        var frame = PbWire.encode(new PeerEnvelope(new NodeId(2), new NodeId(1), vote));
+        byte[] shortBody = Arrays.copyOf(frame.body().toByteArray(), frame.body().size() - 1);
+        assertThrows(IllegalArgumentException.class,
+                () -> PbWire.decode(new Frame(3, PbWire.FENCE, 0, 0, 0, 0, Bytes.copyOf(shortBody))));
     }
 }

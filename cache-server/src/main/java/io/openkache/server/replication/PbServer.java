@@ -6,6 +6,7 @@ import io.netty.channel.nio.NioIoHandler;
 import io.netty.channel.socket.SocketChannel;
 import io.netty.channel.socket.nio.NioServerSocketChannel;
 import io.openkache.core.api.*;
+import io.openkache.core.failure.SwimConfig;
 import io.openkache.core.kv.KvEngine;
 import io.openkache.core.model.*;
 import io.openkache.core.replication.primarybackup.*;
@@ -15,6 +16,9 @@ import io.openkache.core.replication.raft.*;
 import io.openkache.core.replication.chain.*;
 import io.openkache.core.replication.rose.*;
 import io.openkache.core.spi.*;
+import io.openkache.server.failure.SwimRuntime;
+import io.openkache.server.failure.netty.SwimDatagramHandler;
+import io.openkache.server.failure.netty.SwimUdpTransport;
 import io.openkache.server.metrics.ServerMetrics;
 import io.openkache.server.netty.*;
 import java.time.Duration;
@@ -46,6 +50,7 @@ public final class PbServer implements AutoCloseable {
     private volatile long masterDetectedNs=-1;
     private ServerMetrics metrics;
     private ScheduledExecutorService timer;
+    private SwimRuntime swim;
     private Channel client,peer;
     private PbServer(PbNodeConfig config) { this.config=config; }
     /** 동기 bind는 호출 thread에서만 수행한다. 실패하면 이미 시작한 구성 요소도 닫는다. */
@@ -54,6 +59,10 @@ public final class PbServer implements AutoCloseable {
         try { server.open(); return server; } catch(RuntimeException | InterruptedException e) { server.close(); throw e; }
     }
     private void open() throws InterruptedException {
+        boolean fenced = config.protocol().equals("PB_FENCED");
+        if (fenced && config.addresses().values().stream().anyMatch(a -> a.isUnresolved() || !a.getAddress().isLoopbackAddress())) {
+            throw new IllegalArgumentException("PB_FENCED prototype requires loopback peers");
+        }
         metrics=ServerMetrics.start("127.0.0.1",config.adminPort());
         protocolWorker=new OwnerWorker(new WorkerId(100),4096); kvWorker=new OwnerWorker(new WorkerId(0),4096);
         kv=new KvEngine(new NodeId(config.node()),List.of(kvWorker),time);
@@ -79,16 +88,26 @@ public final class PbServer implements AutoCloseable {
                     Duration.ofMillis(config.heartbeatMs()),Duration.ofMillis(config.timeoutMs()),VrEngine.Mode.valueOf(config.vrMode()));
             engine=vrEngine;
         } else {
-        pbEngine=new CrashOnlyPrimaryBackupEngine(new PrimaryBackupConfig(new NodeId(config.node()),new NodeId(0),
+            pbEngine=new CrashOnlyPrimaryBackupEngine(new PrimaryBackupConfig(new NodeId(config.node()),new NodeId(0),
                 List.of(new NodeId(1),new NodeId(2)),new OwnershipEpoch(1)),kv,protocolWorker,transport,time,
-                Duration.ofMillis(config.heartbeatMs()),Duration.ofMillis(config.timeoutMs()));
+                Duration.ofMillis(config.heartbeatMs()),Duration.ofMillis(config.timeoutMs()),
+                fenced ? Duration.ofMillis(config.timeoutMs()) : null);
             engine=pbEngine;
         }
         peer=bind(config.peerPort(),new PeerHandler());
         client=bind(config.clientPort(),new ClientRequestHandler(metrics,engine,Duration.ofSeconds(1)));
+        if (fenced) {
+            NodeId self = new NodeId(config.node());
+            var udp = new SwimUdpTransport(self, config.addresses(), io);
+            var fdConfig = new SwimConfig(Duration.ofMillis(200), Duration.ofMillis(60), Duration.ofMillis(100),
+                    Duration.ofMillis(600), 1, 3, 4);
+            swim = new SwimRuntime(self, members, fdConfig, udp, pbEngine::onMembershipChanged, 101, config.electionSeed() + config.node());
+            udp.bind(config.hosts().get(config.node()), config.peerPort(), new SwimDatagramHandler(swim, metrics));
+            swim.start();
+        }
         timer=Executors.newSingleThreadScheduledExecutor(r->new Thread(r,"pb-timer-"+config.node()));
         timer.scheduleAtFixedRate(()->{
-            if(raftEngine!=null || chainEngine!=null || roseEngine!=null || config.node()==0 || heartbeatSeen.get()) engine.onTimer(new TimerEvent(tickName(),time.monotonicNanos()));
+            if(fenced || raftEngine!=null || chainEngine!=null || roseEngine!=null || config.node()==0 || heartbeatSeen.get()) engine.onTimer(new TimerEvent(tickName(),time.monotonicNanos()));
         },0,config.tickMs(),TimeUnit.MILLISECONDS);
     }
     private String tickName() {
@@ -106,6 +125,7 @@ public final class PbServer implements AutoCloseable {
             if(frame.messageClass()!=Protocol.CLASS_PEER || frame.flags()!=0 || frame.status()!=0) { respond(ctx,frame,ResultStatus.BAD_REQUEST,"invalid peer header"); return; }
             try {
                 if((pbEngine!=null && frame.opcode()>=PbWire.REPLICATE && frame.opcode()<=PbWire.CONTROL)
+                        || (config.protocol().equals("PB_FENCED") && frame.opcode()==PbWire.FENCE)
                         || (vrEngine!=null && frame.opcode()>=VrWire.PREPARE && frame.opcode()<=VrWire.CHANGE_ACK)
                         || (raftEngine!=null && frame.opcode()>=RaftWire.VOTE && frame.opcode()<=RaftWire.APPEND_REPLY)
                         || (chainEngine!=null && frame.opcode()>=ChainWire.FORWARD && frame.opcode()<=ChainWire.VERSION_REPLY)
@@ -124,6 +144,10 @@ public final class PbServer implements AutoCloseable {
                     ctx.writeAndFlush(Frame.response(frame.requestId(),frame.opcode(),
                         Result.ok(Bytes.utf8(statusJson()),0,RoutingVersion.ZERO,engine.snapshot().ownershipEpoch()),""));
                 } else if(frame.opcode()==PbWire.LOCAL_GET) {
+                    if (config.protocol().equals("PB_FENCED")) {
+                        respond(ctx,frame,ResultStatus.NOT_IMPLEMENTED,"local diagnostic reads disabled in fenced mode");
+                        return;
+                    }
                     var context=new RequestContext(new ClientId(0),new OperationId(frame.requestId()),RoutingVersion.ZERO,
                             engine.snapshot().ownershipEpoch(),Deadline.after(time,Duration.ofSeconds(1)));
                     kv.execute(new Command.Get(frame.body()),context).whenComplete((value,error)->{
@@ -211,7 +235,16 @@ public final class PbServer implements AutoCloseable {
         return "{\"protocol\":\""+config.protocol()+"\",\"node\":"+config.node()+",\"epoch\":"+engine.snapshot().ownershipEpoch().value()+",\"heartbeatSeen\":"+heartbeatSeen.get()
                 +",\"nanoTime\":"+time.monotonicNanos()+",\"detectedNs\":"+detectedAt()+",\"readyNs\":"+readyAt()
                 +",\"bootEpochMs\":"+startEpochMs+",\"uptimeNs\":"+(System.nanoTime()-startNano)
-                +vrStatus()+raftStatus()+chainStatus()+roseStatus()+",\"peerTx\":"+transport.trafficJson()+",\"sentBytes\":"+transport.sentBytes()+",\"transportFailures\":"+transport.failures()+"}";
+                +vrStatus()+raftStatus()+chainStatus()+roseStatus()+fenceStatus()+",\"peerTx\":"+transport.trafficJson()+",\"sentBytes\":"+transport.sentBytes()+",\"transportFailures\":"+transport.failures()+"}";
+    }
+    private String fenceStatus() {
+        var o = pbEngine == null ? null : pbEngine.fenceObservation();
+        if (o == null) return "";
+        return ",\"primary\":" + o.primary().value() + ",\"suspectNs\":" + o.suspectAt() + ",\"quorumNs\":" + o.quorumAt()
+                + ",\"promotionAuthorizedNs\":" + o.authorizedAt()
+                + ",\"installedNs\":" + o.installedAt() + ",\"peerReadyNs\":" + o.peerReadyAt()
+                + ",\"leaseDeadlineNs\":" + o.leaseDeadline() + ",\"promotionVotes\":" + o.votes()
+                + ",\"fenceState\":\"" + o.state() + "\"";
     }
     /** mainの待機に使うclient listenerのclose future。 */
     private long detectedAt() {
@@ -254,6 +287,7 @@ public final class PbServer implements AutoCloseable {
     @Override public void close() {
         if(!closed.compareAndSet(false,true)) return;
         if(timer!=null) timer.shutdownNow();
+        if(swim!=null) swim.close();
         if(client!=null) client.close().awaitUninterruptibly();
         if(peer!=null) peer.close().awaitUninterruptibly();
         if(engine!=null) engine.close();

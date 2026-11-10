@@ -26,7 +26,7 @@ public record PbNodeConfig(int node,List<String> hosts,int clientPort,int peerPo
     }
     public PbNodeConfig {
         hosts=List.copyOf(hosts);
-        if(!Set.of("PB","VR","RAFT","CHAIN","ROSE").contains(protocol) || !Set.of("INCREMENTAL","INCREMENTAL_CATCHUP").contains(vrMode)
+        if(!Set.of("PB","PB_FENCED","VR","RAFT","CHAIN","ROSE").contains(protocol) || !Set.of("INCREMENTAL","INCREMENTAL_CATCHUP").contains(vrMode)
                 || !Set.of("TAIL_ONLY","CRAQ").contains(chainReadMode) || roseLimit< -1 || retryMs<1 || node<0 || node>2 || hosts.size()!=3 || hosts.stream().anyMatch(String::isBlank)
                 || clientPort<1 || clientPort>65535 || peerPort<1 || peerPort>65535 || adminPort<0 || adminPort>65535
                 || clientPort==peerPort || clientPort==adminPort || peerPort==adminPort

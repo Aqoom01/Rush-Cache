@@ -2,6 +2,8 @@
 
 [최종 EC2 250회 결과](final-results.md) · [재현 계획](final-validation-plan.md)
 
+[A1·A3 로컬 펜싱 검증](fencing-local.md)
+
 ## Chain·CRAQ·Rosé 실서버와 종합 비교 (9~12단계)
 
 `protocol=CHAIN`(`chain.read.mode=TAIL_ONLY|CRAQ`)과 `protocol=ROSE`(`rose.limit`)를 같은 `PbServerMain` 조립부에 추가했다. 두 엔진은 자체 failure detector가 없으므로 실험 controller가 **정확한 영구 crash를 아는 외부 master** 역할을 맡아 peer opcode38(FREEZE/REPAIR/OPEN)과 37(로그 digest)로 복구를 조정한다. 감지는 controller의 고정 대기(timeout.ms)이며 실제 failure detection이 아니다. wire 형식은 [protocol-v1 §11](../../../docs/protocol-v1.md)이다.
