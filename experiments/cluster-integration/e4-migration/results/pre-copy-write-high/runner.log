@@ -1,0 +1,11 @@
+connecting to 10.42.1.14:7000 (study=cluster-e4 variant=pre-copy-write-high scenario=hot-tablet-move seed=42)
+migration tablet=3 1->0 pre-copy: phase=4 sent=10026.3ms finished=18619.9ms 
+run 1/1
+executionId=103d4008-8a3e-48cd-a0b3-f6abd097e03f
+measured: requests=300000 elapsedMs=60000.3 throughputPerSec=5000.0 p50us=318.2 p99us=69247.0
+outcomes: {HIT=79950, MISS=70363, WRITE_OK=149687, BUSY=0, TIMEOUT=0, UNAVAILABLE=0, SERVER_ERROR=0, CLIENT_FAILURE=0}
+target 10.42.1.14:7000 b1-node-0 (final responder): requests=202929 share=0.676 p50us=317.0 p99us=66184.0
+target 10.42.1.203:7000 b1-node-1 (final responder): requests=97071 share=0.324 p50us=320.4 p99us=75134.9
+result json: /opt/openkache/results/101425_memory_n2_pre-copy-write-high_local_366f45b6/cluster-e4/103d4008-8a3e-48cd-a0b3-f6abd097e03f.json
+result csv: /opt/openkache/results/101425_memory_n2_pre-copy-write-high_local_366f45b6/cluster-e4/summary.csv
+summary: success=1 failed=0 timeout=0 skipped=0 (/opt/openkache/results/101425_memory_n2_pre-copy-write-high_local_366f45b6/cluster-e4/run-summary-pre-copy-write-high-hot-tablet-move-1794359831463-3dbb9439-db5b-4401-8bc5-d9358030baa2.json)

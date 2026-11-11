@@ -4,6 +4,9 @@
  *
  * <p>구성: {@code B1Server}(조립부), {@code B1Wire}(peer frame 변환, protocol-v1.md §6-2),
  * {@code B1NodeConfig}(고정 노드 설정), {@code B1ServerMain}(진입점).
+ * B3 Tablet 이동(protocol-v1.md §6-5): {@code NodeStore}(worker 전용 저장소, B3 Source 구현),
+ * {@code MigrationDriver}(source의 job 진행·commit), {@code RemoteDestination}·{@code MigrationReceiver}(TRANSFER 송수신),
+ * {@code MigrationWire}(body 형식), {@code PeerCaller}(응답을 기다리는 peer 요청).
  * node 0이 Controller를 겸한다. 인증이 없으므로 전용 보안 그룹 안에서만 사용한다.
  */
 package io.openkache.server.routing;

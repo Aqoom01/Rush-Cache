@@ -109,9 +109,11 @@ if [ "$server" = b1 ]; then
   printf 'node.id=%s\nhosts=%s\nclient.port=7000\npeer.port=7001\ntablets.per.node=%s\n' \
     "\$idx" "\$(echo \$members | tr ' ' ',')" "$tablets_per_node" > /opt/openkache/b1.properties
   # B1Server는 hosts의 자기 IP에 bind하므로 host network로 띄운다. heap은 기존 cache-server와 같게 둔다.
+  # GC 정지를 지연 급등과 맞춰 보려고 GC 로그를 남긴다(실험 뒤 결과 폴더로 올린다). 컨테이너는 root가 아니다.
+  mkdir -p /opt/openkache/logs && chmod 777 /opt/openkache/logs && rm -f /opt/openkache/logs/gc.log
   docker run -d --name openkache-b1 --network host \
-    -v /opt/openkache/b1.properties:/app/config/b1.properties:ro \
-    --entrypoint java openkache-server -Xms2g -Xmx2g -cp '/app/lib/*' \
+    -v /opt/openkache/b1.properties:/app/config/b1.properties:ro -v /opt/openkache/logs:/logs \
+    --entrypoint java openkache-server -Xms2g -Xmx2g -Xlog:gc:file=/logs/gc.log:utctime,uptime -cp '/app/lib/*' \
     io.openkache.server.routing.B1ServerMain /app/config/b1.properties > /dev/null || exit 1
   for _ in \$(seq 1 60); do
     timeout 1 bash -c "</dev/tcp/\$ip/7000" 2> /dev/null && { echo "b1 node \$idx 시작(\$ip)"; exit 0; }
@@ -166,7 +168,26 @@ EOF
 )
 
 echo "실험 시작: $config → $target_hosts (부하 생성 $loadgen)"
-if ! ssm_run "$loadgen" "$remote" $(( exec_ms / 1000 + 600 )); then
+rc=0
+ssm_run "$loadgen" "$remote" $(( exec_ms / 1000 + 600 )) || rc=1
+
+# B1 서버 GC 로그는 실험 성공 여부와 관계없이 노드에서 결과 폴더로 올린다(NodeId 순서로 gc-node-<id>.log).
+if [ "$server" = b1 ]; then
+  gc_upload=$(cat <<EOF
+members="$node_ips"
+ip=\$(hostname -I | awk '{print \$1}')
+i=0
+for m in \$members; do
+  [ "\$m" = "\$ip" ] && aws s3 cp --region $AWS_REGION --only-show-errors /opt/openkache/logs/gc.log "${dest}gc-node-\$i.log"
+  i=\$((i + 1))
+done
+exit 0
+EOF
+)
+  ssm_run "$node_ids" "$gc_upload" 120 > /dev/null || echo "GC 로그 업로드 일부 실패" >&2
+fi
+
+if [ "$rc" -ne 0 ]; then
   echo "실험 실패. 올라간 결과·로그: $dest" >&2
   exit 1
 fi

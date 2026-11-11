@@ -20,8 +20,13 @@ import java.nio.charset.StandardCharsets;
  */
 final class WireClient implements AutoCloseable {
 
-    /** 응답에서 Runner가 관찰하는 필드. */
-    record Response(int status, long valueVersion, byte[] value, String detail) {}
+    /**
+     * 응답에서 Runner가 관찰하는 필드.
+     *
+     * @param routingVersion 응답에 실린 서버 표 버전(B1 서버만 의미 있음)
+     * @param tail value 뒤에 덧붙은 bytes. MOVED면 protocol-v1 §6-1 redirect, 아니면 빈 배열
+     */
+    record Response(int status, long valueVersion, byte[] value, String detail, long routingVersion, byte[] tail) {}
 
     private final Socket socket;
     private final DataInputStream in;
@@ -41,8 +46,14 @@ final class WireClient implements AutoCloseable {
     /** PING. 연결 확인용이며 실패하면 예외를 던진다. */
     void ping() throws IOException {
         long requestId = nextRequestId++;
-        writeRequest(WireProtocol.OP_PING, requestId, new byte[0]);
+        writeRequest(WireProtocol.CLASS_CLIENT_REQUEST, WireProtocol.OP_PING, requestId, 0, new byte[0]);
         readResponse();
+    }
+
+    /** peer class 요청(B1 표 조회·이동 지시 등). peer listener 포트로 연 연결에서만 쓴다. */
+    Response peer(int opcode, byte[] body) throws IOException {
+        writeRequest(WireProtocol.CLASS_PEER, opcode, nextRequestId++, 0, body);
+        return readResponse();
     }
 
     /**
@@ -53,9 +64,15 @@ final class WireClient implements AutoCloseable {
      */
     Response send(Command command, long clientId, long operationId, long ownershipEpoch, long timeoutMs)
             throws IOException {
+        return send(command, clientId, operationId, ownershipEpoch, timeoutMs, 0);
+    }
+
+    /** {@code routingVersion}은 클라이언트가 아는 라우팅 표 버전(헤더 필드). 모르면 0. */
+    Response send(Command command, long clientId, long operationId, long ownershipEpoch, long timeoutMs,
+                  long routingVersion) throws IOException {
         int opcode = opcodeOf(command);
         byte[] body = encodeBody(command, clientId, operationId, ownershipEpoch, timeoutMs);
-        writeRequest(opcode, operationId, body);
+        writeRequest(WireProtocol.CLASS_CLIENT_REQUEST, opcode, operationId, routingVersion, body);
         return readResponse();
     }
 
@@ -104,16 +121,17 @@ final class WireClient implements AutoCloseable {
         return buffer.toByteArray();
     }
 
-    private void writeRequest(int opcode, long requestId, byte[] body) throws IOException {
+    private void writeRequest(int messageClass, int opcode, long requestId, long routingVersion, byte[] body)
+            throws IOException {
         out.writeInt(WireProtocol.HEADER_BYTES + body.length);
         out.writeShort(WireProtocol.MAGIC);
         out.writeByte(WireProtocol.VERSION);
-        out.writeByte(WireProtocol.CLASS_CLIENT_REQUEST);
+        out.writeByte(messageClass);
         out.writeByte(opcode);
         out.writeByte(0); // flags
         out.writeShort(0); // status
         out.writeLong(requestId);
-        out.writeLong(0); // routingVersion: 아는 값 없음(단일 노드 baseline)
+        out.writeLong(routingVersion);
         out.write(body);
         out.flush();
     }
@@ -130,7 +148,7 @@ final class WireClient implements AutoCloseable {
         in.readUnsignedByte(); // flags
         int status = in.readUnsignedShort();
         in.readLong(); // requestId (closed-loop라 매칭 없이 바로 소비한다)
-        in.readLong(); // routingVersion
+        long routingVersion = in.readLong();
         in.readLong(); // ownershipEpoch
         long valueVersion = in.readLong();
         int detailLength = in.readInt();
@@ -141,10 +159,14 @@ final class WireClient implements AutoCloseable {
         in.readFully(value);
 
         int consumed = 2 + 1 + 1 + 1 + 1 + 2 + 8 + 8 + 8 + 8 + 4 + detailLength + 4 + valueLength;
-        if (consumed != length) {
+        if (consumed > length) {
             throw new IOException("response length mismatch: declared " + length + " consumed " + consumed);
         }
-        return new Response(status, valueVersion, value, new String(detailBytes, StandardCharsets.UTF_8));
+        // B1 MOVED 응답은 value 뒤에 redirect 주소(§6-1)를 덧붙인다
+        byte[] tail = new byte[length - consumed];
+        in.readFully(tail);
+        return new Response(status, valueVersion, value, new String(detailBytes, StandardCharsets.UTF_8),
+                routingVersion, tail);
     }
 
     @Override

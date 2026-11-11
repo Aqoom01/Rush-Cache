@@ -69,6 +69,10 @@ final class ExperimentRunner {
     }
 
     ExperimentResult run() throws IOException, InterruptedException {
+        Optional<ClusterConfig> cluster = ClusterConfig.from(config.configSnapshot());
+        if (cluster.isPresent()) {
+            return new ClusterRunner(config, cluster.get(), this).run();
+        }
         if (config.windowed().isPresent()) {
             return runWindowed(config.windowed().get());
         }
@@ -425,7 +429,7 @@ final class ExperimentRunner {
         };
     }
 
-    private ExperimentResult buildResult(
+    ExperimentResult buildResult(
             ResultAccumulator accumulator,
             List<TargetResult> targets,
             List<WindowResult> windows,
@@ -478,7 +482,7 @@ final class ExperimentRunner {
                 List.copyOf(windows));
     }
 
-    private static Map<Outcome, Long> counts(ResultAccumulator accumulator) {
+    static Map<Outcome, Long> counts(ResultAccumulator accumulator) {
         Map<Outcome, Long> counts = new EnumMap<>(Outcome.class);
         for (Outcome outcome : Outcome.values()) {
             counts.put(outcome, accumulator.count(outcome));

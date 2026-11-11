@@ -198,7 +198,7 @@ public record RunnerConfig(
         Parser p = new Parser(properties);
 
         for (String key : properties.stringPropertyNames()) {
-            if (!KEYS.contains(key)) {
+            if (!KEYS.contains(key) && !ClusterConfig.KEYS.contains(key)) {
                 p.errors.add("unknown key '" + key + "'");
             }
         }
@@ -259,6 +259,7 @@ public record RunnerConfig(
         double burstFactor = p.doubleValue("burst.factor", "3.0", 0.0, 1000.0);
         double burstWidth = p.doubleValue("burst.width", "0.05", 1e-9, 1.0);
         Optional<Windowed> windowed = p.windowed(targets.size(), routingBoundaries);
+        ClusterConfig.parse(properties::getProperty, p.errors);
 
         if (!p.errors.isEmpty()) {
             throw new ConfigException("invalid config: " + String.join("; ", p.errors));
