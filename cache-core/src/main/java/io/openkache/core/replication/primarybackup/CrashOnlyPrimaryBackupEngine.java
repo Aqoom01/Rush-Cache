@@ -36,6 +36,7 @@ public final class CrashOnlyPrimaryBackupEngine implements CacheEngine {
     private final Transport transport;
     private final TimeSource time;
     private final long interval, timeout;
+    private final boolean fixedTimeoutDetection;
     private final NodeId successor, survivor;
     private final PrimaryBackupFence fence;
     private final MessageDigest backupHistory;
@@ -66,17 +67,30 @@ public final class CrashOnlyPrimaryBackupEngine implements CacheEngine {
      */
     public CrashOnlyPrimaryBackupEngine(PrimaryBackupConfig config, CacheEngine kv, Mailbox owner,
             Transport transport, TimeSource time, Duration interval, Duration timeout) {
-        this(config, kv, owner, transport, time, interval, timeout, null);
+        this(config, kv, owner, transport, time, interval, timeout, true, null);
+    }
+
+    /** 외부 failure detector가 승격을 시작할 때 내부 heartbeat timeout 감지를 끈다. */
+    public CrashOnlyPrimaryBackupEngine(PrimaryBackupConfig config, CacheEngine kv, Mailbox owner,
+            Transport transport, TimeSource time, Duration interval, Duration timeout, boolean fixedTimeoutDetection) {
+        this(config, kv, owner, transport, time, interval, timeout, fixedTimeoutDetection, null);
     }
 
     /** lease를 주면 외부 membership 이벤트와 투표를 사용하는 펜싱 모드다. */
     public CrashOnlyPrimaryBackupEngine(PrimaryBackupConfig config, CacheEngine kv, Mailbox owner,
             Transport transport, TimeSource time, Duration interval, Duration timeout, Duration lease) {
+        this(config, kv, owner, transport, time, interval, timeout, false, lease);
+    }
+
+    private CrashOnlyPrimaryBackupEngine(PrimaryBackupConfig config, CacheEngine kv, Mailbox owner,
+            Transport transport, TimeSource time, Duration interval, Duration timeout,
+            boolean fixedTimeoutDetection, Duration lease) {
         if (config.backupIds().size() != 2 || interval.isNegative() || interval.isZero()
                 || timeout.compareTo(interval) <= 0 || (lease != null && lease.compareTo(interval) <= 0))
             throw new IllegalArgumentException("invalid primary-backup configuration");
         this.initial = config; this.config = config; this.kv = kv; this.owner = owner;
         this.transport = transport; this.time = time; this.interval = interval.toNanos(); this.timeout = timeout.toNanos();
+        this.fixedTimeoutDetection = fixedTimeoutDetection;
         var backups = config.backupIds().stream().sorted(Comparator.comparingLong(NodeId::value)).toList();
         successor = backups.get(0); survivor = backups.get(1);
         fence = lease == null ? null : new PrimaryBackupFence(config, successor, survivor, time, transport, interval, lease);
@@ -88,9 +102,15 @@ public final class CrashOnlyPrimaryBackupEngine implements CacheEngine {
 
     /** Latch A3 events for the owner tick, even if its mailbox is temporarily full. */
     public void onMembershipChanged(MembershipEvent event) {
-        if (fence == null || !event.member().equals(initial.primaryId())) return;
+        if (!event.member().equals(initial.primaryId())) return;
         if (event.current() == MemberStatus.SUSPECT) firstSuspect.compareAndSet(null, event);
         if (event.current() == MemberStatus.DEAD) firstDead.compareAndSet(null, event);
+    }
+
+    /** SWIM 어댑터가 DEAD 시각만 제공하는 기존 호출부를 위한 편의 진입점. */
+    public void onPrimaryFailure(NodeId failed, long observedAtNanos) {
+        if (!failed.equals(initial.primaryId()) || observedAtNanos < 0) return;
+        onMembershipChanged(new MembershipEvent(failed, MemberStatus.SUSPECT, MemberStatus.DEAD, 0, observedAtNanos));
     }
 
     private void observeMembership() {
@@ -100,7 +120,8 @@ public final class CrashOnlyPrimaryBackupEngine implements CacheEngine {
         MembershipEvent dead = firstDead.get();
         if (dead != null && detectedAt == -1) {
             detectedAt = dead.observedAtNanos();
-            fence.observeDead(dead.member());
+            if (fence != null) fence.observeDead(dead.member());
+            else if (!fixedTimeoutDetection && config.nodeId().equals(successor) && !transitioning) install();
         }
     }
 
@@ -164,8 +185,8 @@ public final class CrashOnlyPrimaryBackupEngine implements CacheEngine {
             delegate.onTimer(new TimerEvent(PrimaryBackupEngine.REPLICATE_DEADLINE_TIMER, time.monotonicNanos()));
             if (!TICK.equals(event.name())) return;
             long now = time.monotonicNanos();
+            observeMembership();
             if (fence != null) {
-                observeMembership();
                 backupPending -= completedBackupApplies.getAndSet(0);
                 if (transitioning && !installed && installBarrierPassed.get()) finishInstall();
                 if (fence.voted() && frozenDigest == null && backupPending == 0 && !backupApplyFailed.get() && backupHistory != null) {
@@ -191,7 +212,7 @@ public final class CrashOnlyPrimaryBackupEngine implements CacheEngine {
                     for (NodeId backup : initial.backupIds()) send(backup, Kind.HEARTBEAT);
                 }
             } else if (config.nodeId().equals(successor)) {
-                if (!transitioning && now - lastHeartbeat >= timeout) { detectedAt = now; install(); }
+                if (fixedTimeoutDetection && !transitioning && now - lastHeartbeat >= timeout) { detectedAt = now; install(); }
                 if (transitioning && !serving && (lastSent == Long.MIN_VALUE || now - lastSent >= interval)) {
                     lastSent = now; send(survivor, Kind.INSTALL);
                 }

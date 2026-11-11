@@ -6,7 +6,7 @@ import io.netty.channel.nio.NioIoHandler;
 import io.netty.channel.socket.SocketChannel;
 import io.netty.channel.socket.nio.NioServerSocketChannel;
 import io.openkache.core.api.*;
-import io.openkache.core.failure.SwimConfig;
+import io.openkache.core.failure.*;
 import io.openkache.core.kv.KvEngine;
 import io.openkache.core.model.*;
 import io.openkache.core.replication.primarybackup.*;
@@ -33,6 +33,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
  */
 public final class PbServer implements AutoCloseable {
     private final PbNodeConfig config;
+    private final PbExperimentRuntime experiment;
+    private final ConcurrentLinkedQueue<MembershipEvent> membershipEvents=new ConcurrentLinkedQueue<>();
     private final TimeSource time=TimeSource.system();
     private final long startNano=System.nanoTime(),startEpochMs=System.currentTimeMillis();
     private final AtomicBoolean closed=new AtomicBoolean(),heartbeatSeen=new AtomicBoolean();
@@ -48,67 +50,96 @@ public final class PbServer implements AutoCloseable {
     private RoseEngine roseEngine;
     /** 외부 master의 FREEZE 제어를 받은 이 JVM의 monotonic 시각. Chain/Rosé는 자체 장애 감지가 없다. */
     private volatile long masterDetectedNs=-1;
+    private volatile MemberStatus primaryFailureStatus=MemberStatus.ALIVE;
+    private volatile long fdSuspectNs=-1,fdDeadNs=-1;
+    private final ConcurrentMap<NodeId,MemberStatus> raftMemberStatus=new ConcurrentHashMap<>();
     private ServerMetrics metrics;
     private ScheduledExecutorService timer;
     private SwimRuntime swim;
+    private SwimUdpTransport swimTransport;
     private Channel client,peer;
-    private PbServer(PbNodeConfig config) { this.config=config; }
+    private PbServer(PbNodeConfig config,PbExperimentRuntime experiment) { this.config=config; this.experiment=experiment; }
     /** 동기 bind는 호출 thread에서만 수행한다. 실패하면 이미 시작한 구성 요소도 닫는다. */
     public static PbServer start(PbNodeConfig config) throws InterruptedException {
-        PbServer server=new PbServer(config);
+        return start(config,PbExperimentRuntime.defaults());
+    }
+    public static PbServer start(PbNodeConfig config,PbExperimentRuntime experiment) throws InterruptedException {
+        PbServer server=new PbServer(config,experiment);
         try { server.open(); return server; } catch(RuntimeException | InterruptedException e) { server.close(); throw e; }
     }
     private void open() throws InterruptedException {
         boolean fenced = config.protocol().equals("PB_FENCED");
-        if (fenced && config.addresses().values().stream().anyMatch(a -> a.isUnresolved() || !a.getAddress().isLoopbackAddress())) {
-            throw new IllegalArgumentException("PB_FENCED prototype requires loopback peers");
+        if (fenced && config.addresses().values().stream().anyMatch(a -> a.isUnresolved()
+                || !(a.getAddress().isLoopbackAddress() || a.getAddress().isSiteLocalAddress()))) {
+            throw new IllegalArgumentException("PB_FENCED requires resolved loopback or private-network peers");
         }
         metrics=ServerMetrics.start("127.0.0.1",config.adminPort());
         protocolWorker=new OwnerWorker(new WorkerId(100),4096); kvWorker=new OwnerWorker(new WorkerId(0),4096);
-        kv=new KvEngine(new NodeId(config.node()),List.of(kvWorker),time);
+        kv=new KvEngine(new NodeId(config.node()),List.of(experiment.kvMailbox(kvWorker)),time,experiment.storage(),experiment);
         io=new MultiThreadIoEventLoopGroup(2,NioIoHandler.newFactory());
         accept=new MultiThreadIoEventLoopGroup(1,NioIoHandler.newFactory());
         transport=new PbTransport(io,config.addresses(),switch(config.protocol()) {
             case "RAFT" -> RaftWire::encode; case "VR" -> VrWire::encode; case "CHAIN" -> ChainWire::encode; case "ROSE" -> RoseWire::encode; default -> PbWire::encode; });
+        Transport engineTransport=experiment.transport(transport,"raft");
         List<NodeId> members=List.of(new NodeId(0),new NodeId(1),new NodeId(2));
         if(config.protocol().equals("CHAIN")) {
-            chainEngine=new ChainEngine(new NodeId(config.node()),members,1,kv,protocolWorker,transport,time,
+            chainEngine=new ChainEngine(new NodeId(config.node()),members,1,kv,protocolWorker,engineTransport,time,
                     Duration.ofMillis(config.retryMs()),ChainEngine.ReadMode.valueOf(config.chainReadMode()));
             engine=chainEngine;
         } else if(config.protocol().equals("ROSE")) {
-            roseEngine=new RoseEngine(new NodeId(config.node()),members,new NodeId(0),1,config.roseLimit(),kv,protocolWorker,transport,time,
+            roseEngine=new RoseEngine(new NodeId(config.node()),members,new NodeId(0),1,config.roseLimit(),kv,protocolWorker,engineTransport,time,
                     Duration.ofMillis(config.retryMs()));
             engine=roseEngine;
         } else if(config.protocol().equals("RAFT")) {
-            raftEngine=new RaftEngine(new NodeId(config.node()),List.of(new NodeId(0),new NodeId(1),new NodeId(2)),kv,protocolWorker,transport,time,
-                    Duration.ofMillis(config.heartbeatMs()),Duration.ofMillis(config.timeoutMs()),config.electionSeed()+104729L*config.node());
+            raftEngine=new RaftEngine(new NodeId(config.node()),List.of(new NodeId(0),new NodeId(1),new NodeId(2)),kv,protocolWorker,engineTransport,time,
+                    Duration.ofMillis(config.heartbeatMs()),Duration.ofMillis(config.timeoutMs()),config.electionSeed()+104729L*config.node(),config.swimFailureDetector());
             engine=raftEngine;
         } else if(config.protocol().equals("VR")) {
-            vrEngine=new VrEngine(new NodeId(config.node()),List.of(new NodeId(0),new NodeId(1),new NodeId(2)),kv,protocolWorker,transport,time,
+            vrEngine=new VrEngine(new NodeId(config.node()),List.of(new NodeId(0),new NodeId(1),new NodeId(2)),kv,protocolWorker,engineTransport,time,
                     Duration.ofMillis(config.heartbeatMs()),Duration.ofMillis(config.timeoutMs()),VrEngine.Mode.valueOf(config.vrMode()));
             engine=vrEngine;
         } else {
-            pbEngine=new CrashOnlyPrimaryBackupEngine(new PrimaryBackupConfig(new NodeId(config.node()),new NodeId(0),
-                List.of(new NodeId(1),new NodeId(2)),new OwnershipEpoch(1)),kv,protocolWorker,transport,time,
-                Duration.ofMillis(config.heartbeatMs()),Duration.ofMillis(config.timeoutMs()),
-                fenced ? Duration.ofMillis(config.timeoutMs()) : null);
+            var pbConfig=new PrimaryBackupConfig(new NodeId(config.node()),new NodeId(0),
+                    List.of(new NodeId(1),new NodeId(2)),new OwnershipEpoch(1));
+            if(fenced) pbEngine=new CrashOnlyPrimaryBackupEngine(pbConfig,kv,protocolWorker,engineTransport,time,
+                    Duration.ofMillis(config.heartbeatMs()),Duration.ofMillis(config.timeoutMs()),Duration.ofMillis(config.timeoutMs()));
+            else pbEngine=new CrashOnlyPrimaryBackupEngine(pbConfig,kv,protocolWorker,engineTransport,time,
+                    Duration.ofMillis(config.heartbeatMs()),Duration.ofMillis(config.timeoutMs()),!config.swimFailureDetector());
             engine=pbEngine;
         }
         peer=bind(config.peerPort(),new PeerHandler());
         client=bind(config.clientPort(),new ClientRequestHandler(metrics,engine,Duration.ofSeconds(1)));
-        if (fenced) {
+        if (config.swimFailureDetector()) {
             NodeId self = new NodeId(config.node());
-            var udp = new SwimUdpTransport(self, config.addresses(), io);
-            var fdConfig = new SwimConfig(Duration.ofMillis(200), Duration.ofMillis(60), Duration.ofMillis(100),
-                    Duration.ofMillis(600), 1, 3, 4);
-            swim = new SwimRuntime(self, members, fdConfig, udp, pbEngine::onMembershipChanged, 101, config.electionSeed() + config.node());
-            udp.bind(config.hosts().get(config.node()), config.peerPort(), new SwimDatagramHandler(swim, metrics));
-            swim.start();
+            swimTransport = new SwimUdpTransport(self, config.failureAddresses(), io);
+            var fdConfig = new SwimConfig(Duration.ofMillis(config.failureProbeIntervalMs()),
+                    Duration.ofMillis(config.failureDirectTimeoutMs()),Duration.ofMillis(config.failureIndirectTimeoutMs()),
+                    Duration.ofMillis(config.failureSuspicionMs()),1,3,64,config.lifeguardFailureDetector(),
+                    config.lifeguardFailureDetector()?config.failureAwarenessMaxMultiplier():0,
+                    config.lifeguardFailureDetector()?config.failureSuspicionMaxTimeoutMultiplier():1,
+                    config.lifeguardFailureDetector()?config.failureMaxConfirmations():0);
+            swim = new SwimRuntime(self,members,fdConfig,experiment.transport(swimTransport,"udp"),this::onMembershipChanged,
+                    101,config.electionSeed()+config.node());
+            swimTransport.bind(config.hosts().get(config.node()),config.failurePort(),new SwimDatagramHandler(swim,metrics,swimTransport,()->experiment.dropIncoming("udp")));
+            swim.start(Duration.ofMillis(config.failureStartupGraceMs()));
         }
         timer=Executors.newSingleThreadScheduledExecutor(r->new Thread(r,"pb-timer-"+config.node()));
         timer.scheduleAtFixedRate(()->{
-            if(fenced || raftEngine!=null || chainEngine!=null || roseEngine!=null || config.node()==0 || heartbeatSeen.get()) engine.onTimer(new TimerEvent(tickName(),time.monotonicNanos()));
+            if(fenced || config.swimFailureDetector() || raftEngine!=null || chainEngine!=null || roseEngine!=null || config.node()==0 || heartbeatSeen.get()) engine.onTimer(new TimerEvent(tickName(),time.monotonicNanos()));
         },0,config.tickMs(),TimeUnit.MILLISECONDS);
+    }
+    private void onMembershipChanged(MembershipEvent event) {
+        if(membershipEvents.size()<2048) membershipEvents.add(event);
+        if(raftEngine!=null) {
+            raftMemberStatus.put(event.member(),event.current());
+            raftEngine.onMembershipChanged(event);
+            return;
+        }
+        if(!event.member().equals(new NodeId(0))) return;
+        primaryFailureStatus=event.current();
+        if(event.current()==MemberStatus.SUSPECT && fdSuspectNs<0) fdSuspectNs=event.observedAtNanos();
+        if(event.current()==MemberStatus.DEAD && fdDeadNs<0) fdDeadNs=event.observedAtNanos();
+        pbEngine.onMembershipChanged(event);
     }
     private String tickName() {
         return raftEngine!=null?RaftEngine.TICK:chainEngine!=null?ChainEngine.TICK:roseEngine!=null?RoseEngine.TICK:vrEngine!=null?VrEngine.TICK:CrashOnlyPrimaryBackupEngine.TICK;
@@ -134,6 +165,7 @@ public final class PbServer implements AutoCloseable {
                             :chainEngine!=null?ChainWire.decode(frame):roseEngine!=null?RoseWire.decode(frame):PbWire.decode(frame);
                     if(e.to().value()!=config.node() || e.from().value()>2 || e.from().equals(e.to()))
                         throw new IllegalArgumentException("unknown/misdirected PB peer");
+                    if(experiment.dropIncoming("raft")) return;
                     engine.onPeerMessage(e.from(),e.message());
                     if(e.message() instanceof RaftMessage.Append) heartbeatSeen.set(true);
                     if(e.from().value()==0 && e.message() instanceof VrMessage m && m.view()==0
@@ -235,7 +267,35 @@ public final class PbServer implements AutoCloseable {
         return "{\"protocol\":\""+config.protocol()+"\",\"node\":"+config.node()+",\"epoch\":"+engine.snapshot().ownershipEpoch().value()+",\"heartbeatSeen\":"+heartbeatSeen.get()
                 +",\"nanoTime\":"+time.monotonicNanos()+",\"detectedNs\":"+detectedAt()+",\"readyNs\":"+readyAt()
                 +",\"bootEpochMs\":"+startEpochMs+",\"uptimeNs\":"+(System.nanoTime()-startNano)
-                +vrStatus()+raftStatus()+chainStatus()+roseStatus()+fenceStatus()+",\"peerTx\":"+transport.trafficJson()+",\"sentBytes\":"+transport.sentBytes()+",\"transportFailures\":"+transport.failures()+"}";
+                +experiment.json()+membershipJson()+failureStatus()+vrStatus()+raftStatus()+chainStatus()+roseStatus()+fenceStatus()+",\"peerTx\":"+transport.trafficJson()+",\"sentBytes\":"+transport.sentBytes()+",\"transportFailures\":"+transport.failures()+"}";
+    }
+    private String membershipJson() {
+        return ",\"fdEvents\":"+membershipEvents.stream().map(e->"{\"member\":"+e.member().value()
+                +",\"previous\":\""+e.previous()+"\",\"current\":\""+e.current()+"\",\"incarnation\":"+e.incarnation()
+                +",\"atNs\":"+e.observedAtNanos()+"}").collect(java.util.stream.Collectors.joining(",","[","]"));
+    }
+    private String failureStatus() {
+        var raftObservation=raftEngine==null?null:raftEngine.observation();
+        var raftFailure=raftEngine==null?null:raftEngine.failureObservation();
+        NodeId monitored=raftObservation==null?new NodeId(0):raftObservation.leader();
+        MemberStatus failureState=raftObservation==null?primaryFailureStatus:raftMemberStatus.getOrDefault(monitored==null?new NodeId(config.node()):monitored,MemberStatus.ALIVE);
+        long suspect=raftFailure==null?fdSuspectNs:raftFailure.suspectAt(),dead=raftFailure==null?fdDeadNs:raftFailure.deadAt();
+        long sentFrames=swimTransport==null?0:swimTransport.sentFrames(),sentBytes=swimTransport==null?0:swimTransport.sentBytes();
+        long receivedFrames=swimTransport==null?0:swimTransport.receivedFrames(),receivedBytes=swimTransport==null?0:swimTransport.receivedBytes();
+        long failures=swimTransport==null?0:swimTransport.failures(),invalid=swimTransport==null?0:swimTransport.invalidFrames();
+        int score=swim==null?0:swim.awarenessScore(),multiplier=swim==null?1:swim.awarenessMultiplier();
+        long probe=swim==null?0:swim.effectiveProbeIntervalNanos(),direct=swim==null?0:swim.effectiveDirectTimeoutNanos(),indirect=swim==null?0:swim.effectiveIndirectTimeoutNanos();
+        return ",\"failureDetector\":\""+config.failureDetector()+"\",\"failurePort\":"+config.failurePort()
+                +",\"failureStartupGraceMs\":"+config.failureStartupGraceMs()+",\"failureProbeIntervalMs\":"+config.failureProbeIntervalMs()
+                +",\"failureDirectTimeoutMs\":"+config.failureDirectTimeoutMs()+",\"failureIndirectTimeoutMs\":"+config.failureIndirectTimeoutMs()
+                +",\"failureSuspicionMs\":"+config.failureSuspicionMs()+",\"failureAwarenessMaxMultiplier\":"+config.failureAwarenessMaxMultiplier()
+                +",\"failureSuspicionMaxTimeoutMultiplier\":"+config.failureSuspicionMaxTimeoutMultiplier()+",\"failureMaxConfirmations\":"+config.failureMaxConfirmations()
+                +",\"fdMonitoredLeader\":"+(monitored==null?-1:monitored.value())
+                +",\"primaryFailureStatus\":\""+failureState+"\",\"fdSuspectNs\":"+suspect+",\"fdDeadNs\":"+dead
+                +",\"fdAwarenessScore\":"+score+",\"fdAwarenessMultiplier\":"+multiplier+",\"fdEffectiveProbeIntervalNs\":"+probe
+                +",\"fdEffectiveDirectTimeoutNs\":"+direct+",\"fdEffectiveIndirectTimeoutNs\":"+indirect
+                +",\"fdSentFrames\":"+sentFrames+",\"fdSentBytes\":"+sentBytes+",\"fdReceivedFrames\":"+receivedFrames
+                +",\"fdReceivedBytes\":"+receivedBytes+",\"fdTransportFailures\":"+failures+",\"fdInvalidFrames\":"+invalid;
     }
     private String fenceStatus() {
         var o = pbEngine == null ? null : pbEngine.fenceObservation();
@@ -279,15 +339,27 @@ public final class PbServer implements AutoCloseable {
     private String raftStatus() {
         if(raftEngine==null) return "";
         var o=raftEngine.observation(); var election=raftEngine.electionObservation();
+        var fd=raftEngine.failureObservation();
         return ",\"role\":\""+o.role()+"\",\"leader\":"+(o.leader()==null?-1:o.leader().value())
                 +",\"logLength\":"+o.logLength()+",\"commit\":"+o.commit()+",\"applied\":"+o.applied()
-                +",\"elections\":"+o.elections()+",\"electionTerm\":"+election.term()+",\"electionSeed\":"+config.electionSeed();
+                +",\"elections\":"+o.elections()+",\"electionTerm\":"+election.term()+",\"electionSeed\":"+config.electionSeed()
+                +",\"raftElectionTrigger\":\""+fd.trigger()+"\",\"raftExternalFailureDetection\":"+fd.external()
+                +",\"raftElectionOrigin\":\""+fd.origin()+"\""
+                +",\"raftFailedLeader\":"+(fd.failedLeader()==null?-1:fd.failedLeader().value())
+                +",\"raftFailureSignalTerm\":"+fd.signalTerm()+",\"raftFdSuspectNs\":"+fd.suspectAt()+",\"raftFdDeadNs\":"+fd.deadAt()
+                +",\"raftFallbackExtraNs\":"+fd.fallbackExtraNanos()
+                +",\"raftElectionEventsDropped\":"+raftEngine.droppedElectionEvents()
+                +",\"raftElectionEvents\":"+raftEngine.electionEvents().stream().map(e->"{\"term\":"+e.term()
+                    +",\"kind\":\""+e.kind()+"\",\"atNs\":"+e.atNanos()+",\"origin\":\""+e.origin()+"\"}")
+                    .collect(java.util.stream.Collectors.joining(",","[","]"));
     }
     public void awaitTermination() throws InterruptedException { client.closeFuture().sync(); }
     @Override public void close() {
         if(!closed.compareAndSet(false,true)) return;
         if(timer!=null) timer.shutdownNow();
         if(swim!=null) swim.close();
+        if(swimTransport!=null) swimTransport.close();
+        experiment.close();
         if(client!=null) client.close().awaitUninterruptibly();
         if(peer!=null) peer.close().awaitUninterruptibly();
         if(engine!=null) engine.close();

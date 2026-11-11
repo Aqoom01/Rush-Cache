@@ -215,7 +215,7 @@ commit 순서: protocol이 commit 준비(마지막 batch ACK + freeze 유지)가
 | 2 | REQUEST_VOTE | round와 기간은 0. digest 없음 |
 | 3 | VOTE | round와 기간은 0. 적용 이력의 SHA-256 32바이트 |
 
-같은 번호의 UDP peer 포트에서 SWIM opcode 16(PING), 17(ACK), 18(PING_REQ)을 사용한다. 설정과 실행 방법은 [로컬 펜싱 검증](../experiments/a1-active-passive-failover/real-server/fencing-local.md)에 있다.
+복제 TCP와 분리된 `failure.port`의 UDP plane에서 SWIM opcode 16(PING), 17(ACK), 18(PING_REQ)을 사용한다. `PB_FENCED`는 `failure.detector=SWIM|SWIM_LIFEGUARD`를 요구하며, DEAD를 과반수 투표와 lease fencing의 입력으로만 사용한다. 설정과 실행 방법은 [로컬 펜싱 검증](../experiments/a1-active-passive-failover/real-server/fencing-local.md)에 있다.
 
 ## 8. A1 VR 전용 peer 확장
 
@@ -254,6 +254,8 @@ Raft는 세 노드 모두 처음부터 timer를 실행해 리더를 선출한다
 
 진단35/36은 공유한다. epoch는 term이며, 상태 JSON에 role/leader(-1=미확인)/elections/logLength/commit/applied/electionTerm/electionSeed를 추가한다. Raft의 detectedNs/readyNs는 최근 **로컬 선거 하나**의 후보 시작과 준비 완료다. electionTerm이 현재 leader의 epoch와 같은 경우에만 차감한다. 초기 선거의 누적 관측을 장애 후 전환 시간으로 사용하지 않는다. term/vote/log의 영속화·프로세스 재시작·snapshot·동적 구성은 구현하지 않았다.
 
+`raftElectionEvents`는 Raft owner에서 기록한 최대 2048개 불변 진단 이력이다. 각 항목의 `term`, `kind`(`STARTED` 후보 시작 / `BECAME_LEADER` 투표 quorum 확보 후 당선), `atNs`(해당 JVM monotonic), `origin`을 제공한다. `raftElectionEventsDropped`가 0이 아니면 이력 일부가 빠졌으므로 실험의 선거/리더 교체 횟수 근거로 사용할 수 없다. 같은 노드의 새 term 당선과 다른 노드로의 리더 교체는 구분한다. 이 진단은 선거·commit 결정을 변경하지 않는다.
+
 ## 10. A1 전송량 진단 (opcode35 JSON 확장)
 
 모든 실험 모드에서 `peerTx={totalFrames,totalBytes,opcodes:{"49":{frames,bytes},...}}`를 제공한다. Netty write가 성공한 peer frame의 length+header+body 크기이며 원격 수신 확인이나 TCP/IP overhead는 아니다. 실패 전송은 집계하지 않는다. opcode별·합계는 같은 lock 안에서 복사하므로 한 노드 snapshot 내 합계가 일치한다. 고정 opcode256개 카운터만 유지하며 key/client/request별 항목을 만들지 않는다. 기존 sentBytes는 별도 시점의 카운터라 peerTx와 동시에 읽었다고 가정하지 않는다.
@@ -284,3 +286,15 @@ Result는 `status(u8 ordinal), hasValue(u8), [valueLength(u32), value], valueVer
 제어 38(MASTER_CONTROL)은 **정확한 영구 crash를 아는 신뢰 master(실험 controller)** 전용이며 제품 API·분단 fencing이 아니다. body는 `kind(u8), epoch(u64)` 뒤에 kind별 필드다. Chain: 0=FREEZE(`count(u32), survivors[u64]`, 생존 사슬 순서) → `installConfiguration`, 1=REPAIR → `beginRepair`, 2=OPEN(`length(u32)`) → `openConfiguration`. Rosé: 0=FREEZE → `freezeAfterCrash`, 1=REPAIR(`newPrimary(u64), count(u32), survivors[u64]`) → `beginRepair`, 2=OPEN(`length(u32)`) → `openAfterRepair`. 엔진 future가 끝난 뒤 OK(detail `applied=N`/`repairing`/`open`) 또는 UNAVAILABLE(거절 사유)로 응답하고 EventLoop를 막지 않는다. FREEZE 수신 시각이 상태 JSON의 `detectedNs`, 엔진 readyAt이 `readyNs`다. controller의 감지 대기는 고정값이며 실제 failure detection이 아니다.
 
 상태 JSON은 Chain에 `readMode/state/chain/logLength/applied/acknowledged/sent/localReads/queryAttempts/dirtyReads/retainedVersions/pendingReads`, Rosé에 `limit/state/primary/logLength/applied/minAck/peakLag/backpressureCount/deferred`를 추가한다. epoch는 master가 설치한 구성 번호(초기1)다.
+
+## 12. A3 SWIM UDP failure-detection plane과 A1 연동
+
+`PbServerMain`의 `protocol=PB|PB_FENCED|RAFT`, `failure.detector=SWIM|SWIM_LIFEGUARD`에서 사용한다. 복제 TCP와 분리된 UDP port(기본 7002)에 datagram 하나당 protocol v1 frame 하나를 보낸다. `length(u32)` 뒤 공통 24-byte header를 사용하고 message class는 PEER(3), opcode는 PING=16, ACK=17, PING_REQ=18이다. body 공통 prefix는 `from(u64), to(u64), probeId(u64)`이고 PING은 `origin(u64)`, ACK은 `target(u64), origin(u64)`, PING_REQ는 `origin(u64), target(u64)`를 잇는다.
+
+그 뒤 `updateCount(u32)`와 update 목록이 온다. membership update 하나는 `member(u64), incarnation(u64), status(u8: ALIVE=0, SUSPECT=1, DEAD=2), reporter(u64)` 25 bytes다. detector는 한 datagram에 최대 64개를 싣는다. 잘못된 length/magic/version/opcode/노드 ID/status/count/trailing bytes는 폐기하고 `fdInvalidFrames`에 집계한다.
+
+SWIM의 DEAD 이벤트는 A1 owner tick으로 전달된다. SUSPECT는 시각만 기록하고 승격하지 않는다. `protocol=PB`에서는 기존 INSTALL/READY crash-only 경로를 시작하므로 partition 안전성을 제공하지 않는다. `protocol=PB_FENCED`에서는 Node 1의 DEAD 관측이 승계 검토를 시작하되 Node 2 투표, 옛 lease 만료, 두 Backup의 적용 이력 digest 일치, INSTALL/READY와 새 lease를 모두 통과해야 쓰기를 연다. `SWIM_LIFEGUARD`는 local-health awareness에 따라 probe 주기·timeout과 suspicion 시간을 확대하고 독립 reporter의 SUSPECT confirmation으로 최대 suspicion 시간을 최소값까지 단축한다. `SWIM`은 같은 wire에서 이 보정을 끈 baseline이다. Buddy System은 구현하지 않는다.
+
+상태 진단은 `failureDetector`, `primaryFailureStatus`, `fdSuspectNs`, `fdDeadNs`, `fdAwarenessScore`, 실효 probe 시간, UDP 송수신 frame/byte 및 failure/invalid 카운터를 제공한다. `PB_FENCED`는 추가로 `quorumNs`, `promotionVotes`, `leaseDeadlineNs`, `fenceState`를 제공한다. 현재 펜싱 구현도 고정 3노드의 최초 승계 한 번만 지원하며 epoch 영속화·재가입·두 번째 승계는 범위 밖이다.
+
+`RAFT`는 현재 리더·term의 DEAD와 최소 `timeout.ms`의 Raft heartbeat 단절을 확인한 뒤 정상 투표 선거를 시작한다. 초기 선거·candidate 재시도는 원래 타이머를, 신호 누락에는 `[10T,11T)` watchdog을 사용한다. `raftElectionOrigin`, `raftElectionTrigger`, `raftFailedLeader`, `raftFailureSignalTerm`, `raftFdSuspectNs`, `raftFdDeadNs`, `raftFallbackExtraNs`로 근거를 구분한다. 유효한 Append는 이전 FD 신호를 무효화한다. FD가 직접 리더를 지정하거나 quorum을 우회하지 않는다. [Raft FD 실험](../experiments/a1-active-passive-failover/real-server/raft-fd.md)에 실행 방법과 범위를 기록한다.

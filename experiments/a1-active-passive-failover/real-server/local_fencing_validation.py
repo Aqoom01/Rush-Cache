@@ -52,9 +52,9 @@ def get(client, node, operation, key, epoch):
 
 def validate(java, lib, output):
     output.mkdir(parents=True, exist_ok=False)
-    client_port, peer_port = free_port(False), free_port(True)
-    while client_port == peer_port:
-        peer_port = free_port(True)
+    client_port, peer_port, failure_port = free_port(False), free_port(True), free_port(True)
+    while len({client_port, peer_port, failure_port}) != 3:
+        client_port, peer_port, failure_port = free_port(False), free_port(True), free_port(True)
     client = Client(HOSTS, client_port=client_port, peer_port=peer_port)
     processes = []
     commands = []
@@ -66,6 +66,12 @@ def validate(java, lib, output):
                 props.write_text('\n'.join([
                     'protocol=PB_FENCED', f'node.id={node}', f'client.port={client_port}', f'peer.port={peer_port}',
                     'admin.port=0', 'heartbeat.ms=50', 'timeout.ms=500', 'tick.ms=10',
+                    'failure.detector=SWIM_LIFEGUARD', f'failure.port={failure_port}', 'failure.startup.grace.ms=500',
+                    'failure.probe.interval.ms=100', 'failure.direct.timeout.ms=25',
+                    'failure.indirect.timeout.ms=25', 'failure.suspicion.ms=250',
+                    'failure.lifeguard.awareness.max.multiplier=8',
+                    'failure.lifeguard.suspicion.max.multiplier=2',
+                    'failure.lifeguard.max.confirmations=1',
                     *[f'peer.{i}={host}' for i, host in enumerate(HOSTS)],
                 ]) + '\n', encoding='utf-8')
                 log = stack.enter_context((output / f'node-{node}.log').open('wb'))

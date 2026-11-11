@@ -43,7 +43,7 @@ infra/
 - `experiment-runner`는 부하 생성 노드에서 실행해 같은 서브넷의 cache-server로 요청한다. 측정 지연에 인터넷 구간이 들어가지 않고, 노드 포트를 서브넷 밖에 열지 않는다.
 
 - 리전: `ap-northeast-2` (m6gd 제공 여부와 가격은 계정에서 확인 필요)
-- 접속: SSH 대신 SSM Session Manager. 보안그룹은 외부 inbound를 열지 않고, 노드 포트(7000-7001, 9091)는 서브넷 안에서만 연다.
+- 접속: SSH 대신 SSM Session Manager. 보안그룹은 외부 inbound를 열지 않고, 노드 TCP 포트(7000-7001, 9091)와 SWIM UDP 7002는 서브넷 안에서만 연다.
 
 ## 3. 실행 흐름
 

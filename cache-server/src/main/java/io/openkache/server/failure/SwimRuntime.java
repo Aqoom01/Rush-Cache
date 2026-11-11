@@ -80,6 +80,13 @@ public final class SwimRuntime implements AutoCloseable {
 
     /** detector를 owner thread에서 시작하고 주기적인 tick 등록을 시작한다. 여러 번 호출해도 안전하다. */
     public void start() {
+        start(Duration.ZERO);
+    }
+
+    /** 모든 고정 멤버가 기동할 시간을 준 뒤 첫 probe를 시작한다. */
+    public void start(Duration startupGrace) {
+        Objects.requireNonNull(startupGrace, "startupGrace");
+        if (startupGrace.isNegative()) throw new IllegalArgumentException("startupGrace must be >= 0");
         if (closed.get()) {
             throw new IllegalStateException("SWIM runtime is closed");
         }
@@ -88,7 +95,7 @@ public final class SwimRuntime implements AutoCloseable {
         }
         CompletableFuture<Void> activation = new CompletableFuture<>();
         if (!owner.offer(() -> {
-            detector.start();
+            detector.start(startupGrace);
             activation.complete(null);
         })) {
             started.set(false);
@@ -98,6 +105,12 @@ public final class SwimRuntime implements AutoCloseable {
         scheduler.scheduleAtFixedRate(
                 this::enqueueTick, initialDelayNanos, tickPeriodNanos, TimeUnit.NANOSECONDS);
     }
+
+    public int awarenessScore() { return detector.awarenessScore(); }
+    public int awarenessMultiplier() { return detector.awarenessMultiplier(); }
+    public long effectiveProbeIntervalNanos() { return detector.effectiveProbeIntervalNanos(); }
+    public long effectiveDirectTimeoutNanos() { return detector.effectiveDirectProbeTimeoutNanos(); }
+    public long effectiveIndirectTimeoutNanos() { return detector.effectiveIndirectProbeTimeoutNanos(); }
 
     /** Netty EventLoop 등 외부 thread에서 받은 메시지를 owner mailbox로 넘긴다. */
     public boolean onMessage(NodeId from, SwimMessage message) {

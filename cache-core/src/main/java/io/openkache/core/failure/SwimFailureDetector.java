@@ -4,11 +4,13 @@ import io.openkache.core.model.NodeId;
 import io.openkache.core.spi.PeerEnvelope;
 import io.openkache.core.spi.TimeSource;
 import io.openkache.core.spi.Transport;
+import java.time.Duration;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -16,6 +18,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Random;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
@@ -25,8 +28,8 @@ import java.util.stream.Collectors;
  * {@link #onMessage(NodeId, SwimMessage)}로 전달한다. 이 클래스는 thread-safe하지 않으며 모든 메서드는 하나의 owner
  * thread에서 호출해야 한다. 네트워크 전송은 block하지 않는 {@link Transport}에 위임한다.
  *
- * <p>구성원 목록은 기동 시 고정한다. 동적 join/leave, UDP adapter와 Lifeguard local-health awareness는 이 baseline의 범위가
- * 아니다.
+ * <p>구성원 목록은 기동 시 고정한다. 설정에 따라 SWIM baseline 또는 Lifeguard local-health/probe/suspicion 보정을 사용한다.
+ * 동적 join/leave와 Buddy System은 범위가 아니다.
  */
 public final class SwimFailureDetector {
 
@@ -50,6 +53,18 @@ public final class SwimFailureDetector {
         }
     }
 
+    private static final class SuspicionState {
+        private final long startedAtNanos;
+        private long deadlineNanos;
+        private final Set<NodeId> reporters = new HashSet<>();
+
+        SuspicionState(long startedAtNanos, long deadlineNanos, NodeId reporter) {
+            this.startedAtNanos = startedAtNanos;
+            this.deadlineNanos = deadlineNanos;
+            reporters.add(reporter);
+        }
+    }
+
     // SwimFailureDetector가 실행되고 있는 노드
     private final NodeId localNode;
     private final SwimConfig config;
@@ -61,7 +76,7 @@ public final class SwimFailureDetector {
     // 전체 노드의 멤버쉽 정보
     private final Map<NodeId, MemberRecord> membershipInfos = new HashMap<>();
     // suspect -> dead 타이머
-    private final Map<NodeId, Long> suspicionDeadlines = new HashMap<>();
+    private final Map<NodeId, SuspicionState> suspicions = new HashMap<>();
     // 다른 멤버들에게 gossip으로 전파해야할 정보들
     private final Map<NodeId, GossipEntry> gossip = new LinkedHashMap<>();
     // 앞으로 probe 할 노드의 순서 (한번 probe한 건 targetOrder에서 제외됨)
@@ -72,6 +87,8 @@ public final class SwimFailureDetector {
     private long nextProbeAtNanos;
     // 다음 probe에 부여할 ID
     private long nextProbeId;
+    private long lastTickNanos = Long.MIN_VALUE;
+    private volatile int awarenessScore;
 
     // 다음 pending probe에 부여할 ID
     private ProbeState probeState;
@@ -102,6 +119,9 @@ public final class SwimFailureDetector {
         if (!uniqueMembers.contains(localNode)) {
             throw new IllegalArgumentException("clusterMembers must contain localNode " + localNode);
         }
+        if (config.maxSuspicionConfirmations() > Math.max(0, uniqueMembers.size() - 2)) {
+            throw new IllegalArgumentException("maxSuspicionConfirmations exceeds independent peers");
+        }
         long now = timeSource.monotonicNanos();
         for (NodeId member : uniqueMembers) {
             membershipInfos.put(Objects.requireNonNull(member, "cluster member"), new MemberRecord(member, 0, MemberStatus.ALIVE, now));
@@ -110,11 +130,23 @@ public final class SwimFailureDetector {
 
     /** detector를 활성화한다.*/
     public void start() {
+        start(Duration.ZERO);
+    }
+
+    /**
+     * 고정 membership의 모든 프로세스가 뜰 시간을 준 뒤 첫 probe를 시작한다.
+     * grace 중에도 수신 메시지는 처리하므로 먼저 시작한 peer의 probe에는 응답한다.
+     */
+    public void start(Duration initialProbeDelay) {
         if (started) {
             return;
         }
+        Objects.requireNonNull(initialProbeDelay, "initialProbeDelay");
+        if (initialProbeDelay.isNegative()) throw new IllegalArgumentException("initialProbeDelay must be >= 0");
         started = true;
-        nextProbeAtNanos = timeSource.monotonicNanos();
+        long now = timeSource.monotonicNanos();
+        lastTickNanos = now;
+        nextProbeAtNanos = Math.addExact(now, initialProbeDelay.toNanos());
     }
 
     /**
@@ -125,6 +157,8 @@ public final class SwimFailureDetector {
     public void tick() {
         requireStarted();
         long now = timeSource.monotonicNanos();
+        if (lastTickNanos != Long.MIN_VALUE) observeLocalDelay(now - lastTickNanos);
+        lastTickNanos = now;
         expireSuspicions(now);
         checkProbeTimeout(now);
 
@@ -132,7 +166,7 @@ public final class SwimFailureDetector {
         if (probeState == null && isTimedOut(now, nextProbeAtNanos)) {
             // probing 시작 및 다음 주기까지의 시간 갱신
             startDirectProbe(now);
-            nextProbeAtNanos = now + config.probeInterval().toNanos();
+            nextProbeAtNanos = Math.addExact(now, effectiveProbeIntervalNanos());
         }
     }
 
@@ -186,6 +220,7 @@ public final class SwimFailureDetector {
                 || !probeState.target().equals(ack.target())) {
             return;
         }
+        improveLocalHealth();
         probeState = null;
     }
     /** localNode가 간접 probe를 요청 받았을 때 처리하는 메서드 */
@@ -211,6 +246,7 @@ public final class SwimFailureDetector {
         else {
             NodeId target = probeState.target();
             probeState = null;
+            degradeLocalHealth();
             markSuspect(target);
         }
     }
@@ -227,7 +263,7 @@ public final class SwimFailureDetector {
                 probeId,
                 target.orElseThrow(),
                 ProbeStage.DIRECT,
-                now + config.directProbeTimeout().toNanos());
+                Math.addExact(now, effectiveDirectProbeTimeoutNanos()));
         send(target.orElseThrow(), new SwimMessage.Ping(probeId, localNode, chooseUpdates()));
     }
     /** 간접 probe 시작하는 메서드 */
@@ -236,6 +272,7 @@ public final class SwimFailureDetector {
         List<NodeId> helpers = selectHelpers(direct.target());
         if (helpers.isEmpty()) {
             probeState = null;
+            degradeLocalHealth();
             markSuspect(direct.target());
             return;
         }
@@ -244,7 +281,7 @@ public final class SwimFailureDetector {
                 direct.id(),
                 direct.target(),
                 ProbeStage.INDIRECT,
-                now + config.indirectProbeTimeout().toNanos());
+                Math.addExact(now, effectiveIndirectProbeTimeoutNanos()));
         for (NodeId helper : helpers) {
             send(helper, new SwimMessage.PingRequest(direct.id(), localNode, direct.target(), chooseUpdates()));
         }
@@ -298,8 +335,8 @@ public final class SwimFailureDetector {
     }
     /** suspect에서 timed out이 된 게 있는지 확인하는 메서드*/
     private void expireSuspicions(long now) {
-        List<NodeId> expired = suspicionDeadlines.entrySet().stream()
-                .filter(entry -> isTimedOut(now, entry.getValue()))
+        List<NodeId> expired = suspicions.entrySet().stream()
+                .filter(entry -> isTimedOut(now, entry.getValue().deadlineNanos))
                 .map(Map.Entry::getKey)
                 .toList();
         // suspect 단계에서도 timed out이 되었기 때문에 이 노드들을 DEAD 처리함
@@ -308,7 +345,7 @@ public final class SwimFailureDetector {
             if (current != null && current.status() == MemberStatus.SUSPECT) {
                 processMembershipUpdate(new MembershipUpdate(node, current.incarnation(), MemberStatus.DEAD, localNode));
             } else {
-                suspicionDeadlines.remove(node);
+                suspicions.remove(node);
             }
         }
     }
@@ -321,8 +358,14 @@ public final class SwimFailureDetector {
             return;
         }
         // 만약에 이번 변경 대상이 본인이고, 본인이 의심받는 상황이라면 ALIVE 전파
-        if (update.member().equals(localNode) && update.status() == MemberStatus.SUSPECT) {
+        if (update.member().equals(localNode) && update.status() != MemberStatus.ALIVE) {
             refuteIfCurrent(update, current);
+            return;
+        }
+        if (config.lifeguardEnabled() && current.status() == MemberStatus.SUSPECT
+                && update.status() == MemberStatus.SUSPECT
+                && update.incarnation() == current.incarnation()) {
+            confirmSuspicion(update.member(), update.reporter(), timeSource.monotonicNanos());
             return;
         }
         // 새로운 정보와 기존 정보를 우선순위에 따라 비교해서, 기존 정보를 유지해야할지 결정
@@ -337,10 +380,10 @@ public final class SwimFailureDetector {
         addUpdate(update);
 
         if (replacement.status() == MemberStatus.SUSPECT) {
-            suspicionDeadlines.put(
-                    replacement.nodeId(), now + config.suspicionTimeout().toNanos());
+            long deadline = Math.addExact(now, suspicionTimeoutNanos(0));
+            suspicions.put(replacement.nodeId(), new SuspicionState(now, deadline, update.reporter()));
         } else {
-            suspicionDeadlines.remove(replacement.nodeId());
+            suspicions.remove(replacement.nodeId());
         }
         if (current.status() != replacement.status()) {
             listener.onMembershipChanged(new MembershipEvent(
@@ -362,7 +405,7 @@ public final class SwimFailureDetector {
         long now = timeSource.monotonicNanos();
         // 본인의 정보를 최신화
         membershipInfos.put(localNode, new MemberRecord(localNode, newIncarnation, MemberStatus.ALIVE, now));
-        suspicionDeadlines.remove(localNode);
+        suspicions.remove(localNode);
         addUpdate(new MembershipUpdate(localNode, newIncarnation, MemberStatus.ALIVE, localNode));
     }
 
@@ -428,6 +471,60 @@ public final class SwimFailureDetector {
 
     private void send(NodeId to, SwimMessage message) {
         transport.send(new PeerEnvelope(localNode, to, message));
+    }
+
+    /** Lifeguard가 관측한 로컬 scheduler/processing 지연을 health score에 반영한다. */
+    public void observeLocalDelay(long elapsedNanos) {
+        if (!config.lifeguardEnabled() || elapsedNanos < 0) return;
+        long expected = config.probeInterval().toNanos();
+        if (elapsedNanos > expected + expected / 2) {
+            long raw = Math.max(1, elapsedNanos / expected - 1);
+            int missed = (int) Math.min(Integer.MAX_VALUE, raw);
+            awarenessScore = (int) Math.min(config.awarenessMaxMultiplier(), awarenessScore + (long) missed);
+        }
+    }
+
+    public int awarenessScore() { return awarenessScore; }
+    public int awarenessMultiplier() { return config.lifeguardEnabled() ? awarenessScore + 1 : 1; }
+    public long effectiveProbeIntervalNanos() {
+        return Math.multiplyExact(config.probeInterval().toNanos(), awarenessMultiplier());
+    }
+    public long effectiveDirectProbeTimeoutNanos() {
+        return Math.multiplyExact(config.directProbeTimeout().toNanos(), awarenessMultiplier());
+    }
+    public long effectiveIndirectProbeTimeoutNanos() {
+        return Math.multiplyExact(config.indirectProbeTimeout().toNanos(), awarenessMultiplier());
+    }
+    public long suspicionDeadlineNanos(NodeId member) {
+        SuspicionState state = suspicions.get(Objects.requireNonNull(member, "member"));
+        return state == null ? -1 : state.deadlineNanos;
+    }
+
+    private void confirmSuspicion(NodeId member, NodeId reporter, long now) {
+        SuspicionState state = suspicions.get(member);
+        if (state == null || !state.reporters.add(reporter)) return;
+        int confirmations = Math.min(Math.max(0, state.reporters.size() - 1), config.maxSuspicionConfirmations());
+        long candidate = Math.addExact(state.startedAtNanos, suspicionTimeoutNanos(confirmations));
+        state.deadlineNanos = Math.min(state.deadlineNanos, Math.max(now, candidate));
+    }
+
+    private long suspicionTimeoutNanos(int confirmations) {
+        long minimum = Math.multiplyExact(config.suspicionTimeout().toNanos(), awarenessMultiplier());
+        if (!config.lifeguardEnabled() || config.maxSuspicionConfirmations() == 0) return minimum;
+        long maximum = Math.multiplyExact(minimum, config.suspicionMaxTimeoutMultiplier());
+        int bounded = Math.min(Math.max(confirmations, 0), config.maxSuspicionConfirmations());
+        double fraction = Math.log(bounded + 1.0) / Math.log(config.maxSuspicionConfirmations() + 1.0);
+        return (long) (maximum - (maximum - minimum) * fraction);
+    }
+
+    private void degradeLocalHealth() {
+        if (config.lifeguardEnabled()) {
+            awarenessScore = Math.min(config.awarenessMaxMultiplier(), awarenessScore + 1);
+        }
+    }
+
+    private void improveLocalHealth() {
+        if (config.lifeguardEnabled()) awarenessScore = Math.max(0, awarenessScore - 1);
     }
 
     // 탐지기가 시작됐는지 확인

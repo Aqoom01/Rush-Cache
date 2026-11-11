@@ -4,6 +4,16 @@
 
 [A1·A3 로컬 펜싱 검증](fencing-local.md)
 
+[Raft + SWIM/Lifeguard 결합·로컬 검증·EC2 실행](raft-fd.md)
+
+[Raft 비교 실험: 타임아웃 고정·14조건·발표용 252회·그래프/S3 보관](raft-full-campaign.md)
+
+[정식 EC2 실행: 노트북을 꺼도 계속 진행하는 coordinator 서비스](raft-ec2-coordinator.md)
+
+[2026-11-10 실제 EC2 시작 기록·결과 경로](raft-execution-20261110.md)
+
+[전체 campaign 로컬 검증 기록](raft-local-validation.md)
+
 ## Chain·CRAQ·Rosé 실서버와 종합 비교 (9~12단계)
 
 `protocol=CHAIN`(`chain.read.mode=TAIL_ONLY|CRAQ`)과 `protocol=ROSE`(`rose.limit`)를 같은 `PbServerMain` 조립부에 추가했다. 두 엔진은 자체 failure detector가 없으므로 실험 controller가 **정확한 영구 crash를 아는 외부 master** 역할을 맡아 peer opcode38(FREEZE/REPAIR/OPEN)과 37(로그 digest)로 복구를 조정한다. 감지는 controller의 고정 대기(timeout.ms)이며 실제 failure detection이 아니다. wire 형식은 [protocol-v1 §11](../../../docs/protocol-v1.md)이다.
@@ -77,11 +87,11 @@ PB/VR × 값64B/8KiB × 감지500/1000ms × 3회=24회, warmup30건·정상128�
 
 - 고정 3노드: Primary 0, Backup 1/2. 전원 적용 ACK 후 Primary KV 적용 및 OK.
 - 최초 Primary JVM의 **단일 영구 crash**만 지원한다. Backup 1이 승계하고 Backup 2의 INSTALL/READY 확인 및 KV barrier 이후 쓰기를 재개한다.
-- Backup은 처음 유효한 Primary heartbeat를 받은 뒤 감지를 시작한다. 최초 Primary가 한 번도 정상 시작하지 않은 경우의 기동 합의는 지원하지 않는다.
-- 전용 보안 그룹 내 TCP 7000(client), 7001(peer). 프로토콜은 [protocol-v1 §7](../../../docs/protocol-v1.md)이다. 주소를 고정 설정하며 peer 인증/TLS는 없다.
+- `failure.detector=FIXED_TIMEOUT`은 처음 유효한 Primary heartbeat를 받은 뒤 기존 고정 timeout 감지를 시작한다. `SWIM`과 `SWIM_LIFEGUARD`는 별도 UDP plane에서 DEAD를 확정한 뒤 같은 INSTALL/READY 승격 경로를 실행한다.
+- 전용 보안 그룹 내 TCP 7000(client), 7001(peer), SWIM 사용 시 UDP 7002. 프로토콜은 [protocol-v1 §7·§12](../../../docs/protocol-v1.md)이다. 주소를 고정 설정하며 peer 인증/TLS는 없다.
 - 노드별 연결 재사용, 비동기 connect/write, 대기 전송 상한 1024, 연결 timeout 500ms. 전송 완료와 실제 복제 ACK를 구분한다. SET 자동 재전송·로그 복구·client table은 추가하지 않았다.
 - Client 재시도는 같은 operation/key/value를 사용한다. 현재 PB는 client ID 중복 제거가 없어 exactly-once 보장을 하지 않는다. 이 실험의 SET은 같은 값 재적용이 가능한 형태이며 버전 증가까지 중복 제거한다고 주장하지 않는다.
-- partition 안전성·프로세스 재시작/재가입·두 번째 crash·동적 구성·DELETE 복제·영속화는 제외한다. TIMEOUT은 취소가 아니며 미완료 쓰기 복제본 차이는 복구하지 않는다.
+- 기본 `protocol=PB`는 partition 안전성·프로세스 재시작/재가입·두 번째 crash·동적 구성·DELETE 복제·영속화를 제외한다. 로컬 `PB_FENCED` 결합 모드는 partition 중 quorum과 lease fencing을 검증하지만 재시작/재가입·두 번째 crash는 여전히 제외한다. TIMEOUT은 취소가 아니며 서로 다른 미완료 쓰기 이력은 서비스 재개를 막는다.
 
 ## 실행 조건
 
@@ -127,10 +137,37 @@ timeout.ms=500
 tick.ms=10
 ```
 
+SWIM+Lifeguard로 최초 Primary의 영구 crash를 자동 감지하려면 아래를 추가한다. 모든 프로세스가 뜨기 전 오판하지 않도록 기본 3초의 startup grace를 둔다. baseline 비교군은 `failure.detector=SWIM`으로 바꿔 같은 UDP·A1 경로에서 Lifeguard 보정만 끈다.
+
+```properties
+failure.detector=SWIM_LIFEGUARD
+failure.port=7002
+failure.startup.grace.ms=3000
+failure.probe.interval.ms=200
+failure.direct.timeout.ms=50
+failure.indirect.timeout.ms=50
+failure.suspicion.ms=500
+failure.lifeguard.awareness.max.multiplier=8
+failure.lifeguard.suspicion.max.multiplier=2
+failure.lifeguard.max.confirmations=1
+```
+
+Lifeguard는 최종 probe 실패와 로컬 scheduler 지연에 따라 awareness score를 높이고, probe 주기·direct/indirect timeout과 suspicion 최소 시간을 `score+1`배로 늘린다. 성공 probe마다 score를 1 낮춘다. 최초 SUSPECT의 deadline은 `failure.suspicion.ms × awareness 배수 × suspicion.max.multiplier`이며, 3노드에서 다른 한 노드의 독립 SUSPECT가 확인되면 `failure.suspicion.ms × awareness 배수`까지 단축한다. Buddy System은 이 프로필에 포함하지 않는다.
+
+`protocol=PB`와 결합하면 SWIM 자동 승격은 기존 crash-only 안전 모델을 그대로 따르므로 Primary JVM의 단일 영구 crash 실험에만 사용한다. A1의 quorum·lease fencing까지 결합한 검증은 `protocol=PB_FENCED`와 같은 detector 설정을 사용해 [A1·A3 로컬 펜싱 검증](fencing-local.md)으로 실행한다. 이 모드는 SUSPECT만으로 승격하지 않고, DEAD 이후 Node 2 투표와 옛 lease 만료를 통과해야 Node 1이 epoch 2 쓰기를 연다.
+
 host 파일은 public/private/instance 항목을 가진 객체 3개의 JSON 배열이다. 키·호스트 정보·원본 접속 로그는 Git 제외 로컬 폴더에 둔다. 자동화는 이 서버들의 `/home/ubuntu/a1-real` 전용 PB 프로세스만 관리한다. 프로세스 cmdline을 확인하고 다른 실행 파일은 중단하지 않는다.
 
 ```powershell
 python experiments/a1-active-passive-failover/real-server/run_ec2.py --hosts <로컬-hosts.json> --key <키파일.pem> --known-hosts <known-hosts> --dist cache-server/build/distributions/openkache-server-0.1.0-SNAPSHOT.tar --out <새-결과폴더>
+```
+
+같은 A1 복구 경로에서 고정 timeout, SWIM, SWIM+Lifeguard를 비교하려면 `run_compare_ec2.py`를 detector별 새 결과 폴더로 실행한다. SWIM 계열의 `t500/t1000`은 fixed timeout이 아니라 suspicion 최소 시간이며 결과 JSON의 `failureDetectorConfig`에 실제 설정이 남는다.
+
+```powershell
+python experiments/a1-active-passive-failover/real-server/run_compare_ec2.py ... --detector FIXED_TIMEOUT --out <새-fixed-결과폴더>
+python experiments/a1-active-passive-failover/real-server/run_compare_ec2.py ... --detector SWIM --out <새-swim-결과폴더>
+python experiments/a1-active-passive-failover/real-server/run_compare_ec2.py ... --detector SWIM_LIFEGUARD --out <새-lifeguard-결과폴더>
 ```
 
 `--quick`은 64B/500ms/1회, 100건의 예비 실행이다. full과 섞어 집계하지 않는다. 자동화는 JVM 기동/중단·배포·JSON 다운로드·노드별 로그 수집을 수행하며 종료 시 전용 PB JVM을 정리한다. EC2는 유지한다.

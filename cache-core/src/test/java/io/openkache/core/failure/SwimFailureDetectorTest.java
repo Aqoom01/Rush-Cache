@@ -33,6 +33,9 @@ class SwimFailureDetectorTest {
             3,
             3,
             8);
+    private static final SwimConfig LIFEGUARD_CONFIG = new SwimConfig(
+            Duration.ofMillis(500),Duration.ofMillis(100),Duration.ofMillis(100),Duration.ofMillis(300),
+            3,3,8,true,8,2,1);
 
     /**
      * 직접 PING에 ACK가 오면 프로브가 성공한 것으로 끝나며, 시간이 더 지나도 대상은 ALIVE이고
@@ -134,6 +137,17 @@ class SwimFailureDetectorTest {
                 ack.updates().getFirst());
     }
 
+    @Test
+    void resumedLocalNodeRefutesDeadGossipRatherThanRemainingDead() {
+        Fixture fixture=fixture(NODE_1);fixture.detector.start();
+        var dead=new MembershipUpdate(NODE_1,3,MemberStatus.DEAD,NODE_2);
+        fixture.detector.onMessage(NODE_2,new SwimMessage.Ping(8,NODE_2,List.of(dead)));
+        var local=fixture.detector.member(NODE_1).orElseThrow();
+        assertEquals(MemberStatus.ALIVE,local.status());assertEquals(4,local.incarnation());
+        var ack=assertInstanceOf(SwimMessage.Ack.class,fixture.transport.removeFirst().message());
+        assertEquals(new MembershipUpdate(NODE_1,4,MemberStatus.ALIVE,NODE_1),ack.updates().getFirst());
+    }
+
     /**
      * SUSPECT인 노드에 대해 더 높은 incarnation의 ALIVE gossip을 받으면 의심 타이머를 취소하고,
      * 기존 의심 제한 시간이 지나도 ALIVE 상태를 유지하는지 검증한다.
@@ -232,12 +246,60 @@ class SwimFailureDetectorTest {
                         NODE_2, new SwimMessage.Ping(1, NODE_2, List.of())));
     }
 
+    @Test
+    void lifeguardLocalDelayScalesProbeDeadlinesAndSuccessRecoversHealth() {
+        Fixture fixture = fixture(NODE_1,LIFEGUARD_CONFIG);
+        fixture.detector.start();
+        fixture.detector.observeLocalDelay(Duration.ofSeconds(2).toNanos());
+        assertEquals(3,fixture.detector.awarenessScore());
+        assertEquals(Duration.ofMillis(400).toNanos(),fixture.detector.effectiveDirectProbeTimeoutNanos());
+
+        fixture.detector.tick();
+        PeerEnvelope direct=fixture.transport.removeFirst();
+        SwimMessage.Ping ping=assertInstanceOf(SwimMessage.Ping.class,direct.message());
+        fixture.time.advance(Duration.ofMillis(100)); fixture.detector.tick();
+        assertTrue(fixture.transport.sent.isEmpty());
+
+        fixture.detector.onMessage(direct.to(),new SwimMessage.Ack(ping.probeId(),direct.to(),NODE_1,List.of()));
+        assertEquals(2,fixture.detector.awarenessScore());
+    }
+
+    @Test
+    void lifeguardFailedProbeDegradesHealthAndIndependentConfirmationShortensSuspicion() {
+        Fixture fixture=fixture(NODE_1,LIFEGUARD_CONFIG);
+        fixture.detector.start(); fixture.detector.tick();
+        NodeId target=fixture.transport.removeFirst().to();
+        fixture.time.advance(Duration.ofMillis(100)); fixture.detector.tick(); fixture.transport.removeFirst();
+        fixture.time.advance(Duration.ofMillis(100)); fixture.detector.tick();
+
+        assertEquals(1,fixture.detector.awarenessScore());
+        long initialDeadline=fixture.detector.suspicionDeadlineNanos(target);
+        NodeId independentReporter=target.equals(NODE_2)?NODE_3:NODE_2;
+        fixture.detector.onMessage(independentReporter,new SwimMessage.Ping(99,independentReporter,
+                List.of(new MembershipUpdate(target,0,MemberStatus.SUSPECT,independentReporter))));
+        long confirmedDeadline=fixture.detector.suspicionDeadlineNanos(target);
+        assertTrue(confirmedDeadline<initialDeadline);
+        assertEquals(fixture.time.monotonicNanos()+Duration.ofMillis(600).toNanos(),confirmedDeadline);
+    }
+
+    @Test
+    void swimBaselineIgnoresLifeguardLocalDelay() {
+        Fixture fixture=fixture(NODE_1,CONFIG);
+        fixture.detector.start(); fixture.detector.observeLocalDelay(Duration.ofSeconds(10).toNanos());
+        assertEquals(0,fixture.detector.awarenessScore());
+        assertEquals(Duration.ofMillis(100).toNanos(),fixture.detector.effectiveDirectProbeTimeoutNanos());
+    }
+
     private static Fixture fixture(NodeId localNode) {
+        return fixture(localNode,CONFIG);
+    }
+
+    private static Fixture fixture(NodeId localNode,SwimConfig config) {
         ManualTime time = new ManualTime();
         RecordingTransport transport = new RecordingTransport();
         List<MembershipEvent> events = new ArrayList<>();
         SwimFailureDetector detector = new SwimFailureDetector(
-                localNode, THREE_NODES, CONFIG, transport, time, events::add, 42);
+                localNode, THREE_NODES, config, transport, time, events::add, 42);
         return new Fixture(detector, time, transport, events);
     }
 

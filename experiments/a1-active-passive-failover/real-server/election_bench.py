@@ -45,7 +45,7 @@ def verify(client,nodes,keys,value):
 
 
 def run(args):
-    client=Client(args.hosts.split(','))
+    client=Client(args.hosts.split(','),client_port=args.client_port,peer_port=args.peer_port)
     result={'schema':'a1-real-election-1','protocol':args.protocol,'runId':uuid.uuid4().hex,
             'utcEpochMs':int(time.time()*1000),'timeDomain':'wall-clock','durationUnit':'ns',
             'valueBytes':args.value,'timeoutMs':args.timeout,'repeat':args.repeat,'electionSeed':args.repeat,
@@ -57,11 +57,26 @@ def run(args):
         leader,epoch,states=discover(client,args.protocol)
         assert leader==args.controller,'controller is not on the elected leader host'
         result.update(originalLeader=leader,initialEpoch=epoch,statesInitial=states)
+        detector=states[leader].get('failureDetector','FIXED_TIMEOUT')
+        result['failureDetector']=detector
+        result['failureDetectorConfig']={k:states[leader][k] for k in (
+            'failureProbeIntervalMs','failureDirectTimeoutMs','failureIndirectTimeoutMs',
+            'failureSuspicionMs','failureStartupGraceMs','failureAwarenessMaxMultiplier',
+            'failureSuspicionMaxTimeoutMultiplier','failureMaxConfirmations') if k in states[leader]}
+        if detector!='FIXED_TIMEOUT':
+            # Do not inject while some detectors are still in startup grace.
+            wait_ms=max(s['failureStartupGraceMs']+2*s['failureProbeIntervalMs']-s['uptimeNs']/1e6 for s in states)
+            if wait_ms>0:
+                time.sleep(wait_ms/1000)
+            leader_now,epoch_now,_=discover(client,args.protocol)
+            assert (leader_now,epoch_now)==(leader,epoch),'leader changed during healthy startup'
         survivors=[i for i in range(3) if i!=leader]
         value=bytes((i*17+3)%256 for i in range(args.value))
         for i in range(30):
             assert client.set(leader,100+i,f'warm-{i}'.encode(),value,epoch)['status']==0,'warmup failed'
-        result['normalBytesBegin']=[client.status(i)['sentBytes'] for i in range(3)]
+        normal_begin=[client.status(i) for i in range(3)]
+        result['normalBytesBegin']=[s['sentBytes'] for s in normal_begin]
+        result['normalFdBytesBegin']=[s.get('fdSentBytes',0) for s in normal_begin]
         keys=[];begin=time.perf_counter_ns()
         for i in range(args.count):
             key=f'pre-{i}'.encode(); before=time.perf_counter_ns()
@@ -72,11 +87,18 @@ def run(args):
         end=time.perf_counter_ns()
         result.update(normalElapsedNs=end-begin,normalP50Ns=quantile(result['normalSamplesNs'],.5),
                       normalP99Ns=quantile(result['normalSamplesNs'],.99),observedSingleClientOpsPerSecond=args.count*1e9/(end-begin))
-        result['normalBytesEnd']=[client.status(i)['sentBytes'] for i in range(3)]
+        normal_end=[client.status(i) for i in range(3)]
+        result['normalBytesEnd']=[s['sentBytes'] for s in normal_end]
+        result['normalFdBytesEnd']=[s.get('fdSentBytes',0) for s in normal_end]
         time.sleep(.2)
         result['preCrashVerifiedCopies']=verify(client,survivors,keys,value)
         result['statesBefore']=[client.status(i) for i in range(3)]
         assert all(s['epoch']==epoch for s in result['statesBefore']),'pre-crash term changed'
+        calibrations={}
+        for node in survivors:
+            before=time.perf_counter_ns(); status=client.status(node); after=time.perf_counter_ns()
+            calibrations[node]={'beginNs':before,'endNs':after,'nodeNanoTime':status['nanoTime']}
+        result['clockCalibrations']=calibrations
         # pb_control validates the exact main class and config path in this directory.
         pid=int(pb_control.PID.read_text())
         assert pb_control.alive(pid),'dedicated JVM identity check failed'
@@ -114,6 +136,18 @@ def run(args):
         if args.protocol=='RAFT':
             assert s['role']=='LEADER' and s['electionTerm']==s['epoch']
             assert s['detectedNs']>result['statesBefore'][s['node']]['detectedNs'],'old election timing reused'
+            result['electionOrigin']=s.get('raftElectionOrigin','TIMEOUT')
+            result['electionTrigger']=s.get('raftElectionTrigger','TIMEOUT')
+            result['fallbackUsed']=result['electionOrigin']=='FALLBACK'
+            if detector!='FIXED_TIMEOUT' and result['electionOrigin']=='SWIM_DEAD':
+                assert s['raftFailedLeader']==leader and s['raftFailureSignalTerm']==epoch,'wrong leader/term FD evidence'
+                assert 0<=s['raftFdDeadNs']<=s['detectedNs'],'missing or late DEAD evidence'
+                result['deadToElectionNs']=s['detectedNs']-s['raftFdDeadNs']
+                calibration=calibrations[s['node']]
+                result['fdDetectionLatencyBoundsNs']=[
+                    calibration[k]+s['raftFdDeadNs']-calibration['nodeNanoTime']-result['faultCallBeginNs']
+                    for k in ('beginNs','endNs')]
+                result['fdClockAssumption']='RTT calibration interval; relative clock drift during run is not bounded by this estimate'
         result['promotionNs']=s['readyNs']-s['detectedNs']
         result['preservedSuccesses']=len(keys)
         result['staleEpochStatus']=client.set(result['newLeader'],100001,b'stale',value,epoch)['status']
@@ -135,9 +169,10 @@ if __name__=='__main__':
     p.add_argument('--discover',action='store_true');p.add_argument('--controller',type=int);p.add_argument('--out')
     p.add_argument('--value',type=int,default=64);p.add_argument('--timeout',type=int,default=500)
     p.add_argument('--repeat',type=int,default=1);p.add_argument('--count',type=int,default=128)
+    p.add_argument('--client-port',type=int,default=7000);p.add_argument('--peer-port',type=int,default=7001)
     args=p.parse_args()
     if args.discover:
-        client=Client(args.hosts.split(','))
+        client=Client(args.hosts.split(','),client_port=args.client_port,peer_port=args.peer_port)
         try:
             leader,epoch,states=discover(client,args.protocol);print(json.dumps({'leader':leader,'epoch':epoch,'states':states}))
         finally:client.close()

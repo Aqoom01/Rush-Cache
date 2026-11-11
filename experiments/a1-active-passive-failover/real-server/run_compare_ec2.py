@@ -18,6 +18,7 @@ def main():
     p.add_argument("--dist",type=Path,required=True)
     p.add_argument("--out",type=Path,required=True)
     p.add_argument("--quick",action="store_true")
+    p.add_argument("--detector",choices=["FIXED_TIMEOUT","SWIM","SWIM_LIFEGUARD"],default="FIXED_TIMEOUT")
     args=p.parse_args()
     hosts=json.loads(args.hosts.read_text(encoding="utf-8"))
     assert len(hosts)==3
@@ -50,12 +51,13 @@ def main():
         "schema":"a1-real-deployment-1","utcEpochMs":int(time.time()*1000),
         "distSha256":hashlib.sha256(args.dist.read_bytes()).hexdigest(),"hosts":hosts,
         "scriptsSha256":{name:hashlib.sha256((HERE/name).read_bytes()).hexdigest() for name in ("pb_bench.py","compare_bench.py","pb_control.py","run_compare_ec2.py")},
-        "commandLineScope":"PB/VR matched settled idle crash; warmup30 normal128","quick":args.quick
+        "commandLineScope":("PB/VR matched settled idle crash" if args.detector=="FIXED_TIMEOUT" else "PB failure-detector settled idle crash")
+                           +"; warmup30 normal128","quick":args.quick,"failureDetector":args.detector
     },indent=2),encoding="utf-8")
     def stop(i):
         return ssh(i,f"python3 {REMOTE}/pb_control.py stop")
     try:
-        for protocol in ("PB","VR"):
+        for protocol in (("PB","VR") if args.detector=="FIXED_TIMEOUT" else ("PB",)):
             for timeout in ([500] if args.quick else [500,1000]):
                 for value in ([64] if args.quick else [64,8192]):
                     for repeat in range(1,2 if args.quick else 4):
@@ -63,11 +65,14 @@ def main():
                         def configure(i):
                             config=args.out/f"node-{i}.properties"
                             config.write_text(f"protocol={protocol}\nnode.id={i}\npeer.0={hosts[0]['private']}\npeer.1={hosts[1]['private']}\npeer.2={hosts[2]['private']}\n"
-                                              f"client.port=7000\npeer.port=7001\nadmin.port=9091\nheartbeat.ms=50\ntimeout.ms={timeout}\ntick.ms=10\n",encoding="utf-8")
+                                              f"client.port=7000\npeer.port=7001\nadmin.port=9091\nheartbeat.ms=50\ntimeout.ms={timeout}\ntick.ms=10\n"
+                                              f"failure.detector={args.detector}\nfailure.port=7002\nfailure.startup.grace.ms=3000\n"
+                                              f"failure.probe.interval.ms=200\nfailure.direct.timeout.ms=50\nfailure.indirect.timeout.ms=50\nfailure.suspicion.ms={timeout}\n"
+                                              f"failure.lifeguard.awareness.max.multiplier=8\nfailure.lifeguard.suspicion.max.multiplier=2\nfailure.lifeguard.max.confirmations=1\n",encoding="utf-8")
                             put(i,config,f"{REMOTE}/node.properties")
                         parallel(configure,range(3))
                         parallel(lambda i:ssh(i,f"python3 {REMOTE}/pb_control.py start"),(1,2))
-                        name=f"{protocol}-v{value}-t{timeout}-r{repeat}.json"
+                        name=f"{protocol}-{args.detector.lower()}-v{value}-t{timeout}-r{repeat}.json"
                         backend="compare_bench.py"
                         count=128
                         output=ssh(0,f"python3 {REMOTE}/{backend} --protocol {protocol} --hosts {','.join(h['private'] for h in hosts)} --value {value} --timeout {timeout}"

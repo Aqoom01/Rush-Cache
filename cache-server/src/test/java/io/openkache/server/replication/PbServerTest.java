@@ -39,6 +39,15 @@ class PbServerTest {
         }
         fail("initial Primary heartbeat not received");
     }
+    static void awaitFencedPrimary(List<String> hosts,int peerPort) throws Exception {
+        long limit=System.nanoTime()+5_000_000_000L;
+        while(System.nanoTime()<limit) {
+            String status=new String(request(hosts.getFirst(),peerPort,35,3,new byte[0]).value(),StandardCharsets.UTF_8);
+            if(status.contains("\"fenceState\":\"SERVING\"")) return;
+            Thread.sleep(10);
+        }
+        fail("initial fenced Primary did not acquire a lease");
+    }
     @Test void disconnectedBackupTimesOutWithoutFalseSuccess() throws Exception {
         int client=port(),peer=port(); while(client==peer) peer=port();
         List<String> hosts=List.of("127.0.0.1","127.0.0.2","127.0.0.3"); List<PbServer> nodes=new ArrayList<>();
@@ -78,6 +87,57 @@ class PbServerTest {
             assertNotNull(after); assertEquals(0,after.status()); assertEquals(2,after.epoch());
             assertEquals(5,request(hosts.get(1),client,1,1,command(4,1,"before",null)).status());
             for(int i=1;i<3;i++) assertArrayEquals("value".getBytes(StandardCharsets.UTF_8),request(hosts.get(i),peer,36,3,"before".getBytes(StandardCharsets.UTF_8)).value());
+        } finally { for(var node:nodes) node.close(); }
+    }
+    @Test void swimDeadEventPromotesTheDesignatedBackup() throws Exception {
+        int client=port(),peer=port(),failure=port();
+        while(peer==client) peer=port();
+        while(failure==client || failure==peer) failure=port();
+        List<String> hosts=List.of("127.0.0.1","127.0.0.2","127.0.0.3"); List<PbServer> nodes=new ArrayList<>();
+        try {
+            for(int i=0;i<3;i++) nodes.add(PbServer.start(new PbNodeConfig(i,hosts,client,peer,0,50,1000,10,
+                    "PB_FENCED",1,"INCREMENTAL","TAIL_ONLY",0,1000,"SWIM",failure,100,25,25,250,0,8,2,1)));
+            awaitFencedPrimary(hosts,peer);
+            assertEquals(0,request(hosts.getFirst(),client,2,1,command(20,1,"before-swim","value")).status());
+            nodes.getFirst().close();
+            long limit=System.nanoTime()+5_000_000_000L; Reply after=null;
+            while(System.nanoTime()<limit) {
+                after=request(hosts.get(1),client,2,1,command(21,2,"after-swim","new"));
+                if(after.status()==0) break;
+                Thread.sleep(20);
+            }
+            assertNotNull(after); assertEquals(0,after.status()); assertEquals(2,after.epoch());
+            String status=nodes.get(1).statusJson();
+            assertTrue(status.contains("\"failureDetector\":\"SWIM\""),status);
+            assertTrue(status.contains("\"primaryFailureStatus\":\"DEAD\""),status);
+            assertArrayEquals("value".getBytes(StandardCharsets.UTF_8),request(hosts.get(1),client,1,1,command(22,2,"before-swim",null)).value());
+            assertTrue(status.contains("\"promotionVotes\":2"),status);
+        } finally { for(var node:nodes) node.close(); }
+    }
+
+    @Test void swimLifeguardDeadEventPromotesAndExportsAwareness() throws Exception {
+        int client=port(),peer=port(),failure=port();
+        while(peer==client) peer=port();
+        while(failure==client || failure==peer) failure=port();
+        List<String> hosts=List.of("127.0.0.1","127.0.0.2","127.0.0.3"); List<PbServer> nodes=new ArrayList<>();
+        try {
+            for(int i=0;i<3;i++) nodes.add(PbServer.start(new PbNodeConfig(i,hosts,client,peer,0,50,1000,10,
+                    "PB_FENCED",1,"INCREMENTAL","TAIL_ONLY",0,1000,"SWIM_LIFEGUARD",failure,100,25,25,250,0,8,2,1)));
+            awaitFencedPrimary(hosts,peer);
+            assertEquals(0,request(hosts.getFirst(),client,2,1,command(30,1,"before-lifeguard","value")).status());
+            nodes.getFirst().close();
+            long limit=System.nanoTime()+7_000_000_000L; Reply after=null;
+            while(System.nanoTime()<limit) {
+                after=request(hosts.get(1),client,2,1,command(31,2,"after-lifeguard","new"));
+                if(after.status()==0) break;
+                Thread.sleep(20);
+            }
+            assertNotNull(after); assertEquals(0,after.status()); assertEquals(2,after.epoch());
+            String status=nodes.get(1).statusJson();
+            assertTrue(status.contains("\"failureDetector\":\"SWIM_LIFEGUARD\""),status);
+            assertTrue(status.contains("\"primaryFailureStatus\":\"DEAD\""),status);
+            assertTrue(status.contains("\"fdAwarenessScore\":"),status);
+            assertTrue(status.contains("\"promotionVotes\":2"),status);
         } finally { for(var node:nodes) node.close(); }
     }
 }

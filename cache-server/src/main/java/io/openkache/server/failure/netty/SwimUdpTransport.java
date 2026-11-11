@@ -19,6 +19,7 @@ import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
 
 /** 하나의 Netty UDP channel로 SWIM datagram을 비동기 송수신한다. */
 public final class SwimUdpTransport implements Transport, AutoCloseable {
@@ -28,6 +29,12 @@ public final class SwimUdpTransport implements Transport, AutoCloseable {
     private final EventLoopGroup ioGroup;
     private final AtomicBoolean bound = new AtomicBoolean();
     private final AtomicBoolean closed = new AtomicBoolean();
+    private final AtomicLong sentFrames = new AtomicLong();
+    private final AtomicLong sentBytes = new AtomicLong();
+    private final AtomicLong receivedFrames = new AtomicLong();
+    private final AtomicLong receivedBytes = new AtomicLong();
+    private final AtomicLong failures = new AtomicLong();
+    private final AtomicLong invalidFrames = new AtomicLong();
     private volatile Channel channel;
 
     public SwimUdpTransport(NodeId localNode, Map<NodeId, InetSocketAddress> addresses, EventLoopGroup ioGroup) {
@@ -95,13 +102,29 @@ public final class SwimUdpTransport implements Transport, AutoCloseable {
         DatagramPacket packet = new DatagramPacket(Unpooled.wrappedBuffer(payload), address);
         activeChannel.writeAndFlush(packet).addListener(write -> {
             if (write.isSuccess()) {
+                sentFrames.incrementAndGet();
+                sentBytes.addAndGet(payload.length);
                 completion.complete(null);
             } else {
+                failures.incrementAndGet();
                 completion.completeExceptionally(write.cause());
             }
         });
         return completion;
     }
+
+    public void recordReceived(int bytes) {
+        receivedFrames.incrementAndGet();
+        receivedBytes.addAndGet(bytes);
+    }
+
+    public void recordInvalid() { invalidFrames.incrementAndGet(); }
+    public long sentFrames() { return sentFrames.get(); }
+    public long sentBytes() { return sentBytes.get(); }
+    public long receivedFrames() { return receivedFrames.get(); }
+    public long receivedBytes() { return receivedBytes.get(); }
+    public long failures() { return failures.get(); }
+    public long invalidFrames() { return invalidFrames.get(); }
 
     @Override
     public void close() {
