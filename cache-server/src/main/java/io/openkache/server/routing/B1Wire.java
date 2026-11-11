@@ -26,6 +26,7 @@ public final class B1Wire {
     public static final int CONTROL = 8;
     /** 진단: 이 노드의 표를 §6-3 형식으로 돌려준다(빈 body). */
     public static final int TABLE_DUMP = 9;
+    static final String STALE_EXPECTED_VERSION = "stale expected version";
 
     private B1Wire() {}
 

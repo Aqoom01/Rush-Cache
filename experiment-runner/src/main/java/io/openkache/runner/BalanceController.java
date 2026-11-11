@@ -180,7 +180,7 @@ final class BalanceController {
             Map<NodeId, Double> capacityMap = new HashMap<>();
             for (Tablet t : table.tablets()) {
                 afterSplit.putIfAbsent(t.id(), 0L);
-                bytes.put(t.id(), estimatedBytes(t));
+                bytes.put(t.id(), estimatedBytes(config, t));
             }
             for (int n = 0; n < nodes; n++) capacityMap.put(new NodeId(n), Math.max(capacity, 1.0));
             PlacementDecision decision = placementPolicy.decide(
@@ -248,7 +248,7 @@ final class BalanceController {
     }
 
     /** key가 해시 공간에 고르게 퍼져 있다고 보고 구간 폭 비율 × 전체 데이터로 Tablet 크기를 어림한다. */
-    private long estimatedBytes(Tablet t) {
+    static long estimatedBytes(RunnerConfig config, Tablet t) {
         long width = t.range().end() - t.range().start();
         double fraction = width == 0 ? 1.0 : unsigned(width) / Math.pow(2, 64);
         return (long) (fraction * config.keyCount() * (config.valueSize() + config.keyLength()));

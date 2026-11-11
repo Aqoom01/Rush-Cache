@@ -31,7 +31,7 @@ import java.util.concurrent.atomic.AtomicLong;
  * 응답을 기다리는 peer 요청 client. 이동 전송(TRANSFER)과 commit(CONTROL)처럼 상대의 적용 확인이 필요한 요청에 쓴다.
  * 노드별 연결 하나를 재사용하고 requestId로 응답을 짝짓는다. 어느 thread에서나 호출할 수 있고 EventLoop에서 block하지 않는다.
  */
-final class PeerCaller implements AutoCloseable {
+final class PeerCaller implements PeerRequests, AutoCloseable {
 
     /** §3 응답 body를 푼 결과. status는 §5 상태 코드(0 = OK). */
     record Reply(int status, long routingVersion, String detail, byte[] value) {
@@ -52,12 +52,14 @@ final class PeerCaller implements AutoCloseable {
         this.timeoutMs = timeoutMs;
     }
 
-    boolean knows(NodeId node) {
+    @Override
+    public boolean knows(NodeId node) {
         return peers.containsKey(node);
     }
 
     /** peer class frame을 보내고 응답을 기다린다. 연결 실패·시간 초과는 예외로 완료된다. */
-    CompletableFuture<Reply> call(NodeId target, int opcode, byte[] body) {
+    @Override
+    public CompletableFuture<Reply> call(NodeId target, int opcode, byte[] body) {
         if (closed.get() || !peers.containsKey(target)) {
             return CompletableFuture.failedFuture(new IllegalStateException("closed or unknown peer " + target));
         }

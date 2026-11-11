@@ -186,7 +186,7 @@ checksum은 B3 `TransferBatch`·`DeltaBatch`의 CRC32C이고 destination이 다�
 
 commit 순서: protocol이 commit 준비(마지막 batch ACK + freeze 유지)가 되면 source는 (1) 그 Tablet의 모든 요청을 destination으로 MOVED 시키고 (2) Controller에 MOVE(expectedVersion = source의 현재 표 버전)를 보내고 (3) 새 표를 받은 뒤 (4) 자기 범위를 지우고 freeze를 푼다. 이동 중 freeze된 Tablet의 SET·DELETE는 BUSY(6)로 응답한다. MOVE 응답이 오지 않으면 commit 여부를 알 수 없으므로 거절과 freeze를 유지한 채 FAILED로 끝낸다.
 
-결과 JSON 시각은 job 시작 기준 ms(source 노드 시계)다: freezeStartMs, commitStartMs, commitAckMs, tableSeenMs, doneMs, writeBlockedMs(freeze 시작 → 새 표 수신). pre-copy는 rounds, stopReason, roundEvents(라운드별 dirtyKeys·tombstoneKeys·dirtyBytes·roundSentBytes)를 더한다.
+결과 JSON 시각은 job 시작 기준 ms(source 노드 시계)다: freezeStartMs, commitStartMs, commitAckMs, tableSeenMs, doneMs, writeBlockedMs(freeze 시작 → 새 표 수신). pre-copy는 rounds, stopReason, roundEvents(라운드별 dirtyKeys·tombstoneKeys·dirtyBytes·roundSentBytes)를 더한다. commitRetries는 최초 원격 CONTROL 요청 이후 표 버전 불일치로 다시 보낸 커밋 요청 수다. 재시도 중 쓰기 차단 시간은 writeBlockedMs에 포함된다.
 
 ## 7. A1 PB 전용 peer 확장
 

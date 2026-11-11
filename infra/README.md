@@ -174,10 +174,18 @@ config에 아래 key를 넣으면 `run.sh`가 실행 전 재시작 때 반영한
 | `retry.busy.max`, `retry.busy.interval.ms`, `retry.busy.max.interval.ms` | 1000, 1, 첫 간격과 같음 | BUSY(이동 중 freeze) 재시도 횟수와 간격. 간격은 재시도마다 두 배로 늘려 상한까지 간다(기본은 고정 간격) |
 | `timeline.bucket.ms` | 100 | timeline 구간 폭 |
 | `consistency.check` | true | 끝난 뒤 모든 key를 GET해 oracle과 대조 |
-| `migration.at.ms`, `migration.tablet`, `migration.to` | 없음 | 쉼표 목록(개수 같게). 측정 시작 뒤 그 시각에 Tablet을 node로 옮기라고 그때의 주인에게 지시한다. 앞 이동이 끝난 뒤 다음을 보낸다 |
+| `migration.at.ms`, `migration.tablet`, `migration.to` | 없음 | 쉼표 목록(개수 같게). 측정 시작 뒤 그 시각에 Tablet을 node로 옮기라고 그때의 주인에게 지시한다. 스케줄러 생략 시 앞 이동이 끝난 뒤 다음을 보낸다 |
 | `migration.method` | `pre-copy` | `stop-and-copy`, `pre-copy`, `cutover`(복사 없음 참고선) |
 | `migration.rate.bytes.per.sec` | 0 | 이동 대역 상한(0 = 없음) |
 | `migration.batch.bytes`, `migration.stop.threshold.bytes`, `migration.max.rounds` | 65536, 262144, 10 | batch 크기, pre-copy 종료 임계·라운드 상한 |
+| `migration.scheduler` | 없음 | `fifo`, `mongodb`, `slamig` 중 선택. 생략하면 순차 실행 |
+| `migration.scheduler.max.concurrent` | 4 | 클러스터 전체 동시 이동 상한 |
+| `migration.scheduler.max.per.node` | 4 | 송신·수신 합산 노드당 동시 이동 상한. 정책별 제한도 적용 |
+| `migration.scheduler.deadline.ms` | SLAMIG 필수 | 이동별 상대 기한(ms), 시작 순위 계산용 |
+| `drain.node` | 없음 | Tablet을 모두 옮길 NodeId. 배포된 노드가 2대 이상이어야 하며 명시적 이동 목록과 함께 쓸 수 없다 |
+| `drain.at.ms` | 10000 | 측정 시작 후 drain 계획을 만드는 시각(ms) |
+
+`migration.scheduler`와 `drain.node`는 각각 `balance.split`과 함께 쓸 수 없다. E5·E6은 일반 노드(node 3)를 비운다. 원격 이동의 커밋이 표 버전 불일치로 거절되면 서버는 Tablet이 그대로인지 확인한 뒤 freeze를 유지하며 최대 16회 재시도한다. 실험 설정과 결과 필드는 [E5·E6 drain README](../experiments/cluster-integration/e5-e6-drain/README.md)를 따른다.
 
 **균형 조정 (`balance.*`, B1+B2+B3 통합)**: `balance.split`을 주면 측정 중 window마다 Runner가 관찰한 key별 부하로 B2 정책을 부른다. 분할 시작 조건을 넘은 Tablet은 B2 Split 정책으로 나눠 Controller에 CONTROL SPLIT을 보내고, 나눈 뒤 B2 Placement 정책의 이동 계획을 `migration.method`(보통 pre-copy)로 하나씩 실행한다. 분할 시작 조건은 B2 design.md §4.1·Benchmark C 규칙(Tablet window 요청 > 노드 용량/4가 연속 `sustain` window, 분할 후 `cooldown` window 유예, 노드 용량 = window 요청 ÷ (노드 수 × 목표 이용률))이다. 이동 시각·대상을 정하는 `migration.at.ms` 등과 함께 쓸 수 있다.
 

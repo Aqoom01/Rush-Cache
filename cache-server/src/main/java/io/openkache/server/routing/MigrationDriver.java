@@ -1,11 +1,13 @@
 package io.openkache.server.routing;
 
+import io.openkache.core.api.ResultStatus;
 import io.openkache.core.migration.JobState;
 import io.openkache.core.migration.MigrationJob;
 import io.openkache.core.migration.MigrationProtocol;
 import io.openkache.core.migration.precopy.PreCopyProtocol;
 import io.openkache.core.migration.stopcopy.StopAndCopyProtocol;
 import io.openkache.core.model.NodeId;
+import io.openkache.core.model.RoutingVersion;
 import io.openkache.core.model.TabletId;
 import io.openkache.core.runtime.OwnerWorker;
 import io.openkache.core.tablet.Change;
@@ -13,6 +15,7 @@ import io.openkache.core.tablet.RoutingTable;
 import io.openkache.core.tablet.Tablet;
 import io.openkache.core.tablet.routing.Controller;
 import io.openkache.core.tablet.routing.LocalRouting;
+import io.openkache.server.netty.Protocol;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -38,6 +41,10 @@ import java.util.concurrent.atomic.AtomicBoolean;
  */
 final class MigrationDriver implements AutoCloseable {
 
+    private static final int MAX_COMMIT_RETRIES = 16;
+    private static final int MAX_TABLE_REQUESTS = 16;
+    private static final long TABLE_REQUEST_INTERVAL_NANOS = TimeUnit.MILLISECONDS.toNanos(50);
+
     enum Phase { RUNNING, COMMITTING, AWAIT_TABLE, CLEANING, DONE, FAILED }
 
     private final NodeId self;
@@ -45,7 +52,7 @@ final class MigrationDriver implements AutoCloseable {
     private final NodeStore store;
     private final LocalRouting routing;
     private final Controller controller;
-    private final PeerCaller caller;
+    private final PeerRequests caller;
     private final OwnerWorker worker;
     private final Map<Long, Job> jobs = new LinkedHashMap<>();
     private final ScheduledExecutorService ticker;
@@ -54,7 +61,7 @@ final class MigrationDriver implements AutoCloseable {
     private long nextJob = 1;
 
     MigrationDriver(NodeId self, NodeId controllerId, NodeStore store, LocalRouting routing, Controller controller,
-                    PeerCaller caller, OwnerWorker worker) {
+                    PeerRequests caller, OwnerWorker worker) {
         this.self = self;
         this.controllerId = controllerId;
         this.store = store;
@@ -202,6 +209,9 @@ final class MigrationDriver implements AutoCloseable {
                     beginCommit(job);
                 }
             }
+            case COMMITTING -> {
+                if (job.rejectedVersion != null) retryRemoteCommit(job, now);
+            }
             case AWAIT_TABLE -> {
                 RoutingTable table = routing.table();
                 if (table.version().value() >= job.publishedVersion
@@ -262,13 +272,26 @@ final class MigrationDriver implements AutoCloseable {
             onCommitReply(job, before, published.isPresent(), "stale expected version");
             return;
         }
+        sendRemoteCommit(job, before);
+    }
+
+    private void sendRemoteCommit(Job job, RoutingTable before) {
         byte[] body = ByteBuffer.allocate(33).put((byte) 0).putLong(before.version().value())
                 .putLong(job.change.unit().value()).putLong(self.value()).putLong(job.change.to().value()).array();
         caller.call(controllerId, B1Wire.CONTROL, body).whenComplete((reply, error) -> {
             boolean offered = worker.offer(() -> {
+                if (job.phase != Phase.COMMITTING) return;
                 if (error != null) {
                     // CAS가 적용됐는지 모른다. 거절과 freeze를 유지해 두 주인이 쓰기를 받는 일을 막는다.
                     fail(job, "commit outcome unknown: " + error);
+                } else if (reply.status() == Protocol.statusCode(ResultStatus.UNAVAILABLE)
+                        && B1Wire.STALE_EXPECTED_VERSION.equals(reply.detail())) {
+                    if (job.commitRetries >= MAX_COMMIT_RETRIES) {
+                        rejectCommit(job, "stale expected version after " + job.commitRetries + " retries");
+                    } else {
+                        job.rejectedVersion = before.version();
+                        job.tableRequests = 0;
+                    }
                 } else {
                     onCommitReply(job, before, reply.ok(), "control status " + reply.status() + " " + reply.detail());
                 }
@@ -277,13 +300,46 @@ final class MigrationDriver implements AutoCloseable {
         });
     }
 
+    private void retryRemoteCommit(Job job, long now) {
+        RoutingTable current = routing.table();
+        if (current.version().isNewerThan(job.rejectedVersion)) {
+            if (!current.contains(job.tablet.id()) || !current.get(job.tablet.id()).equals(job.tablet)) {
+                rejectCommit(job, "moving tablet changed before commit retry");
+                return;
+            }
+            job.rejectedVersion = null;
+            job.commitRetries++;
+            sendRemoteCommit(job, current);
+            return;
+        }
+        if (job.tableRequests > 0 && now - job.lastTableRequest < TABLE_REQUEST_INTERVAL_NANOS) return;
+        if (job.tableRequests == MAX_TABLE_REQUESTS) {
+            rejectCommit(job, "no newer routing table after " + job.tableRequests + " requests and "
+                    + job.commitRetries + " commit retries");
+            return;
+        }
+        job.tableRequests++;
+        job.lastTableRequest = now;
+        // The normal TABLE_REPLY handler installs the table and performs routing-change housekeeping.
+        routing.requestTable(controllerId);
+    }
+
+    private void rejectCommit(Job job, String reason) {
+        job.commitAckNanos = System.nanoTime();
+        if (controller == null) {
+            routing.resumeServing(job.tablet);
+        } else {
+            routing.resumeServing(job.tablet.id());
+        }
+        if (job.protocol != null) job.protocol.abort();
+        fail(job, "commit rejected: " + reason);
+    }
+
     private void onCommitReply(Job job, RoutingTable before, boolean ok, String rejection) {
         if (job.phase != Phase.COMMITTING) return;
         job.commitAckNanos = System.nanoTime();
         if (!ok) {
-            routing.resumeServing(job.tablet.id());
-            if (job.protocol != null) job.protocol.abort();
-            fail(job, "commit rejected: " + rejection);
+            rejectCommit(job, rejection);
             return;
         }
         RoutingTable published = before.apply(job.change);
@@ -336,6 +392,10 @@ final class MigrationDriver implements AutoCloseable {
         long tableSeenNanos;
         long doneNanos;
         long publishedVersion;
+        RoutingVersion rejectedVersion;
+        long lastTableRequest;
+        int tableRequests;
+        int commitRetries;
         long snapshotReadyNanos;
         int snapshotRecords = -1;
         boolean begun;
@@ -404,7 +464,7 @@ final class MigrationDriver implements AutoCloseable {
                 }
                 s.append(String.join(",", events)).append(']');
             }
-            return s.append('}').toString();
+            return s.append(",\"commitRetries\":").append(commitRetries).append('}').toString();
         }
 
         private static String quote(String text) {

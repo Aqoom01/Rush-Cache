@@ -22,7 +22,7 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 final class RemoteDestination implements PreCopyProtocol.Destination {
 
-    private final PeerCaller caller;
+    private final PeerRequests caller;
     private final NodeId self;
     private final NodeId target;
     private final long jobId;
@@ -35,7 +35,7 @@ final class RemoteDestination implements PreCopyProtocol.Destination {
     private Tablet tablet;
     private CompletableFuture<Boolean> prepared = CompletableFuture.completedFuture(false);
 
-    RemoteDestination(PeerCaller caller, NodeId self, NodeId target, long jobId) {
+    RemoteDestination(PeerRequests caller, NodeId self, NodeId target, long jobId) {
         this.caller = caller;
         this.self = self;
         this.target = target;

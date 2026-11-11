@@ -39,7 +39,7 @@ import java.util.concurrent.ConcurrentHashMap;
 public final class LocalRouting {
 
     /** 거절을 건 순간의 epoch·범위. 범위는 그 뒤 Tablet이 split돼 id가 늘어나도 거절을 승계하기 위해 둔다. */
-    private record Refusal(OwnershipEpoch epoch, TabletRange range, Optional<NodeId> destination) {}
+    private record Refusal(OwnershipEpoch epoch, TabletRange range, Optional<NodeId> destination, Tablet origin) {}
 
     private final NodeId self;
     private final Transport transport;
@@ -80,7 +80,7 @@ public final class LocalRouting {
         for (Refusal r : List.copyOf(refusing.values())) {
             for (Tablet t : candidate.tablets()) {
                 if (t.owner().equals(self) && t.epoch().equals(r.epoch()) && within(t.range(), r.range())) {
-                    refusing.putIfAbsent(t.id(), new Refusal(r.epoch(), t.range(), r.destination()));
+                    refusing.putIfAbsent(t.id(), new Refusal(r.epoch(), t.range(), r.destination(), r.origin()));
                 }
             }
         }
@@ -117,12 +117,17 @@ public final class LocalRouting {
         if (!t.owner().equals(self)) {
             throw new IllegalArgumentException(id + " is owned by " + t.owner() + ", not " + self);
         }
-        refusing.put(id, new Refusal(t.epoch(), t.range(), Objects.requireNonNull(destination, "destination")));
+        refusing.put(id, new Refusal(t.epoch(), t.range(), Objects.requireNonNull(destination, "destination"), t));
     }
 
     /** 이동이 취소됐을 때 거절을 푼다. */
     public void resumeServing(TabletId id) {
         refusing.remove(id);
+    }
+
+    /** 취소된 이동이 건 거절과 split으로 승계된 거절을 함께 푼다. */
+    public synchronized void resumeServing(Tablet origin) {
+        refusing.entrySet().removeIf(e -> e.getValue().origin().equals(origin));
     }
 
     public boolean isRefusing(TabletId id) {

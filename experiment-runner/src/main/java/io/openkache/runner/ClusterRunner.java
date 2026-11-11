@@ -2,7 +2,11 @@ package io.openkache.runner;
 
 import io.openkache.core.api.Command;
 import io.openkache.core.model.Bytes;
+import io.openkache.core.model.NodeId;
 import io.openkache.core.model.TabletId;
+import io.openkache.core.tablet.Change;
+import io.openkache.core.tablet.Tablet;
+import io.openkache.core.tablet.range.HashRangeScheme;
 import io.openkache.core.tablet.KeyHash;
 import io.openkache.core.tablet.RoutingTable;
 import java.io.IOException;
@@ -11,13 +15,16 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Locale;
 import java.util.Random;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.FutureTask;
 import java.util.concurrent.locks.LockSupport;
 import java.util.concurrent.locks.ReentrantLock;
 
@@ -36,11 +43,11 @@ import java.util.concurrent.locks.ReentrantLock;
  */
 final class ClusterRunner {
 
-    private static final int OP_MIGRATE = 10;
-    private static final int OP_MIGRATE_STATUS = 11;
-    private static final int PHASE_DONE = 4;
-    private static final int PHASE_FAILED = 5;
-    private static final long MIGRATION_WAIT_MS = 120_000;
+    static final int OP_MIGRATE = 10;
+    static final int OP_MIGRATE_STATUS = 11;
+    static final int PHASE_DONE = 4;
+    static final int PHASE_FAILED = 5;
+    static final long MIGRATION_WAIT_MS = 120_000;
     private static final long SOCKET_MARGIN_MS = 500;
 
     private final RunnerConfig config;
@@ -49,6 +56,8 @@ final class ClusterRunner {
     private final ConsistencyOracle oracle;
     private final List<String> violations = new ArrayList<>();
     private BalanceController balancer;
+    private String schedulerResult;
+    private String drainResult;
 
     ClusterRunner(RunnerConfig config, ClusterConfig cluster, ExperimentRunner base) {
         this.config = config;
@@ -59,7 +68,16 @@ final class ClusterRunner {
 
     /** 이동 한 건의 기록. 시각은 측정 시작 기준 ms(Runner 시계). */
     record MigrationRecord(ClusterConfig.Migration plan, long from, double sentMs, int acceptStatus, String rejection,
-                           double finishedMs, int phase, String serverJson) {}
+                           double finishedMs, int phase, String serverJson, double queuedMs, int admissionRetries) {
+        MigrationRecord(ClusterConfig.Migration plan, long from, double sentMs, int acceptStatus, String rejection,
+                        double finishedMs, int phase, String serverJson) {
+            this(plan, from, sentMs, acceptStatus, rejection, finishedMs, phase, serverJson, -1, 0);
+        }
+
+        MigrationRecord queuedAt(double queued) {
+            return new MigrationRecord(plan, from, sentMs, acceptStatus, rejection, finishedMs, phase, serverJson, queued, 0);
+        }
+    }
 
     /** thread 하나가 측정 구간에 남긴 요청 기록. 끝난 뒤 합친다. */
     /** 측정 구간 요청 기록. 요청 k는 자기 칸 k에만 쓴다(가상 thread끼리 칸을 나누므로 경합이 없다). */
@@ -123,7 +141,14 @@ final class ClusterRunner {
             long measuredStart = System.nanoTime() + 50_000_000L;
             long measuredStartEpochMs = System.currentTimeMillis() + 50;
             List<MigrationRecord> migrations = new ArrayList<>();
-            Thread migrator = new Thread(() -> migrate(routing, measuredStart, migrations), "cluster-migrator");
+            boolean scheduled = cluster.scheduler().isPresent() || cluster.drain().isPresent();
+            FutureTask<Void> scheduledMigration = new FutureTask<>(() -> {
+                migrateScheduled(routing, measuredStart, migrations);
+                return null;
+            });
+            Thread migrator = new Thread(scheduled ? scheduledMigration : () -> migrate(routing, measuredStart, migrations),
+                    "cluster-migrator");
+            int moveLimit = cluster.drain().map(d -> routing.table().size()).orElse(cluster.migrations().size());
             migrator.start();
             Thread balanceThread = null;
             if (cluster.balance().isPresent()) {
@@ -141,10 +166,23 @@ final class ClusterRunner {
                 balancer.stop();
                 balanceThread.join();
             }
-            migrator.join(MIGRATION_WAIT_MS * Math.max(1, cluster.migrations().size()));
+            long waitMs = MIGRATION_WAIT_MS * Math.max(1, moveLimit);
+            if (scheduled) {
+                long lastAt = cluster.drain().map(ClusterConfig.Drain::atMs)
+                        .orElse(cluster.migrations().stream().mapToLong(ClusterConfig.Migration::atMs).max().orElse(0));
+                waitMs += Math.min(Long.MAX_VALUE - waitMs, Math.max(0, lastAt - (long) ms(measuredElapsed)));
+            }
+            migrator.join(waitMs);
             if (migrator.isAlive()) {
                 migrator.interrupt();
                 migrator.join();
+            }
+            if (scheduled) {
+                try {
+                    scheduledMigration.get();
+                } catch (ExecutionException e) {
+                    throw new IOException("scheduled migration failed", e.getCause());
+                }
             }
             routing.refreshNow();
             long[] consistency = cluster.consistencyCheck() ? check(routing, client) : null;
@@ -324,9 +362,7 @@ final class ClusterRunner {
         }
         int from = (int) table.get(id).owner().value();
         RunnerConfig.Target source = routing.node(from);
-        byte[] body = ByteBuffer.allocate(41).put((byte) m.method().ordinal()).putLong(m.tablet()).putLong(m.to())
-                .putLong(m.rateBytesPerSec()).putInt(m.batchBytes()).putLong(m.stopThresholdBytes())
-                .putInt(m.maxRounds()).array();
+        byte[] body = migrationBody(m);
         try (WireClient peer = new WireClient(source.host(), cluster.peerPort(), config.requestTimeoutMs())) {
             double sentMs = ms(System.nanoTime() - measuredStart);
             WireClient.Response accepted = peer.peer(OP_MIGRATE, body);
@@ -356,6 +392,142 @@ final class ClusterRunner {
                 LockSupport.parkNanos(5_000_000);
             }
         }
+    }
+
+    static byte[] migrationBody(ClusterConfig.Migration m) {
+        return ByteBuffer.allocate(41).put((byte) m.method().ordinal()).putLong(m.tablet()).putLong(m.to())
+                .putLong(m.rateBytesPerSec()).putInt(m.batchBytes()).putLong(m.stopThresholdBytes())
+                .putInt(m.maxRounds()).array();
+    }
+
+    private void migrateScheduled(ClusterRouting routing, long measuredStart, List<MigrationRecord> out)
+            throws IOException {
+        ClusterConfig.Drain drain = cluster.drain().orElse(null);
+        List<ClusterConfig.Migration> plans = cluster.migrations();
+        long firstAt = drain == null ? (plans.isEmpty() ? 0 : plans.getFirst().atMs()) : drain.atMs();
+        double now;
+        while ((now = ms(System.nanoTime() - measuredStart)) < firstAt) {
+            LockSupport.parkNanos((long) ((firstAt - now) * 1_000_000));
+            if (Thread.currentThread().isInterrupted()) return;
+        }
+
+        RoutingTable table = routing.refreshNow();
+        if (drain != null) {
+            NodeId leaving = new NodeId(drain.node());
+            // B1 uses HashRangeScheme. onNodeRemoved uses only the supplied table, not the initial tablet count.
+            plans = table.nodes().contains(leaving) ? new HashRangeScheme(HashRangeScheme.DEFAULT_TABLETS_PER_NODE)
+                    .onNodeRemoved(table, leaving).moves().stream().map(c -> drainMove(drain, c)).toList() : List.of();
+        }
+
+        if (cluster.scheduler().isPresent()) {
+            runAdmissions(routing, measuredStart, table, plans, out);
+        } else {
+            double queued = ms(System.nanoTime() - measuredStart);
+            for (ClusterConfig.Migration plan : plans) {
+                if (Thread.currentThread().isInterrupted()) break;
+                MigrationRecord record;
+                try {
+                    record = migrateOne(routing, measuredStart, plan);
+                } catch (IOException e) {
+                    record = new MigrationRecord(plan, drain.node(), -1, -1, e.toString(), -1, -1, "null");
+                }
+                out.add(record.queuedAt(queued));
+            }
+            List<Long> admissionOrder = out.stream().filter(m -> m.acceptStatus() == WireProtocol.STATUS_OK)
+                    .map(m -> m.plan().tablet()).toList();
+            schedulerResult = schedulerJson("sequential", 1, 1, "not-applied",
+                    admissionOrder.isEmpty() ? 0 : 1, admissionOrder, out);
+        }
+
+        if (drain != null) {
+            long remaining = routing.refreshNow().tablets().stream().filter(t -> t.owner().value() == drain.node()).count();
+            boolean completed = remaining == 0 && out.size() == plans.size()
+                    && out.stream().allMatch(m -> m.phase() == PHASE_DONE);
+            drainResult = String.format(Locale.ROOT, """
+                    {"node": %d, "atMs": %d, "planner": "onNodeRemoved", "plannedMoves": %d,                     "completedMs": %s, "remainingTablets": %d, "nodeRemoved": false}""",
+                    drain.node(), drain.atMs(), plans.size(),
+                    completed ? String.format(Locale.ROOT, "%.3f", ms(System.nanoTime() - measuredStart)) : "null", remaining);
+        }
+    }
+
+    private ClusterConfig.Migration drainMove(ClusterConfig.Drain drain, Change change) {
+        ClusterConfig.Migration m = cluster.migrationSettings();
+        return new ClusterConfig.Migration(drain.atMs(), change.unit().value(), change.to().value(), m.method(),
+                m.rateBytesPerSec(), m.batchBytes(), m.stopThresholdBytes(), m.maxRounds());
+    }
+
+    private void runAdmissions(ClusterRouting routing, long measuredStart, RoutingTable table,
+                               List<ClusterConfig.Migration> plans, List<MigrationRecord> out) throws IOException {
+        ClusterConfig.Scheduler settings = cluster.scheduler().orElseThrow();
+        List<MigrationAdmission.Job> jobs = new ArrayList<>();
+        Map<TabletId, MigrationAdmission.Job> lastMove = new HashMap<>();
+        for (ClusterConfig.Migration plan : plans) {
+            TabletId id = new TabletId(plan.tablet());
+            Tablet tablet = table.contains(id) ? table.get(id) : null;
+            MigrationAdmission.Job previous = lastMove.get(id);
+            NodeId from = previous == null ? (tablet == null ? null : tablet.owner()) : previous.change.to();
+            NodeId to = new NodeId(plan.to());
+            if (from == null || from.equals(to) || to.value() >= routing.nodeCount()) {
+                out.add(new MigrationRecord(plan, from == null ? -1 : from.value(), -1, -1,
+                        from == null ? "unknown tablet" : "invalid destination", -1, -1, "null",
+                        -1, 0));
+                continue;
+            }
+            MigrationAdmission.Job job = new MigrationAdmission.Job(plan, new Change(id, from, to),
+                    BalanceController.estimatedBytes(config, tablet), previous);
+            jobs.add(job);
+            lastMove.put(id, job);
+        }
+
+        Map<Long, WireClient> peers = new HashMap<>();
+        MigrationAdmission admission = new MigrationAdmission(settings, jobs, cluster.migrationSettings().rateBytesPerSec(),
+                (node, opcode, body) -> {
+                    try {
+                        WireClient peer = peers.get(node);
+                        if (peer == null) {
+                            peer = new WireClient(routing.node(Math.toIntExact(node)).host(), cluster.peerPort(),
+                                    config.requestTimeoutMs());
+                            peers.put(node, peer);
+                        }
+                        return peer.peer(opcode, body);
+                    } catch (IOException e) {
+                        WireClient failed = peers.remove(node);
+                        if (failed != null) failed.close();
+                        throw e;
+                    }
+                }, () -> ms(System.nanoTime() - measuredStart));
+        long tick = 0;
+        double deadline = plans.stream().mapToLong(ClusterConfig.Migration::atMs).max().orElse(0)
+                + (double) MIGRATION_WAIT_MS * Math.max(1, plans.size());
+        try {
+            while (!Thread.currentThread().isInterrupted() && ms(System.nanoTime() - measuredStart) < deadline
+                    && admission.step(tick)) {
+                tick++;
+                LockSupport.parkNanos(MigrationAdmission.POLL_MS * 1_000_000);
+            }
+            admission.stop(tick, "scheduler stopped before terminal status");
+        } finally {
+            for (WireClient peer : peers.values()) peer.close();
+        }
+        jobs.stream().map(MigrationAdmission.Job::record).forEach(out::add);
+
+        schedulerResult = schedulerJson(settings.policy(), settings.maxConcurrent(), settings.maxPerNode(), "poll-loop",
+                admission.maxObservedConcurrent, admission.admissionOrder, out);
+    }
+
+    private static String schedulerJson(String policy, int maxConcurrent, int maxPerNode, String tickUnit,
+                                        int maxObservedConcurrent, List<Long> admissionOrder, List<MigrationRecord> out) {
+        List<MigrationRecord> completed = out.stream().filter(m -> m.phase() == PHASE_DONE).toList();
+        double firstSent = out.stream().filter(m -> m.acceptStatus() == WireProtocol.STATUS_OK)
+                .mapToDouble(MigrationRecord::sentMs).min().orElse(0);
+        double lastCompleted = completed.stream().mapToDouble(MigrationRecord::finishedMs).max().orElse(firstSent);
+        double meanCompletion = completed.stream().mapToDouble(m -> m.finishedMs() - m.queuedMs()).average().orElse(0);
+        return String.format(Locale.ROOT,
+                "{\"policy\": \"%s\", \"maxConcurrent\": %d, \"maxPerNode\": %d, \"allocation\": \"not-applied\", "
+                        + "\"tickUnit\": \"%s\", \"makespanMs\": %.3f, \"meanJobCompletionMs\": %.3f, "
+                        + "\"maxObservedConcurrent\": %d, \"admissionOrder\": %s}",
+                policy, maxConcurrent, maxPerNode, tickUnit, lastCompleted - firstSent, meanCompletion,
+                maxObservedConcurrent, admissionOrder);
     }
 
     // ------------------------------------------------------------------ 정합성
@@ -512,6 +684,8 @@ final class ClusterRunner {
                     .append(consistency[5]).append(", \"samples\": [").append(String.join(", ", violations)).append("]}");
         }
         s.append(",\n  \"balance\": ").append(balancer == null ? "null" : balancer.json());
+        if (schedulerResult != null) s.append(",\n  \"scheduler\": ").append(schedulerResult);
+        if (drainResult != null) s.append(",\n  \"drain\": ").append(drainResult);
         s.append(",\n  \"migrations\": [");
         List<String> items = new ArrayList<>();
         for (MigrationRecord m : migrations) {
@@ -519,9 +693,11 @@ final class ClusterRunner {
             items.add(String.format(Locale.ROOT,
                     "%n    {\"atMs\": %d, \"tablet\": %d, \"from\": %d, \"to\": %d, \"method\": \"%s\", "
                             + "\"rateBytesPerSec\": %d, \"sentMs\": %.3f, \"acceptStatus\": %d, \"note\": %s, "
-                            + "\"finishedMs\": %.3f, \"phase\": %d, \"server\": %s}",
+                            + "\"finishedMs\": %.3f, \"phase\": %d, \"server\": %s%s}",
                     p.atMs(), p.tablet(), m.from(), p.to(), p.method().label(), p.rateBytesPerSec(), m.sentMs(),
-                    m.acceptStatus(), quote(m.rejection()), m.finishedMs(), m.phase(), m.serverJson()));
+                    m.acceptStatus(), quote(m.rejection()), m.finishedMs(), m.phase(), m.serverJson(),
+                    cluster.scheduler().isEmpty() && cluster.drain().isEmpty() ? "" : String.format(Locale.ROOT,
+                            ", \"queuedMs\": %.3f, \"admissionRetries\": %d", m.queuedMs(), m.admissionRetries())));
         }
         s.append(String.join(",", items)).append(items.isEmpty() ? "]\n}\n" : "\n  ]\n}\n");
         return s.toString();
