@@ -159,6 +159,35 @@ Tablet 하나 (40 bytes):
 | 8 | CONTROL | kind(u8), expectedVersion(u64), kind별 필드 | controller 노드 전용. kind 0 = MOVE(tabletId u64, from u64, to u64), 1 = SPLIT(tabletId u64, at u64). CAS 실패는 UNAVAILABLE |
 | 9 | TABLE_DUMP | 없음 | 이 노드의 표를 §6-3 형식으로 value에 돌려준다 |
 
+CONTROL MOVE든 이동 commit이든 표가 바뀌어 어떤 노드가 Tablet을 잃으면, 그 노드는 새 표를 받은 직후 그 범위의 값을 지운다(같은 Tablet이 돌아올 때 옛 값이 되살아나지 않게).
+
+### 6-5. B1+B3 Tablet 이동 opcode (peer listener)
+
+`B1ServerMain`에서만 쓴다. B3 `core.migration`의 stop-and-copy·pre-copy protocol을 실제 노드 간 TCP로 실행한다. 이동은 source 노드가 진행하고 commit은 Controller의 MOVE CAS(§6-4와 같은 규칙)로 한다. 구현: `server.routing.MigrationWire`, `MigrationDriver`, `MigrationReceiver`.
+
+| opcode | 이름 | 방향 | body | 응답 |
+|---|---|---|---|---|
+| 10 | MIGRATE | 실험 스크립트 → source 노드 | method(u8: 0 stop-and-copy, 1 pre-copy, 2 cutover), tabletId(u64), to(u64), rateBytesPerSec(u64, 0 = 상한 없음), batchBytes(u32), stopThresholdBytes(u64), maxRounds(u32) | OK + value = jobId(u64). 이 노드가 주인이 아니면 BAD_REQUEST, 같은 Tablet이 이미 이동 중이면 UNAVAILABLE |
+| 11 | MIGRATE_STATUS | 실험 스크립트 → source 노드 | jobId(u64) | OK + value = phase(u8: 0 RUNNING, 1 COMMITTING, 2 AWAIT_TABLE, 3 CLEANING, 4 DONE, 5 FAILED), detail = 결과 JSON |
+| 12 | TRANSFER | source → destination | 아래 | OK = 적용 완료(ACK). 검증 실패는 BAD_REQUEST + 이유 |
+
+stopThresholdBytes·maxRounds는 pre-copy만 쓴다(B3 `PreCopyProtocol.Settings`). cutover는 복사 없이 소유권만 넘기고 source 범위를 지운다(복사 없음 참고선).
+
+TRANSFER body는 공통 머리 `from(u64), to(u64), jobId(u64), tabletId(u64), epoch(u64), kind(u8)` 뒤에 kind별 내용이다.
+
+| kind | 이름 | 내용 |
+|---|---|---|
+| 0 | PREPARE | rangeStart(u64), rangeEnd(u64). destination은 이 범위를 비우고 session을 연다 |
+| 1 | SNAPSHOT | batchId(u64), last(u8), checksum(u64), count(u32), record × count. record = keyLength(u32), key, valueLength(u32), value |
+| 2 | DELTA | batchId(u64), last(u8), finalRound(u8), checksum(u64), count(u32), delta × count. delta = seq(u64), present(u8, 0 = DELETE tombstone), keyLength(u32), key, valueLength(u32), value(tombstone이면 길이 0) |
+| 3 | DISCARD | 없음. commit 전 취소 시 session과 적재한 범위를 지운다 |
+
+checksum은 B3 `TransferBatch`·`DeltaBatch`의 CRC32C이고 destination이 다시 계산해 비교한다. batchId는 job 안에서 snapshot·delta가 함께 쓰는 하나의 증가 순서이며, 이미 적용한 id는 다시 적용하지 않고 OK로 답한다. destination은 commit 전에는 Tablet 주인이 아니므로 적재한 값이 클라이언트에 보이지 않는다.
+
+commit 순서: protocol이 commit 준비(마지막 batch ACK + freeze 유지)가 되면 source는 (1) 그 Tablet의 모든 요청을 destination으로 MOVED 시키고 (2) Controller에 MOVE(expectedVersion = source의 현재 표 버전)를 보내고 (3) 새 표를 받은 뒤 (4) 자기 범위를 지우고 freeze를 푼다. 이동 중 freeze된 Tablet의 SET·DELETE는 BUSY(6)로 응답한다. MOVE 응답이 오지 않으면 commit 여부를 알 수 없으므로 거절과 freeze를 유지한 채 FAILED로 끝낸다.
+
+결과 JSON 시각은 job 시작 기준 ms(source 노드 시계)다: freezeStartMs, commitStartMs, commitAckMs, tableSeenMs, doneMs, writeBlockedMs(freeze 시작 → 새 표 수신). pre-copy는 rounds, stopReason, roundEvents(라운드별 dirtyKeys·tombstoneKeys·dirtyBytes·roundSentBytes)를 더한다.
+
 ## 7. A1 PB 전용 peer 확장
 
 기본 단일 노드 진입점은 변경하지 않는다. `io.openkache.server.replication.PbServerMain` 진입점에서만 아래 opcode를 활성화한다. 공통 Frame length/class/flags/status 규칙은 그대로 사용한다. 실험용 보안 그룹 안의 고정 3노드만 신뢰하며 TLS·peer 인증은 없다.

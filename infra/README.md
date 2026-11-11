@@ -155,9 +155,44 @@ config에 아래 key를 넣으면 `run.sh`가 실행 전 재시작 때 반영한
 | `deploy.members` | 띄운 노드 전부 | Terraform 노드 순서의 앞 N대만 쓴다. 나머지는 서버를 멈춘다. `target.hosts`와 결과 폴더의 `n<대수>`도 N대 기준 |
 | `deploy.b1.tablets.per.node` | 2 | B1 초기 표의 노드당 Tablet 수 |
 
+- `b1`은 서버 GC 로그(`-Xlog:gc`, UTC 시각)를 남기고 실험 뒤 결과 폴더에 `gc-node-<NodeId>.log`로 올린다. Runner `cluster-<id>.json`의 `measuredStartEpochMs`로 timeline과 맞춘다.
 - `b1`은 노드마다 `node.id`(멤버 순서, 0부터)·`hosts`(멤버 사설 IP)를 담은 설정을 만들어 같은 이미지에서 host network로 띄운다. B1Server가 `hosts`의 자기 IP에 bind하기 때문이다.
-- `b1`은 KvEngine 메모리 저장소만 쓰고 `/metrics`가 없다. `STORAGE` 입력과 무관하게 결과의 저장소는 `memory`로 기록되고, 노드 `/metrics` 수집은 건너뛰고 window별 서버 CPU는 `NaN`으로 남는다(실험은 계속된다).
-- Runner는 아직 MOVED를 따라가지 않는다(멀티노드 클라이언트는 별도 작업). B1 초기 표와 같은 `routing.boundaries`로 보내야 MOVED 없이 처리된다.
+- `b1`은 메모리 저장소(worker thread 하나가 소유하는 `NodeStore`)만 쓰고 `/metrics`가 없다. `STORAGE` 입력과 무관하게 결과의 저장소는 `memory`로 기록되고, 노드 `/metrics` 수집은 건너뛰고 window별 서버 CPU는 `NaN`으로 남는다(실험은 계속된다).
+- Runner 기본 경로는 MOVED를 따라가지 않는다. 기본 경로로 B1을 쓰려면 B1 초기 표와 같은 `routing.boundaries`로 보내야 한다. 표를 따라가고 이동까지 지시하려면 아래 `cluster.mode=b1`을 쓴다.
+
+**B1 클러스터 실행 (`cluster.mode=b1`, Runner)**
+
+`deploy.server=b1`과 함께 쓴다. Runner가 node 0의 peer 포트에서 표를 받아(TABLE_DUMP) 주인에게 바로 보내고, MOVED면 redirect를 따라가며, 측정 중 정한 시각에 Tablet 이동(protocol-v1.md §6-5)을 지시한다. `target.hosts` 순서가 NodeId이고 `run.sh`가 이 순서로 채운다. `routing.boundaries`·`schedule.file`과 함께 쓸 수 없다.
+
+| key | 기본값 | 뜻 |
+|---|---|---|
+| `cluster.mode` | 없음 | `b1`이면 아래 실행을 쓴다 |
+| `load.rate` | 필수 | open-loop 초당 요청 수. 측정 구간 = `measured.requests ÷ load.rate`초(warm-up도 같은 비율). 지연은 예정 시각부터 잰다 |
+| `cluster.peer.port` | 7001 | 노드 peer 포트 |
+| `cluster.prefill` | true | 측정 전에 모든 key를 한 번 SET |
+| `redirect.max` | 3 | MOVED를 따라갈 최대 횟수 |
+| `retry.busy.max`, `retry.busy.interval.ms`, `retry.busy.max.interval.ms` | 1000, 1, 첫 간격과 같음 | BUSY(이동 중 freeze) 재시도 횟수와 간격. 간격은 재시도마다 두 배로 늘려 상한까지 간다(기본은 고정 간격) |
+| `timeline.bucket.ms` | 100 | timeline 구간 폭 |
+| `consistency.check` | true | 끝난 뒤 모든 key를 GET해 oracle과 대조 |
+| `migration.at.ms`, `migration.tablet`, `migration.to` | 없음 | 쉼표 목록(개수 같게). 측정 시작 뒤 그 시각에 Tablet을 node로 옮기라고 그때의 주인에게 지시한다. 앞 이동이 끝난 뒤 다음을 보낸다 |
+| `migration.method` | `pre-copy` | `stop-and-copy`, `pre-copy`, `cutover`(복사 없음 참고선) |
+| `migration.rate.bytes.per.sec` | 0 | 이동 대역 상한(0 = 없음) |
+| `migration.batch.bytes`, `migration.stop.threshold.bytes`, `migration.max.rounds` | 65536, 262144, 10 | batch 크기, pre-copy 종료 임계·라운드 상한 |
+
+**균형 조정 (`balance.*`, B1+B2+B3 통합)**: `balance.split`을 주면 측정 중 window마다 Runner가 관찰한 key별 부하로 B2 정책을 부른다. 분할 시작 조건을 넘은 Tablet은 B2 Split 정책으로 나눠 Controller에 CONTROL SPLIT을 보내고, 나눈 뒤 B2 Placement 정책의 이동 계획을 `migration.method`(보통 pre-copy)로 하나씩 실행한다. 분할 시작 조건은 B2 design.md §4.1·Benchmark C 규칙(Tablet window 요청 > 노드 용량/4가 연속 `sustain` window, 분할 후 `cooldown` window 유예, 노드 용량 = window 요청 ÷ (노드 수 × 목표 이용률))이다. 이동 시각·대상을 정하는 `migration.at.ms` 등과 함께 쓸 수 있다.
+
+| key | 기본값 | 뜻 |
+|---|---|---|
+| `balance.split` | 없음 | `heat`(split-for-heat), `midpoint`, `estore`, `none` |
+| `balance.split.theta` | 0.8 | split-for-heat θ |
+| `balance.placement` | `hysteresis` | `hysteresis`, `greedy`, `cost-aware`, `none` |
+| `balance.window.ms`, `balance.start.ms` | 2000, 0 | 관찰 window 길이, 측정 시작 뒤 첫 window 시작. 이동이 끝날 때까지 그 window의 결정 단계가 이어지고, 그동안의 요청은 다음 window에 넣지 않는다 |
+| `balance.sustain.windows`, `balance.cooldown.windows`, `balance.tablet.limit`, `balance.target.utilization` | 3, 3, 256, 0.7 | 분할 시작 조건 |
+
+결과 폴더에는 기본 JSON·`summary.csv` 외에 `cluster-<id>.json`(hop별 지연, 송신 지연, BUSY·redirect 수, 이동 기록과 서버 보고, 정합성: lostSet·wrongValue·staleHit)과 `timeline-<id>.csv`(예정 시각 기준 구간별 요청·결과·p50/p99/max)가 생긴다. 이동 시각은 측정 시작 기준 ms라 timeline과 맞춰 볼 수 있다.
+
+- open-loop은 thread `k mod concurrency`가 요청 k를 예정 시각에 보낸다. 모든 thread가 freeze로 막히면 실제 송신률이 떨어지므로 `sendLag`(예정 → 실제 송신)로 부하 생성기가 따라갔는지 확인한다. `concurrency`는 `load.rate × 예상 최대 지연`보다 크게 잡는다.
+- 정합성 oracle을 위해 같은 key의 쓰기는 Runner 안에서 하나씩 보낸다(다른 key는 동시에). 응답을 못 받은 쓰기 뒤의 key는 검사에서 뺀다(`uncertainExcluded`).
 
 **기존 실험을 지우지 않는 규칙**
 

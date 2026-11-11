@@ -95,7 +95,7 @@ final class ResultWriter {
         }
     }
 
-    private static String sanitize(String value) {
+    static String sanitize(String value) {
         return value.replaceAll("[^a-zA-Z0-9._-]", "_");
     }
 

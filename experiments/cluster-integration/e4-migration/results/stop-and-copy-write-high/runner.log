@@ -1,0 +1,11 @@
+connecting to 10.42.1.14:7000 (study=cluster-e4 variant=stop-and-copy-write-high scenario=hot-tablet-move seed=42)
+migration tablet=3 1->0 stop-and-copy: phase=4 sent=10024.1ms finished=20495.9ms 
+run 1/1
+executionId=ae9084be-d0dd-4422-8f01-a49f4306d04f
+measured: requests=300000 elapsedMs=60000.4 throughputPerSec=5000.0 p50us=320.9 p99us=7796997.6
+outcomes: {HIT=79376, MISS=70937, WRITE_OK=149687, BUSY=0, TIMEOUT=0, UNAVAILABLE=0, SERVER_ERROR=0, CLIENT_FAILURE=0}
+target 10.42.1.14:7000 b1-node-0 (final responder): requests=209682 share=0.699 p50us=321.5 p99us=8960350.6
+target 10.42.1.203:7000 b1-node-1 (final responder): requests=90318 share=0.301 p50us=323.4 p99us=2853079.0
+result json: /opt/openkache/results/101113_memory_n2_stop-and-copy-write-high_local_366f45b6/cluster-e4/ae9084be-d0dd-4422-8f01-a49f4306d04f.json
+result csv: /opt/openkache/results/101113_memory_n2_stop-and-copy-write-high_local_366f45b6/cluster-e4/summary.csv
+summary: success=1 failed=0 timeout=0 skipped=0 (/opt/openkache/results/101113_memory_n2_stop-and-copy-write-high_local_366f45b6/cluster-e4/run-summary-stop-and-copy-write-high-hot-tablet-move-1794359642165-9780c435-278f-4758-8876-812e96662329.json)

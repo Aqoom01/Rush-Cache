@@ -13,6 +13,7 @@ final class WireProtocol {
 
     static final int CLASS_CLIENT_REQUEST = 1;
     static final int CLASS_RESPONSE = 2;
+    static final int CLASS_PEER = 3;
 
     static final int OP_GET = 1;
     static final int OP_SET = 2;
@@ -22,6 +23,7 @@ final class WireProtocol {
     static final int STATUS_OK = 0;
     static final int STATUS_MISS = 1;
     static final int STATUS_BAD_REQUEST = 2;
+    static final int STATUS_MOVED = 3;
     static final int STATUS_BUSY = 6;
     static final int STATUS_TIMEOUT = 7;
     static final int STATUS_UNAVAILABLE = 8;

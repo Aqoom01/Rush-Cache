@@ -13,11 +13,7 @@ import io.netty.channel.nio.NioIoHandler;
 import io.netty.channel.socket.SocketChannel;
 import io.netty.channel.socket.nio.NioServerSocketChannel;
 import io.openkache.core.api.Command;
-import io.openkache.core.api.Deadline;
-import io.openkache.core.api.RequestContext;
-import io.openkache.core.api.Result;
 import io.openkache.core.api.ResultStatus;
-import io.openkache.core.kv.KvEngine;
 import io.openkache.core.model.Bytes;
 import io.openkache.core.model.ClientId;
 import io.openkache.core.model.NodeId;
@@ -28,10 +24,11 @@ import io.openkache.core.model.TabletId;
 import io.openkache.core.runtime.OwnerWorker;
 import io.openkache.core.model.WorkerId;
 import io.openkache.core.spi.PeerEnvelope;
-import io.openkache.core.spi.TimeSource;
 import io.openkache.core.tablet.Change;
 import io.openkache.core.tablet.KeyHash;
 import io.openkache.core.tablet.RoutingTable;
+import io.openkache.core.tablet.Tablet;
+import io.openkache.core.tablet.TabletRange;
 import io.openkache.core.tablet.range.HashRangeScheme;
 import io.openkache.core.tablet.routing.Controller;
 import io.openkache.core.tablet.routing.LocalRouting;
@@ -48,7 +45,8 @@ import io.openkache.server.replication.PbTransport;
 import java.nio.BufferUnderflowException;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
-import java.time.Duration;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -58,11 +56,15 @@ import java.util.concurrent.atomic.AtomicLong;
  * B1 라우팅 실서버 조립부. 실제 TCP로 라우팅 표를 전파하고 자기 Tablet이 아닌 요청을 MOVED로 돌려보낸다.
  *
  * <ul>
- *   <li>client listener: GET/SET/DELETE를 {@link LocalRouting#check}로 판정한다. 내 Tablet이면
- *       {@link KvEngine}, 아니면 MOVED와 §6-1 redirect 주소로 응답한다.
- *   <li>peer listener: opcode 5·6·7(표 메시지), 8(실험 제어, controller 전용), 9(표 진단), PING.
- *   <li>node 0이 Controller를 겸한다. 표 변경은 CONTROL(8)로만 일어나고 변경 즉시 push된다.
+ *   <li>client listener: GET/SET/DELETE를 worker thread에서 {@link LocalRouting#check}로 판정한다. 내 Tablet이면
+ *       {@link NodeStore}, 아니면 MOVED와 §6-1 redirect 주소로 응답한다. 이동 중 freeze된 Tablet의 쓰기는 BUSY다.
+ *   <li>peer listener: opcode 5·6·7(표 메시지), 8(실험 제어, controller 전용), 9(표 진단), 10·11·12(B3 이동, §6-5), PING.
+ *   <li>node 0이 Controller를 겸한다. 표 변경은 CONTROL(8) 또는 이동 commit으로만 일어나고 변경 즉시 push된다.
+ *   <li>표가 바뀌어 이 노드가 잃은 Tablet 범위는 지운다(cutover 뒤 같은 Tablet이 돌아올 때 옛 값이 되살아나지 않게).
  * </ul>
+ *
+ * <p>저장소·이동 상태·클라이언트 판정은 모두 worker thread 하나에서 실행한다. 그래서 freeze 확인·쓰기·dirty hook·snapshot이
+ * 서로 끼어들지 않는다. Netty thread는 decode와 응답 write만 한다.
  *
  * <p>초기 표는 모든 노드가 같은 설정으로 {@link HashRangeScheme#initial}을 계산해 일치한다.
  * 인증이 없으므로 전용 보안 그룹 안에서만 사용한다.
@@ -72,14 +74,16 @@ public final class B1Server implements AutoCloseable {
     private static final byte[] EMPTY = new byte[0];
 
     private final B1NodeConfig config;
-    private final TimeSource time = TimeSource.system();
     private final AtomicBoolean closed = new AtomicBoolean();
     private final AtomicLong refreshRequestedAt = new AtomicLong(-1);
 
     private EventLoopGroup io;
     private EventLoopGroup accept;
-    private OwnerWorker kvWorker;
-    private KvEngine kv;
+    private OwnerWorker worker;
+    private NodeStore store;
+    private MigrationReceiver receiver;
+    private MigrationDriver migrations;
+    private PeerCaller caller;
     private PbTransport transport;
     private LocalRouting routing;
     private Controller controller;
@@ -105,8 +109,9 @@ public final class B1Server implements AutoCloseable {
 
     private void open() throws InterruptedException {
         NodeId self = config.self();
-        kvWorker = new OwnerWorker(new WorkerId(0), 4096);
-        kv = new KvEngine(self, java.util.List.of(kvWorker), time);
+        worker = new OwnerWorker(new WorkerId(0), 16384);
+        store = new NodeStore();
+        receiver = new MigrationReceiver(self, store);
 
         RoutingTable initial = new HashRangeScheme(config.tabletsPerNode()).initial(config.nodeIds());
 
@@ -123,6 +128,8 @@ public final class B1Server implements AutoCloseable {
             directoryBuilder.add(new NodeId(i), config.hosts().get(i), config.clientPort());
         }
         directory = directoryBuilder.build();
+        caller = new PeerCaller(io, config.peerAddresses(), 5000);
+        migrations = new MigrationDriver(self, config.controller(), store, routing, controller, caller, worker);
 
         peer = bind(config.peerPort(), new PeerHandler());
         client = bind(config.clientPort(), new ClientHandler());
@@ -152,11 +159,13 @@ public final class B1Server implements AutoCloseable {
         if (!closed.compareAndSet(false, true)) return;
         if (client != null) client.close().awaitUninterruptibly();
         if (peer != null) peer.close().awaitUninterruptibly();
+        if (migrations != null) migrations.close();
+        if (caller != null) caller.close();
         if (transport != null) transport.close();
         if (io != null) io.shutdownGracefully(0, 2, TimeUnit.SECONDS).awaitUninterruptibly();
         if (accept != null) accept.shutdownGracefully(0, 2, TimeUnit.SECONDS).awaitUninterruptibly();
-        if (kv != null) kv.close();
-        if (kvWorker != null) kvWorker.close();
+        if (worker != null) worker.close();
+        if (store != null) store.close();
     }
 
     // -----------------------------------------------------------------------
@@ -205,6 +214,15 @@ public final class B1Server implements AutoCloseable {
                 return;
             }
 
+            long timeoutNanos = (decoded.timeoutMs() > 0 ? decoded.timeoutMs() : 1000) * 1_000_000L;
+            long deadline = System.nanoTime() + timeoutNanos;
+            if (!worker.offer(() -> execute(ctx, frame, decoded, deadline))) {
+                respond(ctx, frame, ResultStatus.BUSY, "worker queue full");
+            }
+        }
+
+        /** worker thread에서 소유권 판정과 저장소 연산을 한 번에 한다. 판정 뒤 표가 바뀌어도 이 작업 안에서는 끼어들지 않는다. */
+        private void execute(ChannelHandlerContext ctx, Frame frame, DecodedRequest decoded, long deadline) {
             long keyHash = KeyHash.of(decoded.key());
             RoutingVersion clientVersion = new RoutingVersion(frame.routingVersion());
             OwnershipCheck.Decision decision = routing.check(keyHash, clientVersion, decoded.epoch());
@@ -219,19 +237,34 @@ public final class B1Server implements AutoCloseable {
                         decision.tablet().epoch().value(), 0, "", EMPTY, redirect));
                 return;
             }
-
-            Duration timeout = decoded.timeoutMs() > 0 ? Duration.ofMillis(decoded.timeoutMs()) : Duration.ofSeconds(1);
-            RequestContext context = new RequestContext(decoded.clientId(), decoded.operationId(),
-                    clientVersion, decoded.epoch(), Deadline.after(time, timeout));
-            kv.execute(decoded.command(), context).whenComplete((result, error) -> {
-                if (error != null) {
-                    respond(ctx, frame, ResultStatus.INTERNAL_ERROR, "execute failed");
-                    return;
+            long epoch = decision.tablet().epoch().value();
+            long version = routing.version().value();
+            if (System.nanoTime() - deadline > 0) {
+                ctx.writeAndFlush(reply(frame, ResultStatus.TIMEOUT, version, epoch, 0, "", EMPTY, EMPTY));
+                return;
+            }
+            boolean write = !(decoded.command() instanceof Command.Get);
+            if (write && store.writeBlocked(decision.tablet().id())) {
+                ctx.writeAndFlush(reply(frame, ResultStatus.BUSY, version, epoch, 0, "tablet frozen", EMPTY, EMPTY));
+                return;
+            }
+            switch (decoded.command()) {
+                case Command.Get g -> {
+                    Optional<Bytes> value = store.get(g.key());
+                    ctx.writeAndFlush(reply(frame, value.isPresent() ? ResultStatus.OK : ResultStatus.MISS, version,
+                            epoch, 0, "", value.map(Bytes::toByteArray).orElse(EMPTY), EMPTY));
                 }
-                byte[] value = result.value().map(Bytes::toByteArray).orElse(EMPTY);
-                ctx.writeAndFlush(reply(frame, result.status(), routing.version().value(),
-                        decision.tablet().epoch().value(), result.valueVersion(), "", value, EMPTY));
-            });
+                case Command.Set set -> {
+                    long valueVersion = store.set(set.key(), set.value());
+                    ctx.writeAndFlush(reply(frame, ResultStatus.OK, version, epoch, valueVersion, "", EMPTY, EMPTY));
+                }
+                case Command.Delete d -> {
+                    boolean existed = store.delete(d.key());
+                    ctx.writeAndFlush(reply(frame, existed ? ResultStatus.OK : ResultStatus.MISS, version, epoch,
+                            0, "", EMPTY, EMPTY));
+                }
+                default -> respond(ctx, frame, ResultStatus.BAD_REQUEST, "unsupported command");
+            }
         }
 
         /** 내가 낡았다는 힌트가 켜졌으면 버전당 한 번만 Controller에 표를 요청한다. */
@@ -310,12 +343,50 @@ public final class B1Server implements AutoCloseable {
                     if (envelope.to().value() != config.node()) {
                         throw new IllegalArgumentException("misdirected B1 peer message");
                     }
+                    RoutingTable before = routing.table();
                     boolean handled = controller != null
                             ? controller.onPeerMessage(envelope.from(), envelope.message())
                             : routing.onPeerMessage(envelope.from(), envelope.message());
+                    afterTableChange(before);
                     respond(ctx, frame, handled ? ResultStatus.OK : ResultStatus.BAD_REQUEST, "");
                 } else if (frame.opcode() == B1Wire.CONTROL) {
                     control(ctx, frame);
+                } else if (frame.opcode() == MigrationWire.TRANSFER) {
+                    MigrationWire.Transfer transfer = MigrationWire.decodeTransfer(frame.body().toByteArray());
+                    java.util.function.Consumer<Optional<String>> answer = rejected -> {
+                        if (rejected.isPresent()) respond(ctx, frame, ResultStatus.BAD_REQUEST, rejected.get());
+                        else respond(ctx, frame, ResultStatus.OK, "");
+                    };
+                    onWorker(ctx, frame, () -> {
+                        if (transfer.header().kind() == MigrationWire.PREPARE) {
+                            receiver.prepare(transfer, routing.table(), worker, answer);
+                        } else {
+                            answer.accept(receiver.handle(transfer, routing.table()));
+                        }
+                    });
+                } else if (frame.opcode() == MigrationWire.MIGRATE) {
+                    MigrationWire.Migrate request = MigrationWire.decodeMigrate(frame.body().toByteArray());
+                    onWorker(ctx, frame, () -> {
+                        MigrationDriver.Result r = migrations.start(request);
+                        if (r.started()) {
+                            ctx.writeAndFlush(reply(frame, ResultStatus.OK, routing.version().value(), 0, 0, "",
+                                    ByteBuffer.allocate(8).putLong(r.jobId()).array(), EMPTY));
+                        } else {
+                            respond(ctx, frame, r.busy() ? ResultStatus.UNAVAILABLE : ResultStatus.BAD_REQUEST, r.reason());
+                        }
+                    });
+                } else if (frame.opcode() == MigrationWire.MIGRATE_STATUS && frame.body().size() == 8) {
+                    long jobId = ByteBuffer.wrap(frame.body().toByteArray()).getLong();
+                    onWorker(ctx, frame, () -> {
+                        Optional<MigrationDriver.Job> job = migrations.job(jobId);
+                        if (job.isEmpty()) {
+                            respond(ctx, frame, ResultStatus.BAD_REQUEST, "unknown job " + jobId);
+                            return;
+                        }
+                        byte[] phase = {(byte) job.get().phase().ordinal()};
+                        ctx.writeAndFlush(reply(frame, ResultStatus.OK, routing.version().value(), 0, 0,
+                                job.get().json(), phase, EMPTY));
+                    });
                 } else if (frame.opcode() == B1Wire.TABLE_DUMP && frame.body().isEmpty()) {
                     byte[] table = TableMessageCodec.encodeTable(routing.table());
                     ctx.writeAndFlush(reply(frame, ResultStatus.OK, routing.version().value(),
@@ -366,9 +437,15 @@ public final class B1Server implements AutoCloseable {
                 return;
             }
             // Controller는 자기 자신에게 push하지 않으므로 겸임 노드의 표를 직접 갱신한다
+            RoutingTable before = routing.table();
             routing.accept(applied.get());
+            afterTableChange(before);
             ctx.writeAndFlush(reply(frame, ResultStatus.OK, applied.get().version().value(),
                     0, 0, "", EMPTY, EMPTY));
+        }
+
+        private void onWorker(ChannelHandlerContext ctx, Frame frame, Runnable task) {
+            if (!worker.offer(task)) respond(ctx, frame, ResultStatus.BUSY, "worker queue full");
         }
 
         private void respond(ChannelHandlerContext ctx, Frame frame, ResultStatus status, String detail) {
@@ -379,5 +456,31 @@ public final class B1Server implements AutoCloseable {
         public void exceptionCaught(ChannelHandlerContext ctx, Throwable error) {
             ctx.close();
         }
+    }
+
+    // -----------------------------------------------------------------------
+    // 표 변경 뒤 잃은 범위 정리
+    // -----------------------------------------------------------------------
+
+    /** 표가 바뀌었으면 이 노드가 잃은 Tablet 범위를 worker에서 지운다. 이동 job이 정리를 맡은 Tablet은 건너뛴다. */
+    private void afterTableChange(RoutingTable before) {
+        RoutingTable after = routing.table();
+        if (after == before) return;
+        NodeId self = config.self();
+        List<Tablet> lost = new ArrayList<>();
+        for (Tablet t : after.tablets()) {
+            if (!t.owner().equals(self) && before.lookup(t.range().start()).owner().equals(self)) lost.add(t);
+        }
+        if (lost.isEmpty()) return;
+        worker.offer(() -> {
+            RoutingTable current = routing.table();
+            for (Tablet t : lost) {
+                TabletRange range = t.range();
+                // 그 사이 다시 돌아온 범위나 이동 job이 지울 범위는 건드리지 않는다
+                if (current.lookup(range.start()).owner().equals(self) || migrations.cleansUp(t.id())
+                        || migrations.cleansUp(before.lookup(range.start()).id())) continue;
+                store.deleteRange(range);
+            }
+        });
     }
 }

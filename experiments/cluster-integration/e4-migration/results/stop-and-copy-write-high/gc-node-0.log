@@ -1,0 +1,17 @@
+[2026-11-11T01:11:08.111+0000][0.002s] Using Serial
+[2026-11-11T01:11:30.823+0000][22.714s] GC(0) Pause Young (Allocation Failure) 547M->83M(1979M) 112.144ms
+[2026-11-11T01:11:40.642+0000][32.533s] GC(1) Pause Young (Allocation Failure) 629M->181M(1979M) 191.666ms
+[2026-11-11T01:11:50.286+0000][42.177s] GC(2) Pause Young (Allocation Failure) 728M->280M(1979M) 167.936ms
+[2026-11-11T01:11:59.961+0000][51.853s] GC(3) Pause Young (Allocation Failure) 827M->379M(1979M) 158.167ms
+[2026-11-11T01:12:09.318+0000][61.209s] GC(4) Pause Young (Allocation Failure) 925M->482M(1979M) 187.443ms
+[2026-11-11T01:12:27.794+0000][79.685s] GC(5) Pause Young (Allocation Failure) 1028M->565M(1979M) 150.565ms
+[2026-11-11T01:12:35.610+0000][87.501s] GC(6) Pause Young (Allocation Failure) 1111M->663M(1979M) 152.093ms
+[2026-11-11T01:12:38.962+0000][90.854s] GC(7) Pause Young (Allocation Failure) 1210M->774M(1979M) 158.509ms
+[2026-11-11T01:12:53.001+0000][104.892s] GC(8) Pause Young (Allocation Failure) 1320M->845M(1979M) 121.917ms
+[2026-11-11T01:13:22.513+0000][134.405s] GC(9) Pause Young (Allocation Failure) 1391M->855M(1979M) 71.793ms
+[2026-11-11T01:13:28.378+0000][140.269s] GC(10) Pause Young (Allocation Failure) 1401M->855M(1979M) 12.621ms
+[2026-11-11T01:13:34.484+0000][146.375s] GC(11) Pause Young (Allocation Failure) 1401M->855M(1979M) 12.323ms
+[2026-11-11T01:13:40.249+0000][152.140s] GC(12) Pause Young (Allocation Failure) 1401M->855M(1979M) 12.391ms
+[2026-11-11T01:13:46.014+0000][157.905s] GC(13) Pause Young (Allocation Failure) 1401M->855M(1979M) 13.023ms
+[2026-11-11T01:13:51.870+0000][163.761s] GC(14) Pause Young (Allocation Failure) 1401M->855M(1979M) 12.427ms
+[2026-11-11T01:13:57.791+0000][169.682s] GC(15) Pause Young (Allocation Failure) 1401M->855M(1979M) 12.243ms
