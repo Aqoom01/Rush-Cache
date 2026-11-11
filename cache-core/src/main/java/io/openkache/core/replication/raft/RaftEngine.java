@@ -1,6 +1,7 @@
 package io.openkache.core.replication.raft;
 
 import io.openkache.core.api.*;
+import io.openkache.core.failure.*;
 import io.openkache.core.model.*;
 import io.openkache.core.runtime.Mailbox;
 import io.openkache.core.runtime.TimerEvent;
@@ -9,6 +10,7 @@ import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 import static io.openkache.core.replication.raft.RaftMessage.*;
 
 /**
@@ -24,6 +26,24 @@ public final class RaftEngine implements CacheEngine {
                               int elections, long detectedAt, long readyAt) {}
     /** 최근 로컬 선거 하나의 시각. 초기 선거 누적 관측과 구분하며 같은 JVM 안에서만 차감한다. */
     public record ElectionObservation(long term,long detectedAt,long readyAt) {}
+    /** Bounded diagnostic journal: candidate starts and actual leadership acquisitions are distinct. */
+    public record ElectionEvent(long term,String kind,long atNanos,String origin) {}
+    private final ArrayDeque<ElectionEvent> electionEvents=new ArrayDeque<>();
+    private volatile List<ElectionEvent> publishedElectionEvents=List.of();
+    private volatile long droppedElectionEvents;
+    /** Election source and the FD evidence used for that election, all on the local clock. */
+    public record FailureObservation(boolean external, NodeId failedLeader, long signalTerm,
+                                     long suspectAt, long deadAt, String trigger, String origin, long fallbackExtraNanos) {}
+    private record LeaderFailure(long term, MembershipEvent event) {}
+    private final AtomicReference<LeaderFailure> leaderFailure=new AtomicReference<>();
+    private final boolean externalFailureDetection;
+    private final long fallbackExtra;
+    private long lastLeaderContact;
+    private long fdSuspectAt=-1,fdDeadAt=-1,fdSignalTerm=-1;
+    private NodeId failedLeader;
+    private String electionTrigger="NONE";
+    private String electionOrigin="NONE";
+    private volatile FailureObservation failureObservation;
     private long localElectionTerm,localElectionAt=-1,localReadyAt=-1;
     private volatile ElectionObservation electionObservation=new ElectionObservation(0,-1,-1);
     private record Key(ClientId client,OperationId operation) {}
@@ -57,6 +77,14 @@ public final class RaftEngine implements CacheEngine {
     /** election timeout은 [minimumTimeout, 2*minimumTimeout), 난수는 노드별 seed로 고정한다. */
     public RaftEngine(NodeId self,List<NodeId> members,CacheEngine kv,Mailbox owner,Transport transport,
                       TimeSource time,Duration heartbeat,Duration minimumTimeout,long seed) {
+        this(self,members,kv,owner,transport,time,heartbeat,minimumTimeout,seed,false);
+    }
+    /**
+     * External mode: known-leader loss uses DEAD plus minimum heartbeat silence.
+     * Bootstrap/candidate retries use ordinary Raft timers; watchdog is [10T,11T).
+     */
+    public RaftEngine(NodeId self,List<NodeId> members,CacheEngine kv,Mailbox owner,Transport transport,
+                      TimeSource time,Duration heartbeat,Duration minimumTimeout,long seed,boolean externalFailureDetection) {
         this.self=Objects.requireNonNull(self); this.members=List.copyOf(members);
         if(members.size()!=3 || new HashSet<>(members).size()!=3 || !members.contains(self)
                 || heartbeat.isNegative() || heartbeat.isZero() || minimumTimeout.compareTo(heartbeat)<=0)
@@ -64,7 +92,21 @@ public final class RaftEngine implements CacheEngine {
         this.kv=Objects.requireNonNull(kv); this.owner=Objects.requireNonNull(owner);
         this.transport=Objects.requireNonNull(transport); this.time=Objects.requireNonNull(time);
         this.heartbeat=heartbeat.toNanos(); this.minimumTimeout=minimumTimeout.toNanos(); random=new Random(seed);
+        this.externalFailureDetection=externalFailureDetection;
+        fallbackExtra=externalFailureDetection?Math.multiplyExact(this.minimumTimeout,9):0;
+        lastLeaderContact=time.monotonicNanos();
         resetElection(); publish();
+    }
+
+    /** Latch only the currently observed leader/term; mailbox pressure cannot lose DEAD. */
+    public void onMembershipChanged(MembershipEvent event) {
+        Objects.requireNonNull(event);
+        var current=observation;
+        if(!externalFailureDetection || closed.get() || current.role()!=Role.FOLLOWER
+                || !event.member().equals(current.leader())) return;
+        var signal=new LeaderFailure(current.term(),event);
+        leaderFailure.accumulateAndGet(signal,(old,next)->old==null || next.term()>old.term()
+                || next.term()==old.term() && next.event().observedAtNanos()>=old.event().observedAtNanos()?next:old);
     }
     @Override public CompletionStage<Result> execute(Command command,RequestContext context) {
         Objects.requireNonNull(command); Objects.requireNonNull(context);
@@ -113,7 +155,10 @@ public final class RaftEngine implements CacheEngine {
             if(a.term()<term) send(from,new AppendReply(term,a.rpc(),false,log.size()));
             else {
                 if(role!=Role.FOLLOWER) follow(term);
-                leader=from; resetElection(); receiveAppend(from,a);
+                leader=from; lastLeaderContact=time.monotonicNanos();
+                // A valid current-term leader message supersedes an older FD observation.
+                leaderFailure.set(null);
+                resetElection(); receiveAppend(from,a);
             }
         } else if(message instanceof AppendReply a && a.term()==term && role==Role.LEADER) {
             Flight flight=data.get(from); Append pulse=pulses.get(from);
@@ -155,15 +200,19 @@ public final class RaftEngine implements CacheEngine {
         role=Role.FOLLOWER; leader=null; votes.clear(); data.clear(); pulses.clear();
         finishWaiting(ResultStatus.UNAVAILABLE); resetElection();
     }
-    private void elect() {
+    private void elect(String trigger) {
+        if(role!=Role.CANDIDATE) electionOrigin=trigger;
+        electionTrigger=trigger;
         term=Math.addExact(term,1); role=Role.CANDIDATE; votedFor=self; leader=null; elections++;
         localElectionTerm=term; localElectionAt=time.monotonicNanos(); localReadyAt=-1;
+        recordElectionEvent("STARTED");
         if(detectedAt<0) detectedAt=time.monotonicNanos(); readyAt=-1;
         finishWaiting(ResultStatus.UNAVAILABLE); votes.clear(); votes.add(self); data.clear(); pulses.clear(); resetElection();
         for(NodeId n:members) if(!n.equals(self)) send(n,new Vote(term,log.size(),lastTerm()));
     }
     private void becomeLeader() {
         role=Role.LEADER; leader=self; data.clear(); pulses.clear(); next.clear(); match.clear();
+        recordElectionEvent("BECAME_LEADER");
         for(NodeId n:members) if(!n.equals(self)) { next.put(n,log.size()+1); match.put(n,0); }
         log.add(new Entry(term,Optional.empty())); // 과거 term 항목도 현재 term no-op의 commit으로 확정한다.
         lastPulse=time.monotonicNanos(); replicate();
@@ -231,7 +280,26 @@ public final class RaftEngine implements CacheEngine {
             if(closed.get() || role==Role.FAILED) return;
             waiting.removeIf(w->{ if(w.context().deadline().isExpired(time)) w.future().complete(status(ResultStatus.TIMEOUT)); return w.future().isDone(); });
             long now=time.monotonicNanos();
-            if(role!=Role.LEADER && now>=electionDue) elect();
+            if(role!=Role.LEADER) {
+                if(!externalFailureDetection || role==Role.CANDIDATE || leader==null) {
+                    if(now>=electionDue) elect(role==Role.CANDIDATE?"RETRY":leader==null?"BOOTSTRAP":"TIMEOUT");
+                } else {
+                    var signal=leaderFailure.get();
+                    boolean valid=signal!=null && signal.term()==term && signal.event().member().equals(leader)
+                            && signal.event().observedAtNanos()>=lastLeaderContact
+                            && signal.event().observedAtNanos()<=now;
+                    if(valid) {
+                        var membershipEvent=signal.event();
+                        if(!membershipEvent.member().equals(failedLeader) || fdSignalTerm!=term) {
+                            failedLeader=membershipEvent.member(); fdSignalTerm=term; fdSuspectAt=-1; fdDeadAt=-1;
+                        }
+                        if(membershipEvent.current()==MemberStatus.SUSPECT && fdSuspectAt<0) fdSuspectAt=membershipEvent.observedAtNanos();
+                        if(membershipEvent.current()==MemberStatus.DEAD) fdDeadAt=membershipEvent.observedAtNanos();
+                        if(membershipEvent.current()==MemberStatus.DEAD && now-lastLeaderContact>=minimumTimeout) elect("SWIM_DEAD");
+                    }
+                    if(role==Role.FOLLOWER && now>=Math.addExact(electionDue,fallbackExtra)) elect("FALLBACK");
+                }
+            }
             if(role==Role.LEADER && (lastPulse==Long.MIN_VALUE || now-lastPulse>=heartbeat)) { lastPulse=now; pulse(); }
             applyNext(); publish();
         });
@@ -250,11 +318,21 @@ public final class RaftEngine implements CacheEngine {
         if(role==Role.LEADER && term==localElectionTerm && applied==log.size() && localReadyAt<0)
             localReadyAt=time.monotonicNanos();
         electionObservation=new ElectionObservation(localElectionTerm,localElectionAt,localReadyAt);
+        failureObservation=new FailureObservation(externalFailureDetection,failedLeader,fdSignalTerm,
+                fdSuspectAt,fdDeadAt,electionTrigger,electionOrigin,fallbackExtra);
         observation=new Observation(term,role,leader,log.size(),commit,applied,elections,detectedAt,readyAt);
     }
     public Observation observation() { return observation; }
     /** owner가 발행한 불변 값. 장애 후 term과 일치하는 경우에만 해당 선거의 duration으로 사용한다. */
     public ElectionObservation electionObservation() { return electionObservation; }
+    private void recordElectionEvent(String kind) {
+        if(electionEvents.size()==2048) { electionEvents.removeFirst(); droppedElectionEvents++; }
+        electionEvents.addLast(new ElectionEvent(term,kind,time.monotonicNanos(),electionOrigin));
+        publishedElectionEvents=List.copyOf(electionEvents);
+    }
+    public List<ElectionEvent> electionEvents() { return publishedElectionEvents; }
+    public long droppedElectionEvents() { return droppedElectionEvents; }
+    public FailureObservation failureObservation() { return failureObservation; }
     public CompletionStage<List<Entry>> logSnapshot() {
         CompletableFuture<List<Entry>> f=new CompletableFuture<>();
         if(!owner.offer(()->f.complete(List.copyOf(log)))) f.completeExceptionally(new IllegalStateException("diagnostic mailbox full"));

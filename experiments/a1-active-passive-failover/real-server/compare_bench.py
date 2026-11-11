@@ -110,7 +110,15 @@ def run(args):
             if response["status"]!=0:
                 raise RuntimeError(f"warmup failed: {response}")
         result["statesBefore"]=states
-        result["normalBytesBegin"]=[client.status(i)["sentBytes"] for i in range(3)]
+        result["failureDetector"]=states[0]["failureDetector"]
+        if result["failureDetector"] in ("SWIM","SWIM_LIFEGUARD"):
+            result["failureDetectorConfig"]={key:states[0][key] for key in (
+                "failurePort","failureStartupGraceMs","failureProbeIntervalMs",
+                "failureDirectTimeoutMs","failureIndirectTimeoutMs","failureSuspicionMs",
+                "failureAwarenessMaxMultiplier","failureSuspicionMaxTimeoutMultiplier","failureMaxConfirmations")}
+        normal_begin_states=[client.status(i) for i in range(3)]
+        result["normalBytesBegin"]=[state["sentBytes"] for state in normal_begin_states]
+        result["normalFdBytesBegin"]=[state["fdSentBytes"] for state in normal_begin_states]
         begin=time.perf_counter_ns()
         for i in range(args.count):
             key=f"pre-{i}".encode()
@@ -126,7 +134,9 @@ def run(args):
         result["normalP50Ns"]=quantile(result["normalSamplesNs"],.5)
         result["normalP99Ns"]=quantile(result["normalSamplesNs"],.99)
         result["observedSingleClientOpsPerSecond"]=args.count*1e9/(normal_end-begin)
-        result["normalBytesEnd"]=[client.status(i)["sentBytes"] for i in range(3)]
+        normal_end_states=[client.status(i) for i in range(3)]
+        result["normalBytesEnd"]=[state["sentBytes"] for state in normal_end_states]
+        result["normalFdBytesEnd"]=[state["fdSentBytes"] for state in normal_end_states]
         # Wait for the second VR backup too: this cohort measures settled idle crash.
         time.sleep(.2)
         for node in (1,2):
@@ -192,7 +202,7 @@ def run(args):
             primary.terminate()
             primary.wait(timeout=10)
         Path(args.out).write_text(json.dumps(result,indent=2)+"\n")
-    print(json.dumps({k:result[k] for k in ("protocol","runId","ok","valueBytes","timeoutMs","repeat","normalP99Ns","failoverNs","promotionNs","preservedSuccesses")}))
+    print(json.dumps({k:result[k] for k in ("protocol","failureDetector","runId","ok","valueBytes","timeoutMs","repeat","normalP99Ns","failoverNs","promotionNs","preservedSuccesses")}))
 
 if __name__=="__main__":
     p=argparse.ArgumentParser()

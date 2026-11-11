@@ -63,6 +63,15 @@ resource "aws_vpc_security_group_ingress_rule" "node_ports" {
   cidr_ipv4         = aws_subnet.public.cidr_block
 }
 
+resource "aws_vpc_security_group_ingress_rule" "failure_detector" {
+  security_group_id = aws_security_group.node.id
+  description       = "swim-failure-detector"
+  ip_protocol       = "udp"
+  from_port         = 7002
+  to_port           = 7002
+  cidr_ipv4         = aws_subnet.public.cidr_block
+}
+
 resource "aws_vpc_security_group_egress_rule" "all" {
   security_group_id = aws_security_group.node.id
   ip_protocol       = "-1"

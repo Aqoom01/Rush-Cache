@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+set -euo pipefail
+exec > >(tee -a /var/log/openkache-raft-bootstrap.log) 2>&1
+dnf install -y java-21-amazon-corretto-headless awscli-2 python3.11 python3.11-pip iproute iproute-tc iptables-nft fio nvme-cli util-linux xfsprogs tar gzip
+python3.11 -m venv /opt/openkache-python
+/opt/openkache-python/bin/python -m pip install --disable-pip-version-check 'matplotlib>=3.9,<4'
+systemctl enable --now amazon-ssm-agent
+device=$(lsblk -J -p -o NAME,MODEL | python3 -c 'import json,sys; rows=json.load(sys.stdin)["blockdevices"]; matches=[r["name"] for r in rows if r.get("model", "").strip()=="Amazon EC2 NVMe Instance Storage"]; assert len(matches)==1,matches; print(matches[0])')
+if ! blkid "$device" >/dev/null 2>&1; then mkfs.xfs -f -L OKRAFT_NVME "$device"; fi
+mkdir -p /mnt/openkache-data /var/lib/openkache-raft
+mount "$device" /mnt/openkache-data
+findmnt --mountpoint /mnt/openkache-data
+java -version
+/opt/openkache-python/bin/python - <<'PY'
+import json,sys,time,matplotlib
+from pathlib import Path
+Path('/var/lib/openkache-raft/ready.json').write_text(json.dumps(dict(node=${node},ready=True,python=sys.version,matplotlib=matplotlib.__version__,atEpochNs=time.time_ns())))
+PY
+aws s3 cp /var/lib/openkache-raft/ready.json s3://${bucket}/${campaign}/control/bootstrap/node-${node}-ready.json --region ap-northeast-2 --only-show-errors

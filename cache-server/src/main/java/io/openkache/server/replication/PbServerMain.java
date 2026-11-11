@@ -19,7 +19,7 @@ public final class PbServerMain {
                 throw new IllegalStateException("PB_FENCED restart requires state recovery; use a new directory for a fresh cluster", e);
             }
         }
-        var server=PbServer.start(config);
+        var server=PbServer.start(config,PbExperimentRuntime.environment());
         Runtime.getRuntime().addShutdownHook(new Thread(server::close,"pb-shutdown"));
         System.out.println("PB_READY "+server.statusJson());
         server.awaitTermination();

@@ -45,6 +45,39 @@ class FailoverExperimentTest {
             assertEquals(ResultStatus.NOT_PRIMARY, c.set(2, "x", 1).join().status());
         }
     }
+    @Test void externalFailureSignalUsesTheSamePromotionPathWhenFixedDetectionIsDisabled() {
+        var time = new io.openkache.core.replication.VirtualTimeSource();
+        var sent = new java.util.ArrayList<io.openkache.core.spi.PeerEnvelope>();
+        CacheEngine kv = new CacheEngine() {
+            @Override public java.util.concurrent.CompletionStage<Result> execute(Command command, RequestContext context) {
+                return java.util.concurrent.CompletableFuture.completedFuture(Result.of(ResultStatus.OK, RoutingVersion.ZERO, new OwnershipEpoch(1)));
+            }
+            @Override public void onPeerMessage(NodeId from, io.openkache.core.spi.PeerMessage message) {}
+            @Override public void onTimer(io.openkache.core.runtime.TimerEvent event) {}
+            @Override public EngineSnapshot snapshot() { return new EngineSnapshot(new NodeId(1), time.monotonicNanos(), RoutingVersion.ZERO, new OwnershipEpoch(1)); }
+            @Override public void close() {}
+        };
+        var engine = new CrashOnlyPrimaryBackupEngine(new PrimaryBackupConfig(new NodeId(1), new NodeId(0),
+                java.util.List.of(new NodeId(1), new NodeId(2)), new OwnershipEpoch(1)),
+                kv,
+                new io.openkache.core.replication.DirectMailbox(), envelope -> { sent.add(envelope); return java.util.concurrent.CompletableFuture.completedFuture(null); },
+                time, java.time.Duration.ofMillis(10), java.time.Duration.ofMillis(50), false);
+        try {
+            time.advanceTo(ms(100));
+            engine.onTimer(new io.openkache.core.runtime.TimerEvent(CrashOnlyPrimaryBackupEngine.TICK, ms(100)));
+            assertEquals(-1, engine.detectedAtNanos());
+            engine.onPrimaryFailure(new NodeId(2), ms(100));
+            assertEquals(-1, engine.detectedAtNanos());
+            engine.onPrimaryFailure(new NodeId(0), ms(101));
+            engine.onTimer(new io.openkache.core.runtime.TimerEvent(CrashOnlyPrimaryBackupEngine.TICK, ms(101)));
+            assertEquals(ms(101), engine.detectedAtNanos());
+            time.advanceTo(ms(102));
+            engine.onTimer(new io.openkache.core.runtime.TimerEvent(CrashOnlyPrimaryBackupEngine.TICK, ms(102)));
+            assertTrue(sent.stream().anyMatch(e -> e.to().equals(new NodeId(2))
+                    && e.message() instanceof CrashOnlyPrimaryBackupEngine.Control c
+                    && c.kind() == CrashOnlyPrimaryBackupEngine.Kind.INSTALL));
+        } finally { engine.close(); }
+    }
     @Test void readinessIsRequiredAndRetried() {
         try (var c = new FailoverExperiment.Cluster(5, 50)) {
             c.advance(ms(20)); c.dropReady = true; c.crash(); c.advance(ms(150));

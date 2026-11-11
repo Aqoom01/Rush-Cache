@@ -1,5 +1,6 @@
 """전용 실험 디렉터리의 PB JVM 하나만 관리한다. 다른 프로세스/EC2는 중단하지 않는다."""
 import os
+import json
 from pathlib import Path
 import signal
 import subprocess
@@ -20,9 +21,17 @@ def start():
     if PID.exists() and alive(int(PID.read_text())):
         raise RuntimeError("PB already running")
     log=(ROOT/"server.log").open("ab")
+    env=os.environ.copy()
+    runtime=ROOT/"runtime.json"
+    if runtime.exists():
+        overrides=json.loads(runtime.read_text())
+        allowed={"OPENKACHE_PB_STORAGE_DIR","OPENKACHE_PB_STORAGE_DIRECT","OPENKACHE_PB_FAULT_FILE"}
+        if set(overrides)-allowed:
+            raise ValueError("unknown experiment environment key")
+        env.update(overrides)
     p=subprocess.Popen(["java","-Xms128m","-Xmx512m","-cp",str(ROOT/"dist/lib/*"),
                         "io.openkache.server.replication.PbServerMain",str(ROOT/"node.properties")],
-                       cwd=ROOT,stdin=subprocess.DEVNULL,stdout=log,stderr=subprocess.STDOUT,start_new_session=True)
+                       cwd=ROOT,stdin=subprocess.DEVNULL,stdout=log,stderr=subprocess.STDOUT,start_new_session=True,env=env)
     log.close()
     PID.write_text(str(p.pid))
     return p

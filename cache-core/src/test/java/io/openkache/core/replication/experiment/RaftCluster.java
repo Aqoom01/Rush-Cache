@@ -24,6 +24,9 @@ final class RaftCluster implements AutoCloseable {
     int slowNode=-1,slowAck;
     boolean duplicate;
     RaftCluster(int delay,int timeout,long seed,long rate) {
+        this(delay,timeout,seed,rate,false);
+    }
+    RaftCluster(int delay,int timeout,long seed,long rate,boolean externalFailureDetection) {
         network=new LinkNetwork(scheduler,delay,rate);
         var ids=List.of(new NodeId(0),new NodeId(1),new NodeId(2));
         Transport transport=e->{
@@ -39,7 +42,7 @@ final class RaftCluster implements AutoCloseable {
         for(int i=0;i<3;i++) {
             var kv=new KvEngine(ids.get(i),List.of(new DirectMailbox()),scheduler.time); stores.add(kv);
             nodes.add(new RaftEngine(ids.get(i),ids,kv,new DirectMailbox(),transport,scheduler.time,
-                    Duration.ofMillis(10),Duration.ofMillis(timeout),seed*1009+i*7919L));
+                    Duration.ofMillis(10),Duration.ofMillis(timeout),seed*1009+i*7919L,externalFailureDetection));
         }
         tick();
     }

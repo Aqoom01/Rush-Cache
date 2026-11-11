@@ -23,10 +23,19 @@ public final class SwimDatagramHandler extends SimpleChannelInboundHandler<Datag
 
     private final SwimRuntime runtime;
     private final ServerMetrics metrics;
+    private final SwimUdpTransport transport;
+    private final java.util.function.BooleanSupplier dropIncoming;
 
-    public SwimDatagramHandler(SwimRuntime runtime, ServerMetrics metrics) {
+    public SwimDatagramHandler(SwimRuntime runtime, ServerMetrics metrics, SwimUdpTransport transport) {
+        this(runtime,metrics,transport,()->false);
+    }
+
+    public SwimDatagramHandler(SwimRuntime runtime, ServerMetrics metrics, SwimUdpTransport transport,
+                               java.util.function.BooleanSupplier dropIncoming) {
         this.runtime = Objects.requireNonNull(runtime, "runtime");
         this.metrics = Objects.requireNonNull(metrics, "metrics");
+        this.transport = Objects.requireNonNull(transport, "transport");
+        this.dropIncoming = Objects.requireNonNull(dropIncoming,"dropIncoming");
     }
 
     @Override
@@ -35,6 +44,7 @@ public final class SwimDatagramHandler extends SimpleChannelInboundHandler<Datag
         try {
             envelope = SwimMessageCodec.decode(ByteBufUtil.getBytes(packet.content()));
         } catch (SwimMessageCodec.MalformedSwimMessageException e) {
+            transport.recordInvalid();
             reject(packet, "unknown", ResultStatus.BAD_REQUEST, e.getMessage());
             return;
         }
@@ -49,9 +59,13 @@ public final class SwimDatagramHandler extends SimpleChannelInboundHandler<Datag
                     opcode,
                     ResultStatus.BAD_REQUEST,
                     "unknown SWIM sender " + envelope.from().value());
+        } else if (dropIncoming.getAsBoolean()) {
+            // Experiment-only partition: valid datagram is discarded before membership processing.
+            return;
         } else if (!runtime.onMessage(envelope.from(), message)) {
             reject(packet, opcode, ResultStatus.BUSY, "SWIM owner mailbox is unavailable");
         } else {
+            transport.recordReceived(packet.content().readableBytes());
             metrics.recordRequest(LISTENER, opcode, ResultStatus.OK);
         }
     }
