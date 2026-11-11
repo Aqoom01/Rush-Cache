@@ -433,7 +433,7 @@ public final class B1Server implements AutoCloseable {
                 return;
             }
             if (applied.isEmpty()) {
-                respond(ctx, frame, ResultStatus.UNAVAILABLE, "stale expected version");
+                respond(ctx, frame, ResultStatus.UNAVAILABLE, B1Wire.STALE_EXPECTED_VERSION);
                 return;
             }
             // Controller는 자기 자신에게 push하지 않으므로 겸임 노드의 표를 직접 갱신한다

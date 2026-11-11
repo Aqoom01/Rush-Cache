@@ -259,7 +259,7 @@ public record RunnerConfig(
         double burstFactor = p.doubleValue("burst.factor", "3.0", 0.0, 1000.0);
         double burstWidth = p.doubleValue("burst.width", "0.05", 1e-9, 1.0);
         Optional<Windowed> windowed = p.windowed(targets.size(), routingBoundaries);
-        ClusterConfig.parse(properties::getProperty, p.errors);
+        ClusterConfig.parse(properties::getProperty, p.errors, targets.size());
 
         if (!p.errors.isEmpty()) {
             throw new ConfigException("invalid config: " + String.join("; ", p.errors));

@@ -40,7 +40,13 @@ record ClusterConfig(
         boolean consistencyCheck,
         List<Migration> migrations,
         Migration migrationSettings,
-        Optional<Balance> balance) {
+        Optional<Balance> balance,
+        Optional<Scheduler> scheduler,
+        Optional<Drain> drain) {
+
+    record Scheduler(String policy, int maxConcurrent, int maxPerNode, long deadlineMs) {}
+
+    record Drain(int node, long atMs) {}
 
     /** 측정 시작 {@code atMs} 뒤에 Tablet {@code tablet}을 node {@code to}로 옮기라고 그때의 주인에게 지시한다. */
     record Migration(long atMs, long tablet, long to, Method method, long rateBytesPerSec, int batchBytes,
@@ -75,20 +81,22 @@ record ClusterConfig(
             "cluster.mode", "cluster.peer.port", "cluster.prefill", "load.rate", "redirect.max", "retry.busy.max",
             "retry.busy.interval.ms", "retry.busy.max.interval.ms", "timeline.bucket.ms", "consistency.check", "migration.at.ms", "migration.tablet",
             "migration.to", "migration.method", "migration.rate.bytes.per.sec", "migration.batch.bytes",
-            "migration.stop.threshold.bytes", "migration.max.rounds", "balance.split", "balance.split.theta",
+            "migration.stop.threshold.bytes", "migration.max.rounds", "migration.scheduler",
+            "migration.scheduler.max.concurrent", "migration.scheduler.max.per.node", "migration.scheduler.deadline.ms",
+            "drain.node", "drain.at.ms", "balance.split", "balance.split.theta",
             "balance.placement", "balance.window.ms", "balance.start.ms", "balance.sustain.windows",
             "balance.cooldown.windows", "balance.tablet.limit", "balance.target.utilization");
 
     /** 결과에 저장된 설정 스냅샷에서 다시 읽는다. cluster.mode가 없으면 빈 값. */
     static Optional<ClusterConfig> from(Map<String, String> snapshot) {
         List<String> errors = new ArrayList<>();
-        Optional<ClusterConfig> config = parse(snapshot::get, errors);
+        Optional<ClusterConfig> config = parse(snapshot::get, errors, -1);
         if (!errors.isEmpty()) throw new ConfigException("invalid cluster config: " + String.join("; ", errors));
         return config;
     }
 
     /** 오류는 {@code errors}에 모은다. cluster.mode가 없으면 cluster 전용 key가 하나라도 있을 때 오류다. */
-    static Optional<ClusterConfig> parse(Function<String, String> get, List<String> errors) {
+    static Optional<ClusterConfig> parse(Function<String, String> get, List<String> errors, int targetCount) {
         String mode = text(get, "cluster.mode", "");
         if (mode.isEmpty()) {
             for (String key : KEYS) {
@@ -112,9 +120,51 @@ record ClusterConfig(
         long bucketMs = number(get, "timeline.bucket.ms", "100", 1, 60_000, errors);
         boolean check = flag(get, "consistency.check", "true", errors);
         Optional<Balance> balance = balance(get, errors);
+        Optional<Scheduler> scheduler = scheduler(get, errors);
+        Optional<Drain> drain = drain(get, errors, targetCount);
+        if ((scheduler.isPresent() || drain.isPresent()) && get.apply("balance.split") != null) {
+            errors.add("migration.scheduler and drain.node cannot be used with balance.split");
+        }
         Migration settings = migrationSettings(get, errors);
-        return Optional.of(new ClusterConfig(peerPort, rate, prefill, redirectMax, busyMax, busyInterval, busyMaxInterval, bucketMs,
-                check, migrations(get, errors, settings, balance.isPresent()), settings, balance));
+        return Optional.of(new ClusterConfig(peerPort, rate, prefill, redirectMax, busyMax, busyInterval, busyMaxInterval,
+                bucketMs, check, migrations(get, errors, settings, balance.isPresent() || drain.isPresent()),
+                settings, balance, scheduler, drain));
+    }
+
+    private static Optional<Scheduler> scheduler(Function<String, String> get, List<String> errors) {
+        String policy = text(get, "migration.scheduler", "");
+        String concurrent = "migration.scheduler.max.concurrent";
+        String perNode = "migration.scheduler.max.per.node";
+        String deadline = "migration.scheduler.deadline.ms";
+        if (get.apply("migration.scheduler") == null) {
+            for (String key : List.of(concurrent, perNode, deadline)) {
+                if (get.apply(key) != null) errors.add("'" + key + "' needs migration.scheduler");
+            }
+            return Optional.empty();
+        }
+        if (!List.of("fifo", "mongodb", "slamig").contains(policy)) {
+            errors.add("'migration.scheduler' must be fifo, mongodb or slamig: " + policy);
+        }
+        if (policy.equals("slamig") && text(get, deadline, "").isEmpty()) {
+            errors.add("'" + deadline + "' is required for slamig");
+        }
+        return Optional.of(new Scheduler(policy, (int) number(get, concurrent, "4", 1, Integer.MAX_VALUE, errors),
+                (int) number(get, perNode, "4", 1, Integer.MAX_VALUE, errors),
+                number(get, deadline, "1", 1, Long.MAX_VALUE, errors)));
+    }
+
+    private static Optional<Drain> drain(Function<String, String> get, List<String> errors, int targetCount) {
+        if (get.apply("drain.node") == null) {
+            if (get.apply("drain.at.ms") != null) errors.add("'drain.at.ms' needs drain.node");
+            return Optional.empty();
+        }
+        if (List.of("migration.at.ms", "migration.tablet", "migration.to").stream().anyMatch(k -> get.apply(k) != null)) {
+            errors.add("'drain.node' cannot be used with an explicit migration list");
+        }
+        // CI removes deploy.* before Runner starts. target.hosts is the selected membership, ordered by NodeId.
+        if (targetCount >= 0 && targetCount < 2) errors.add("'drain.node' requires at least two targets");
+        int node = (int) number(get, "drain.node", "-1", 0, targetCount < 0 ? Integer.MAX_VALUE : targetCount - 1, errors);
+        return Optional.of(new Drain(node, number(get, "drain.at.ms", "10000", 0, 3_600_000, errors)));
     }
 
     private static Optional<Balance> balance(Function<String, String> get, List<String> errors) {
@@ -161,14 +211,14 @@ record ClusterConfig(
     }
 
     private static List<Migration> migrations(Function<String, String> get, List<String> errors, Migration settings,
-                                              boolean balance) {
+                                              boolean hasImplicitMoves) {
         List<String> at = list(get, "migration.at.ms");
         List<String> tablets = list(get, "migration.tablet");
         List<String> targets = list(get, "migration.to");
         if (at.isEmpty() && tablets.isEmpty() && targets.isEmpty()) {
             for (String key : List.of("migration.method", "migration.rate.bytes.per.sec", "migration.batch.bytes",
                     "migration.stop.threshold.bytes", "migration.max.rounds")) {
-                if (get.apply(key) != null && !balance) errors.add("'" + key + "' needs migration.at.ms or balance.split");
+                if (get.apply(key) != null && !hasImplicitMoves) errors.add("'" + key + "' needs migration.at.ms, balance.split or drain.node");
             }
             return List.of();
         }

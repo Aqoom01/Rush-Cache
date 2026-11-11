@@ -39,7 +39,6 @@ class ClusterRunnerIntegrationTest {
         clientPort = freePort();
         peerPort = freePort();
         while (peerPort == clientPort) peerPort = freePort();
-        for (int i = 0; i < 2; i++) servers.add(B1Server.start(new B1NodeConfig(i, HOSTS, clientPort, peerPort, 2)));
     }
 
     @AfterEach
@@ -53,11 +52,22 @@ class ClusterRunnerIntegrationTest {
         }
     }
 
-    private Properties base() {
+    private Properties base() throws Exception {
+        return base(HOSTS);
+    }
+
+    private Properties base(List<String> hosts) throws Exception {
+        return base(hosts, 2);
+    }
+
+    private Properties base(List<String> hosts, int tabletsPerNode) throws Exception {
+        for (int i = 0; i < hosts.size(); i++) {
+            servers.add(B1Server.start(new B1NodeConfig(i, hosts, clientPort, peerPort, tabletsPerNode)));
+        }
         Properties p = new Properties();
         p.setProperty("target.host", HOSTS.get(0));
         p.setProperty("target.port", String.valueOf(clientPort));
-        p.setProperty("target.hosts", HOSTS.get(0) + ":" + clientPort + "," + HOSTS.get(1) + ":" + clientPort);
+        p.setProperty("target.hosts", String.join(",", hosts.stream().map(h -> h + ":" + clientPort).toList()));
         p.setProperty("study", "cluster-it");
         p.setProperty("variant", "it");
         p.setProperty("scenario", "none");
@@ -126,6 +136,100 @@ class ClusterRunnerIntegrationTest {
         assertEquals(0, field(json, "redirectExhausted"));
     }
 
+    @ParameterizedTest
+    @ValueSource(booleans = {true, false})
+    void drainsThreeNodeClusterAndReportsSchedulerSummary(boolean fifo) throws Exception {
+        Properties p = base(List.of("127.0.0.1", "127.0.0.2", "127.0.0.3"));
+        // A controller source publishes locally. Remote concurrent commits can race on the expected table version.
+        p.setProperty("drain.node", fifo ? "0" : "2");
+        p.setProperty("drain.at.ms", "200");
+        if (fifo) {
+            p.setProperty("migration.scheduler", "fifo");
+            p.setProperty("migration.scheduler.max.concurrent", "2");
+        }
+        p.setProperty("migration.rate.bytes.per.sec", "500000");
+        p.setProperty("migration.stop.threshold.bytes", "4096");
+
+        String json = clusterJson(new ExperimentRunner(RunnerConfig.from(p)).run());
+        assertEquals(2, field(json, "plannedMoves"));
+        assertEquals(0, field(json, "remainingTablets"), json);
+        assertEquals(fifo ? 2 : 1, field(json, "maxObservedConcurrent"));
+        assertEquals(fifo ? 2 : 1, field(json, "maxConcurrent"));
+        assertEquals(fifo ? 4 : 1, field(json, "maxPerNode"));
+        assertTrue(json.contains("\"policy\": \"" + (fifo ? "fifo" : "sequential") + "\""), json);
+        String moves = json.substring(json.indexOf("\"migrations\":"));
+        var tablets = Pattern.compile("\"tablet\": (\\d+), \"from\":").matcher(moves).results()
+                .map(m -> Long.parseLong(m.group(1))).toList();
+        assertEquals(2, tablets.size(), json);
+        assertTrue(json.contains("\"admissionOrder\": " + tablets), json);
+        var times = Pattern.compile("\"queuedMs\": (\\d+\\.\\d+)").matcher(moves).results()
+                .mapToDouble(m -> Double.parseDouble(m.group(1))).toArray();
+        var sent = Pattern.compile("\"sentMs\": (\\d+\\.\\d+)").matcher(moves).results()
+                .mapToDouble(m -> Double.parseDouble(m.group(1))).toArray();
+        var finished = Pattern.compile("\"finishedMs\": (\\d+\\.\\d+)").matcher(moves).results()
+                .mapToDouble(m -> Double.parseDouble(m.group(1))).toArray();
+        var summary = Pattern.compile("\"makespanMs\": (\\d+\\.\\d+), \"meanJobCompletionMs\": (\\d+\\.\\d+)")
+                .matcher(json);
+        assertTrue(summary.find(), json);
+        assertEquals(Math.max(finished[0], finished[1]) - sent[0], Double.parseDouble(summary.group(1)), 0.002);
+        assertEquals((finished[0] - times[0] + finished[1] - times[1]) / 2,
+                Double.parseDouble(summary.group(2)), 0.002);
+        assertEquals(2, Pattern.compile("\"phase\": 4").matcher(json).results().count());
+        assertTrue(json.contains("\"nodeRemoved\": false"), json);
+        assertEquals(0, field(json, "lostSet"));
+        assertEquals(0, field(json, "wrongValue"));
+        assertEquals(0, field(json, "staleHit"));
+        assertEquals(0, field(json, "unverified"));
+    }
+
+    @Test
+    void drainsNonControllerWithFourConcurrentFifoMoves() throws Exception {
+        Properties p = base(List.of("127.0.0.1", "127.0.0.2", "127.0.0.3", "127.0.0.4"), 4);
+        p.setProperty("drain.node", "3");
+        p.setProperty("drain.at.ms", "200");
+        p.setProperty("migration.scheduler", "fifo");
+        p.setProperty("migration.scheduler.max.concurrent", "4");
+        p.setProperty("migration.rate.bytes.per.sec", "500000");
+        p.setProperty("migration.stop.threshold.bytes", "4096");
+
+        String json = clusterJson(new ExperimentRunner(RunnerConfig.from(p)).run());
+        assertEquals(4, field(json, "plannedMoves"));
+        assertEquals(4, field(json, "maxObservedConcurrent"), json);
+        assertEquals(0, field(json, "remainingTablets"), json);
+        assertEquals(4, Pattern.compile("\"phase\": 4").matcher(json).results().count(), json);
+        for (String metric : List.of("lostSet", "wrongValue", "staleHit", "unverified")) {
+            assertEquals(0, field(json, metric), json);
+        }
+        List<Integer> retries = Pattern.compile("\"commitRetries\":(\\d+)").matcher(json).results()
+                .map(m -> Integer.parseInt(m.group(1))).toList();
+        assertEquals(4, retries.size(), json);
+        System.out.println("Four-node FIFO drain commit retries by move: " + retries);
+    }
+
+    @Test
+    void legacyMovesKeepSequentialOrderAndJsonFields() throws Exception {
+        Properties p = base();
+        p.setProperty("migration.at.ms", "100,100");
+        p.setProperty("migration.tablet", "1,0");
+        p.setProperty("migration.to", "1,1");
+
+        String json = clusterJson(new ExperimentRunner(RunnerConfig.from(p)).run());
+        String moves = json.substring(json.indexOf("\"migrations\":"));
+        assertFalse(json.contains("\"scheduler\":"));
+        assertFalse(json.contains("\"drain\":"));
+        assertFalse(moves.contains("\"queuedMs\":"));
+        assertFalse(moves.contains("\"admissionRetries\":"));
+        var sequence = Pattern.compile("\"tablet\": (\\d+).*?\"sentMs\": (\\d+\\.\\d+).*?"
+                + "\"finishedMs\": (\\d+\\.\\d+), \"phase\": 4, \"server\":").matcher(moves);
+        assertTrue(sequence.find(), moves);
+        assertEquals("1", sequence.group(1));
+        double firstFinished = Double.parseDouble(sequence.group(3));
+        assertTrue(sequence.find(), moves);
+        assertEquals("0", sequence.group(1));
+        assertTrue(Double.parseDouble(sequence.group(2)) >= firstFinished, moves);
+        assertFalse(sequence.find());
+    }
+
     @Test
     void runsWithoutMigrationAndRoutesDirectly() throws Exception {
         RunnerConfig config = RunnerConfig.from(base());
@@ -172,7 +276,7 @@ class ClusterRunnerIntegrationTest {
     }
 
     @Test
-    void rejectsClusterKeysWithoutClusterMode() {
+    void rejectsClusterKeysWithoutClusterMode() throws Exception {
         Properties p = base();
         p.remove("cluster.mode");
         assertThrows(ConfigException.class, () -> RunnerConfig.from(p));
