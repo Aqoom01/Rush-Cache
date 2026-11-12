@@ -324,3 +324,39 @@
 - 사용법은 experiments/ionia-pilot/DISTRIBUTED.md, 실행기는 rehearse-distributed.ps1/distributed.sh, 결과검사기는 verify_distributed.py다. 최신 ZIP은 cache-server/build/distributions/ionia-pilot.zip이며 문서/고정dataset을 포함한다. 최종 보고는 docs/IONIA_DISTRIBUTED_PILOT_VALIDATION.json, 증거는 build/ionia-distributed-validation/20261103-101029다. 원본 작업 증거도 C:/Users/SSAFY/.codex/.chatgpt-projects/g-p-6ac58d22cee48191ba9860f9176cf956/distributed-evidence-20261103-101029에 유지한다.
 - histogram은 bucket count·sum/min/max/overflow를 합친 후 quantile을 재계산하며 p99 평균을 쓰지 않는다. controller의 단일clock dispatch→양측report window rate는 제어 비용을 포함한 기능 관찰로 표시한다. 정식 throughput/엄밀동시시작·원격CPU/SSD/fsync·전체peer drain·전수 선형화·전원손실·변형들의 분산pilot 완료를 주장하지 않는다. 독립Replica RAM Durability Log·stable View·선택적KV force(off)를 구분한다.
 - 다음은 팀원 EC2 인스턴스 준비 후 실제 유형/OS/Java21/디스크/private 통신/접속을 확인하고 Linux에서 작은 기능 gate를 먼저 실행하는 것이다. 그 다음 동일3200요청의 원격 완주와 연결/시간 예산을 확인하고, 정식 데이터·계측·부하 조건을 확정한다. Hermes나 새 파생 방법론을 추가한 작업은 아니다.
+
+
+## 2026-11-04 | EC2 5대 O00 NVMe 기능 smoke 실행
+
+- 사용자 지정 새 m6gd.medium 5대(Amazon Linux 2023/ARM64)에 SSH를 확인하고 Amazon Corretto JDK 21.0.13을 설치했다. 배치는 replica3/load2이며 controller는 ionia-5의 load1과 별도 JVM으로 함께 실행했다. Jira 접근과 Git commit/push/merge는 하지 않았다.
+- replica3대의 30GiB EBS 루트와 별도 59GB instance-store NVMe를 인스턴스 ID·모델·용량·마운트·서명으로 구분했다. 빈 NVMe에만 XFS를 생성하고 쓰기/읽기를 확인했다. run/data만 새 NVMe 디렉터리에 bind mount하고 run/state와 로그는 EBS에 남겼다. fstab·OS 루트 포맷·로드 호스트 NVMe는 변경하지 않았다. instance-store는 stop/termination 시 소실되므로 영속성과 동일시하지 않는다.
+- 기존 ionia-pilot.zip(SHA256 5c9b699f7cc414b2705ab4026b531031aa371236dbbb4c51ee47b062c3639995)을 5대에 동일 배포하고 24개 JAR와 canonical 데이터셋 해시를 확인했다. 알고리즘·공통 모듈·Java source·원본/파생 구현은 변경/재빌드하지 않았다. 배포 경로는 /home/ec2-user/ionia-experiments/20261104-104308/bundle이다.
+- 첫 private TCP 점검은 자기호스트4성공/호스트간13시간초과였다. 사용자가 보안 그룹 sg-0a56f6c8b81ce5fb5에 자기그룹 출발지 TCP19000-19001을 저장한 뒤 동일17경로가 전부 통과했다. 점검용 임시 listener만 종료했고 실제 workload 기동 전 연결을 확인했다.
+- fresh run pilot-45154c62-61ef-49b2-ae7f-e1d75a5e9b45의 72logical(LOAD16/WARMUP8/MEASURE48)을 실제 EC2에서 한 번 실행했다. load당36요청, workload 기대쓰기31의 replica 전원 view0/applied 확인, 별도 예약키 CRUD8개와 replica별값9회 감사, 최종 적용35를 통과했다. replica3대의 stop 파일 기반 정상 종료·stopped marker·PID 종료, load2의 exit0/완료해시, controller exit0/global COMPLETE를 확인했다.
+- 전 호스트 결과 아카이브를 로컬로 회수하고 원격/로컬 SHA256을 대조했다. EC2 기본 Python3.9.25의 hashlib.file_digest 부재로 원격 독립 검사기는 실행 뒤 실패했다. 알고리즘/검사 기준을 바꾸지 않고 동일 번들의 검사기를 로컬 Python에서 실행해 통과했다. 별도 host별 stopped/PID와 load 완료마커도 대조했다.
+- 증거는 C:/Users/SSAFY/.codex/.chatgpt-projects/g-p-6ac58d22cee48191ba9860f9176cf956/ec2-pilot-20261104-104308이며 SMOKE_VERIFIED.json과 local-independent-verifier.json, 5개 archive, 초기 연결 실패도 유지한다. 작업 요약은 같은 workspace의 EC2_PILOT_STATUS_20261104.md다. 이 실행은 기능 smoke이며 정식 성능·cold SSD I/O·KV fsync·전원손실·전수 이력 선형화 검증이 아니다. 독립 Replica RAM Durability Log/stable View/선택적 KV force(off)를 구분한다.
+- 다음은 새 run/NVMe data 디렉터리에서 고정3,200요청 원격 기능 pilot이다. 아직 실행하지 않았으며 완료한 smoke를 재사용하거나 덮어쓰지 않는다. 원격 독립 Python 검증에는 Python3.11 이상 또는 회수본의 로컬 검증을 사용한다.
+
+
+## 2026-11-04 | O00 고정3,200요청 EC2 기능 pilot 완료
+
+- 사용자가 요청한 고정3,200요청을 기존 EC2 5대(replica3/load2/controller는ionia-5동거)에서 실행했다. 기존72smoke와 원본/파생 Java코드·실행JAR·TCP/timeout 정책은 보존했다. Jira·Git commit/push/merge는 수행하지 않았다.
+- 기존 canonical dataset manifest SHA256 13b6e833938c50e5e8716bdad3cf42bb2a04df00d98ae8a892c7473e9006d882를 사용했다. 새 run의 입력을 한 번 준비해5대에 동일배포하고, 새 replica NVMe 디렉터리를 run/data에 bind mount했다. 로그·상태는 EBS에 남기고 결과를 전부 로컬 회수했다.
+- 첫 준비 실행20261104-120359는 node1의 BindException으로 workload 기동 전에 중단됐다. 실패로그/아카이브를 보존했다. 사후 포트 조회는 비어 있어 당시 원인을 확정하지 않는다. 점검listener의 클라이언트EOF 대기와 실제 SO_REUSEADDR=false bind 가능 gate를 보완했다. OS나 알고리즘 설정은 바꾸지 않았다.
+- 별도 새 실행20261104-120604에서17연결/4endpoint bind/입력·저장경로를 확인한 뒤 LOAD1000/WARMUP200/MEASURE2000, 총3200논리요청을 통과했다. load당1600, 전체 GET1774/SET1310/DELETE116이다. 단계별 전replica view0/applied frontier1000→1045→1426을 확인했다. 별도 CRUD8건·replica값9회 감사와 최종frontier1430도 통과했다.
+- replica3대의 stop 파일 기반 정상종료·stopped·PID종료, load2 완료마커·exit0, controller global COMPLETE·exit0·포트 종료를 확인했다. 전호스트 결과archive 원격/로컬SHA256을 대조했다. 기존 Python3.9 API제약 때문에 동일 번들의 독립검사기를 로컬Python에서 실행해 요청·분할·해시·histogram·복제적용·감사를 통과했고 호스트별 종료/완료증거도 추가 대조했다.
+- run ID는 pilot-d4be3f02-970c-43e5-b6ca-847f5cc29656. 원격은 /home/ec2-user/ionia-experiments/20261104-104308/pilot3200-20261104-120604/run, 로컬은 C:/Users/SSAFY/.codex/.chatgpt-projects/g-p-6ac58d22cee48191ba9860f9176cf956/ec2-pilot3200-20261104-120604이며 PILOT3200_VERIFIED.json과 원본5archive를 유지한다. 같은 workspace의 EC2_PILOT3200_RESULT_20261104.md에 범위·초기실패·최종결과를 기록했다.
+- 이는 O00의 첫EC2 기능검증이며 정식성능·coldSSD·KVfsync·전수이력선형화·장애/전원손실·전체파생방식의 원격검증 완료가 아니다. 독립Replica RAM Durability Log/stable View/선택적KV force(off)를 구분한다. 다음은 파생방식의 동일입력 기능검증과 정식데이터·반복·부하조건 확정이다.
+
+
+## 2026-11-04 | V01~V07 EC2 정상경로 기능 검증 및 결과 묶음 완료
+
+- 사용자 요청에 따라 기존 EC2 5대(replica3/load2, controller는ionia-5에 별도JVM 동거)에서 V01~V07 각각72/3,200요청의14개 유효 실행을 검증했다. 유효 실행 논리요청은22,904건이며 별도 CRUD112건과 replica값126회 감사가 있다. 모든 경우 새 run/새 NVMe 데이터 경로를 사용하고 앞선 O00와 실패자료를 유지했다.
+- 기존 고정 배포24JAR(SHA256 ZIP 5c9b699f7cc414b2705ab4026b531031aa371236dbbb4c51ee47b062c3639995)을 그대로 참조하는 별도 variant-pilot.jar 조립부를 workspace에 추가했다. 기존 V01~V07 benchmark adapter와 IoniaNode/Third/Fourth/Fifth/Sixth/EighthNode를 실제 호출한다. 공통 generator/runner API·알고리즘·wire·스토리지 정책·기존 TCP/timeout은 수정하지 않았다. 작업 전후 기존Java325개 SHA256이 전부 동일하다.
+- 실제 프로필은 V01 Leader-read, V02 History target1024, V03 Prepare128/65536B/20ms, V04 Apply keys4/shards2, V05 shards4/I/O workers2, V06 ADAPTIVE64/32/1ms/1000ms/250ms/explore16, V07 Meta8/65536B/2ms/pending256/inflight4다. 실제 server/adapter class와 profile/overlay hash를 handshake·ready에 결합하고 잘못된 경우 거절한다. 별도감사도 실제 variant client를 사용한다.
+- 최초 조립부 V01 smoke는 본요청 완료 후 감사 stream ID 설정 오류로 실패했다. 당시 소스와 결과를 variant-ec2-20261104-123942에 보존하고 단일stream 감사계약을 수정·추가 검사한 뒤 새 조립부 경로를 사용했다. V02/V03의 초기 smoke는 본요청·감사 후 진단 JSON의 OptionalLong/OptionalInt 표현 미지원으로 종료증거 출력이 실패했다. 이를 별도 exporter 보완판에서만 고치고 새run으로72/3200을 검증했다. 실패를PASS로 바꾸거나 재사용하지 않았다. 엄격 Java21컴파일과 조립/identity/profile/HELLO검사40개, exporter보완판은 추가6개를 포함한46개를 통과했다.
+- 14개 최종 실행 모두 workload·단계별 view0/applied frontier·별도CRUD8/replica값9회·client protocol pending0·node별최종 snapshot/pending0·정상종료/마커를 확인했다.72요청은최종frontier35,3200요청은1430이다. 전호스트archive를 회수해 SHA256을 대조하고 동일 기존 독립 Python검사기를 로컬에서 통과했다. EC2 Python3.9의 hashlib.file_digest 제약은 유지한다.
+- 추가 독립 검사가14고유run/70호스트의 입력·프로필·코드manifest, archive와추출본, 동일크기별7방식의 canonical 요청열 동일성을 확인했다. 실제EC2 최종 조회에서5대 모두 남은 실험JVM과19000/19001 listener가0이다. EC2 인스턴스 자체는 유지했다. Jira와 Git commit/push/merge는 수행하지 않았다.
+- 특성 관찰은 V02 entries1001/target1024/removed0(BELOW_TARGET), V03 planner attempts합501/entries2862, V04 gate peak4/limit4/종료active0, V05 I/O worker2개실행, V06 adaptive logicalStarts합1774, V07 Meta sentItems1774/batches1774/종료pending0이다. V02 trim과V07 항목합치기 효과는 이번데이터/순차load에서발생하지 않았으므로 별도경계/동시성시나리오가필요하다. 기능통과를최적화효과/정식성능/장애복구/전수선형화/전원손실 검증으로 일반화하지 않는다. 독립RAM Durability Log/stable View/선택적KV force(off)를 구분한다.
+- 주증거는 C:/Users/SSAFY/.codex/.chatgpt-projects/g-p-6ac58d22cee48191ba9860f9176cf956/variant-ec2-20261104-124407, exporter보완 실행은 variant-ec2-diagnostics-20261104-125434다. CROSS_HOST_CODE_COHORT_AUDIT.json/SOURCE_PRESERVATION.json/FINAL_HOST_STATE.json과 각VERIFIED.json을 유지했다. 재현소스는 같은workspace의 variant-remote, variant-remote-diagfix 및 run-variant-campaign.py/repair-variant-diagnostics.py다.
+- 결과 ZIP은 같은workspace의 deliverables/IONIA_EC2_V01-V07_FUNCTIONAL_20261104.zip(22,693,787bytes, SHA256 5ad515fa13b0028d96f3e7940c504fa0643b9b9a0e8f9659cff08b5563262c98)이다. summary/RESULT.md, method_status.csv, phase_requests.csv, feature_coverage.csv, feature_evidence.json, 지연관측CSV와14경우원본·5대archive·초기실패·조립부소스를 포함한다. 개인키와 AWS자격증명은 포함하지 않았다. 정식성능비교·작업집합확대·반복·계측·특성경계/장애시나리오는후속이다.
