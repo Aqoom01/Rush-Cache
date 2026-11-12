@@ -1,0 +1,560 @@
+{
+  "schema_version": "measurement-validation-v1",
+  "date": "2026-10-30",
+  "status": "passed",
+  "scope": "full observed latency histograms and local standard result export, Java API",
+  "java": "Microsoft OpenJDK21.0.11+10-LTS",
+  "gradle": "9.8.0",
+  "full_command": ".\\experiments\\ionia-validation\\Run-Validation.ps1 -Mode Full -Repeat 1 -PortWaitSeconds 60",
+  "evidence": "build/ionia-validation/20261030-144730-ff8dc3df",
+  "tests": {
+    "cache-core": {
+      "tests": 392,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "suites": [
+        {
+          "name": "io.openkache.core.api.DeadlineTest",
+          "tests": 3
+        },
+        {
+          "name": "io.openkache.core.api.ResultTest",
+          "tests": 5
+        },
+        {
+          "name": "io.openkache.core.kv.KvEngineTest",
+          "tests": 6
+        },
+        {
+          "name": "io.openkache.core.model.BytesTest",
+          "tests": 7
+        },
+        {
+          "name": "io.openkache.core.model.IdentifierTest",
+          "tests": 4
+        },
+        {
+          "name": "io.openkache.core.replication.ionia.IoniaClientTest",
+          "tests": 6
+        },
+        {
+          "name": "io.openkache.core.replication.ionia.IoniaConfigTest",
+          "tests": 9
+        },
+        {
+          "name": "io.openkache.core.replication.ionia.IoniaLinearizabilityTest",
+          "tests": 2
+        },
+        {
+          "name": "io.openkache.core.replication.ionia.IoniaLogTest",
+          "tests": 7
+        },
+        {
+          "name": "io.openkache.core.replication.ionia.IoniaMessageTest",
+          "tests": 10
+        },
+        {
+          "name": "io.openkache.core.replication.ionia.IoniaO00Test",
+          "tests": 33
+        },
+        {
+          "name": "io.openkache.core.replication.ionia.IoniaStateMachineTest",
+          "tests": 17
+        },
+        {
+          "name": "io.openkache.core.replication.ionia.IoniaWorkerIntegrationTest",
+          "tests": 1
+        },
+        {
+          "name": "io.openkache.core.replication.ionia_eighth.IoniaMetaBatchHistoryTest",
+          "tests": 7
+        },
+        {
+          "name": "io.openkache.core.replication.ionia_eighth.IoniaMetaBatchProtocolTest",
+          "tests": 3
+        },
+        {
+          "name": "io.openkache.core.replication.ionia_eighth.IoniaMetaBatchReadBoundaryTest",
+          "tests": 6
+        },
+        {
+          "name": "io.openkache.core.replication.ionia_eighth.IoniaMetaBatchTest",
+          "tests": 18
+        },
+        {
+          "name": "io.openkache.core.replication.ionia_fifth.IoniaApplyGateTest",
+          "tests": 6
+        },
+        {
+          "name": "io.openkache.core.replication.ionia_fifth.IoniaFifthApplyTest",
+          "tests": 11
+        },
+        {
+          "name": "io.openkache.core.replication.ionia_fifth.IoniaFifthHistoryTest",
+          "tests": 7
+        },
+        {
+          "name": "io.openkache.core.replication.ionia_fifth.IoniaFifthRegressionTest",
+          "tests": 32
+        },
+        {
+          "name": "io.openkache.core.replication.ionia_fifth.IoniaFifthWorkerIntegrationTest",
+          "tests": 1
+        },
+        {
+          "name": "io.openkache.core.replication.ionia_fourth.IoniaBatchPlannerTest",
+          "tests": 11
+        },
+        {
+          "name": "io.openkache.core.replication.ionia_fourth.IoniaFourthBatchIntegrationTest",
+          "tests": 15
+        },
+        {
+          "name": "io.openkache.core.replication.ionia_fourth.IoniaFourthHistoryTest",
+          "tests": 7
+        },
+        {
+          "name": "io.openkache.core.replication.ionia_fourth.IoniaFourthRegressionTest",
+          "tests": 32
+        },
+        {
+          "name": "io.openkache.core.replication.ionia_fourth.IoniaFourthWorkerIntegrationTest",
+          "tests": 1
+        },
+        {
+          "name": "io.openkache.core.replication.ionia_second.IoniaLeaderReadClientTest",
+          "tests": 14
+        },
+        {
+          "name": "io.openkache.core.replication.ionia_second.IoniaLeaderReadHistoryTest",
+          "tests": 2
+        },
+        {
+          "name": "io.openkache.core.replication.ionia_second.IoniaLeaderReadIntegrationTest",
+          "tests": 8
+        },
+        {
+          "name": "io.openkache.core.replication.ionia_seventh.IoniaAdaptiveHistoryTest",
+          "tests": 7
+        },
+        {
+          "name": "io.openkache.core.replication.ionia_seventh.IoniaAdaptiveProtocolTest",
+          "tests": 3
+        },
+        {
+          "name": "io.openkache.core.replication.ionia_seventh.IoniaAdaptiveReadBoundaryTest",
+          "tests": 6
+        },
+        {
+          "name": "io.openkache.core.replication.ionia_seventh.IoniaAdaptiveReadClientTest",
+          "tests": 15
+        },
+        {
+          "name": "io.openkache.core.replication.ionia_seventh.IoniaReadSelectionTest",
+          "tests": 6
+        },
+        {
+          "name": "io.openkache.core.replication.ionia_sixth.IoniaWorkerSettingsTest",
+          "tests": 3
+        },
+        {
+          "name": "io.openkache.core.replication.ionia_third.IoniaBudgetHistoryTest",
+          "tests": 10
+        },
+        {
+          "name": "io.openkache.core.replication.ionia_third.IoniaHistorySettingsTest",
+          "tests": 2
+        },
+        {
+          "name": "io.openkache.core.replication.ionia_third.IoniaThirdHistoryTest",
+          "tests": 7
+        },
+        {
+          "name": "io.openkache.core.replication.ionia_third.IoniaThirdIntegrationTest",
+          "tests": 6
+        },
+        {
+          "name": "io.openkache.core.replication.ionia_third.IoniaThirdRegressionTest",
+          "tests": 32
+        },
+        {
+          "name": "io.openkache.core.runtime.OwnerWorkerTest",
+          "tests": 4
+        }
+      ]
+    },
+    "cache-server": {
+      "tests": 90,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "suites": [
+        {
+          "name": "io.openkache.server.config.ServerConfigTest",
+          "tests": 8
+        },
+        {
+          "name": "io.openkache.server.ionia.IoniaProcessTest",
+          "tests": 1
+        },
+        {
+          "name": "io.openkache.server.ionia.IoniaStorageWireTest",
+          "tests": 7
+        },
+        {
+          "name": "io.openkache.server.ionia.IoniaTcpConcurrencyTest",
+          "tests": 1
+        },
+        {
+          "name": "io.openkache.server.ionia_eighth.IoniaMetaBatchCodecTest",
+          "tests": 4
+        },
+        {
+          "name": "io.openkache.server.ionia_eighth.IoniaMetaBatchProcessTest",
+          "tests": 1
+        },
+        {
+          "name": "io.openkache.server.ionia_eighth.IoniaMetaBatchTcpTest",
+          "tests": 2
+        },
+        {
+          "name": "io.openkache.server.ionia_fifth.IoniaFifthProcessTest",
+          "tests": 1
+        },
+        {
+          "name": "io.openkache.server.ionia_fifth.IoniaFifthProfileTest",
+          "tests": 4
+        },
+        {
+          "name": "io.openkache.server.ionia_fifth.IoniaFifthTcpConcurrencyTest",
+          "tests": 1
+        },
+        {
+          "name": "io.openkache.server.ionia_fourth.IoniaFourthProcessTest",
+          "tests": 1
+        },
+        {
+          "name": "io.openkache.server.ionia_fourth.IoniaFourthProfileTest",
+          "tests": 3
+        },
+        {
+          "name": "io.openkache.server.ionia_fourth.IoniaFourthTcpConcurrencyTest",
+          "tests": 1
+        },
+        {
+          "name": "io.openkache.server.ionia_fourth.IoniaPrepareSizerWireTest",
+          "tests": 1
+        },
+        {
+          "name": "io.openkache.server.ionia_second.IoniaLeaderReadProcessTest",
+          "tests": 1
+        },
+        {
+          "name": "io.openkache.server.ionia_second.IoniaLeaderReadTcpConcurrencyTest",
+          "tests": 1
+        },
+        {
+          "name": "io.openkache.server.ionia_seventh.IoniaAdaptiveProcessTest",
+          "tests": 1
+        },
+        {
+          "name": "io.openkache.server.ionia_seventh.IoniaAdaptiveTcpConcurrencyTest",
+          "tests": 1
+        },
+        {
+          "name": "io.openkache.server.ionia_seventh.IoniaAdaptiveTcpSelectionTest",
+          "tests": 2
+        },
+        {
+          "name": "io.openkache.server.ionia_sixth.IoniaSixthProcessTest",
+          "tests": 1
+        },
+        {
+          "name": "io.openkache.server.ionia_sixth.IoniaSixthProfileTest",
+          "tests": 4
+        },
+        {
+          "name": "io.openkache.server.ionia_sixth.IoniaSixthTcpConcurrencyTest",
+          "tests": 1
+        },
+        {
+          "name": "io.openkache.server.ionia_sixth.IoniaWorkerModelTest",
+          "tests": 1
+        },
+        {
+          "name": "io.openkache.server.ionia_sixth.IoniaWorkerRecoveryTest",
+          "tests": 1
+        },
+        {
+          "name": "io.openkache.server.ionia_sixth.IoniaWorkerStorageTest",
+          "tests": 10
+        },
+        {
+          "name": "io.openkache.server.ionia_third.IoniaReadTransportFailureTest",
+          "tests": 3
+        },
+        {
+          "name": "io.openkache.server.ionia_third.IoniaThirdProcessTest",
+          "tests": 1
+        },
+        {
+          "name": "io.openkache.server.ionia_third.IoniaThirdProfileTest",
+          "tests": 3
+        },
+        {
+          "name": "io.openkache.server.ionia_third.IoniaThirdTcpConcurrencyTest",
+          "tests": 1
+        },
+        {
+          "name": "io.openkache.server.lifecycle.ServerApplicationTest",
+          "tests": 11
+        },
+        {
+          "name": "io.openkache.server.netty.FrameCodecTest",
+          "tests": 11
+        }
+      ]
+    },
+    "experiment-runner": {
+      "tests": 16,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "suites": [
+        {
+          "name": "io.openkache.runner.ExperimentRunnerIntegrationTest",
+          "tests": 2
+        },
+        {
+          "name": "io.openkache.runner.LatencyReservoirTest",
+          "tests": 4
+        },
+        {
+          "name": "io.openkache.runner.RunnerConfigTest",
+          "tests": 6
+        },
+        {
+          "name": "io.openkache.runner.WorkloadGeneratorTest",
+          "tests": 4
+        }
+      ]
+    },
+    "runner-benchmark": {
+      "tests": 89,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "suites": [
+        {
+          "name": "io.openkache.runner.benchmark.client.ClientAccountingTest",
+          "tests": 2
+        },
+        {
+          "name": "io.openkache.runner.benchmark.execution.ClosedLoopRunnerTest",
+          "tests": 14
+        },
+        {
+          "name": "io.openkache.runner.benchmark.execution.FixedRateScheduleTest",
+          "tests": 4
+        },
+        {
+          "name": "io.openkache.runner.benchmark.execution.OpenLoopRunnerTest",
+          "tests": 14
+        },
+        {
+          "name": "io.openkache.runner.benchmark.KeyValueCodecTest",
+          "tests": 6
+        },
+        {
+          "name": "io.openkache.runner.benchmark.measurement.BenchmarkRunWriterTest",
+          "tests": 11
+        },
+        {
+          "name": "io.openkache.runner.benchmark.measurement.LatencyCollectorTest",
+          "tests": 7
+        },
+        {
+          "name": "io.openkache.runner.benchmark.measurement.LatencyHistogramTest",
+          "tests": 6
+        },
+        {
+          "name": "io.openkache.runner.benchmark.TraceGeneratorTest",
+          "tests": 15
+        },
+        {
+          "name": "io.openkache.runner.benchmark.TraceToolTest",
+          "tests": 5
+        },
+        {
+          "name": "io.openkache.runner.benchmark.TraceWriterTest",
+          "tests": 5
+        }
+      ]
+    },
+    "server-benchmark": {
+      "tests": 48,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "suites": [
+        {
+          "name": "io.openkache.server.benchmark.ionia.ClosedLoopO00TcpTest",
+          "tests": 4
+        },
+        {
+          "name": "io.openkache.server.benchmark.ionia.HistogramO00TcpTest",
+          "tests": 4
+        },
+        {
+          "name": "io.openkache.server.benchmark.ionia.LocalO00DrainProbeTest",
+          "tests": 5
+        },
+        {
+          "name": "io.openkache.server.benchmark.ionia.O00BenchmarkClientTest",
+          "tests": 25
+        },
+        {
+          "name": "io.openkache.server.benchmark.ionia.O00BenchmarkTcpTest",
+          "tests": 3
+        },
+        {
+          "name": "io.openkache.server.benchmark.ionia.ObservedRpcTest",
+          "tests": 3
+        },
+        {
+          "name": "io.openkache.server.benchmark.ionia.OpenLoopO00TcpTest",
+          "tests": 4
+        }
+      ]
+    }
+  },
+  "new_tests": 28,
+  "previous_tests": 607,
+  "total_tests": 635,
+  "artifact_fixtures_checked": 13,
+  "artifact_rejection_controls": [
+    {
+      "control": "hash-corruption",
+      "rejected": true,
+      "directory": "C:\\Users\\SSAFY\\.codex\\.chatgpt-projects\\g-p-6ac58d22cee48191ba9860f9176cf956\\benchmark-b5-negative-controls\\7b3b7c5e-5362-4f86-aecb-eae8d5b78a01\\hash-corruption"
+    },
+    {
+      "control": "missing-completion",
+      "rejected": true,
+      "directory": "C:\\Users\\SSAFY\\.codex\\.chatgpt-projects\\g-p-6ac58d22cee48191ba9860f9176cf956\\benchmark-b5-negative-controls\\7b3b7c5e-5362-4f86-aecb-eae8d5b78a01\\missing-completion"
+    },
+    {
+      "control": "rehashed-wrong-population",
+      "rejected": true,
+      "directory": "C:\\Users\\SSAFY\\.codex\\.chatgpt-projects\\g-p-6ac58d22cee48191ba9860f9176cf956\\benchmark-b5-negative-controls\\7b3b7c5e-5362-4f86-aecb-eae8d5b78a01\\rehashed-wrong-population"
+    },
+    {
+      "control": "rehashed-wrong-percentile",
+      "rejected": true,
+      "directory": "C:\\Users\\SSAFY\\.codex\\.chatgpt-projects\\g-p-6ac58d22cee48191ba9860f9176cf956\\benchmark-b5-negative-controls\\7b3b7c5e-5362-4f86-aecb-eae8d5b78a01\\rehashed-wrong-percentile"
+    }
+  ],
+  "artifact_result_validity_counts": {
+    "valid": 9,
+    "invalid": 4
+  },
+  "tcp_fixtures": [
+    {
+      "nodes": 3,
+      "mode": "open",
+      "phases": {
+        "LOAD": 4,
+        "WARMUP": 3,
+        "MEASURE": 30
+      },
+      "mix_get_set_delete": [
+        40,
+        30,
+        30
+      ],
+      "all_crud_observed": true,
+      "all_replica_applied": 22,
+      "functional_only": true
+    },
+    {
+      "nodes": 3,
+      "mode": "closed",
+      "phases": {
+        "LOAD": 4,
+        "WARMUP": 3,
+        "MEASURE": 30
+      },
+      "mix_get_set_delete": [
+        40,
+        30,
+        30
+      ],
+      "all_crud_observed": true,
+      "all_replica_applied": 22,
+      "functional_only": true
+    },
+    {
+      "nodes": 5,
+      "mode": "open",
+      "phases": {
+        "LOAD": 4,
+        "WARMUP": 3,
+        "MEASURE": 30
+      },
+      "mix_get_set_delete": [
+        40,
+        30,
+        30
+      ],
+      "all_crud_observed": true,
+      "all_replica_applied": 22,
+      "functional_only": true
+    },
+    {
+      "nodes": 5,
+      "mode": "closed",
+      "phases": {
+        "LOAD": 4,
+        "WARMUP": 3,
+        "MEASURE": 30
+      },
+      "mix_get_set_delete": [
+        40,
+        30,
+        30
+      ],
+      "all_crud_observed": true,
+      "all_replica_applied": 22,
+      "functional_only": true
+    }
+  ],
+  "new_java_files": 9,
+  "existing_source_count": 253,
+  "unchanged_existing_sources": 252,
+  "modified_existing": [
+    "ClosedLoopRunner optional Observer and compatible constructor"
+  ],
+  "application_jar_benchmark_entries": {
+    "experiment-runner": 0,
+    "cache-server": 0
+  },
+  "schema_or_dependency_changes": false,
+  "remote_runs": 0,
+  "ec2_diagnostics": 0,
+  "performance_comparisons": 0,
+  "commits": 0,
+  "pushes": 0,
+  "merges": 0,
+  "limitations": [
+    "single JVM local subset; not ready distributed manifest",
+    "p99.9 under 100000 samples is not comparison eligible; bucket percentile is an upper approximation",
+    "no one-second windows, host metrics, full history or ACK audit",
+    "no variant adapters, remote apply/launcher, paired analysis or overhead qualification",
+    "trace/source tree hashes and server environment unknown; manifest records null",
+    "collector trusts runner exactly-once callback; no full request ID dedup ledger",
+    "file publication atomic moves; no fsync/power-loss durability claim",
+    "original per-RPC TCP socket and RAM-log/optional KV force contracts unchanged",
+    "historical V07 intermittent connection refusal remains unresolved; this full run has no failures"
+  ]
+}

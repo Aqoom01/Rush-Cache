@@ -1,0 +1,23 @@
+{
+  "schema_version": "openkache-logical-trace-v1",
+  "status": "generated_only",
+  "request_execution": "not_run",
+  "generator": "indexed-splitmix64-v1",
+  "key_encoding": "okkey-v1",
+  "value_encoding": "okv1-crc32c",
+  "trace_encoding": "oktrace1-big-endian-v1",
+  "seed": 101,
+  "key_count": 1000,
+  "key_bytes": 24,
+  "value_bytes": 100,
+  "mix": {"get": 80, "set": 15, "delete": 5},
+  "stream_count": 2,
+  "distribution": "UNIFORM",
+  "hot_probability": 0.0,
+  "trace_files_emitted": true,
+  "phases": [
+    {"phase": "LOAD", "count": 1000, "get": 0, "set": 1000, "delete": 0, "canonical_bytes": 161076, "sha256": "deff5db6d5a48c7da9cfa5aa132d6f73c5444732132e806112c041f5dbb2f0b0", "file": "load.trace"},
+    {"phase": "WARMUP", "count": 200, "get": 155, "set": 29, "delete": 16, "canonical_bytes": 15176, "sha256": "d8651e42a1366eadc90264e7ebf695ba7adce98b703c0805dd90598e5f9e5c2f", "file": "warmup.trace"},
+    {"phase": "MEASURE", "count": 2000, "get": 1619, "set": 281, "delete": 100, "canonical_bytes": 150176, "sha256": "9c7fa2f59709b4c000573e560ae451449fc87e67bb3df7671e57fc9ea477773b", "file": "measure.trace"}
+  ]
+}

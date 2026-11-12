@@ -1,0 +1,359 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "OpenKache replication benchmark result v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "run_id",
+    "manifest_sha256",
+    "execution_status",
+    "validity",
+    "invalid_reasons",
+    "cohort",
+    "elapsed_ns",
+    "metrics",
+    "artifacts"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "replication-result-v1"
+    },
+    "run_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "manifest_sha256": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^[a-fA-F0-9]{64}$"
+    },
+    "execution_status": {
+      "enum": [
+        "not_run",
+        "running",
+        "completed",
+        "failed",
+        "inconclusive"
+      ]
+    },
+    "validity": {
+      "enum": [
+        "not_evaluated",
+        "valid",
+        "invalid"
+      ]
+    },
+    "invalid_reasons": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true
+    },
+    "cohort": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": false,
+      "required": [
+        "admitted",
+        "success",
+        "error_response",
+        "no_response",
+        "pending"
+      ],
+      "properties": {
+        "admitted": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "success": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "error_response": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "no_response": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "pending": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "elapsed_ns": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 1
+    },
+    "metrics": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "metric_id",
+          "status",
+          "unit",
+          "value",
+          "reason",
+          "dimensions",
+          "numerator",
+          "denominator"
+        ],
+        "properties": {
+          "metric_id": {
+            "enum": [
+              "M01",
+              "M02",
+              "M03",
+              "M04",
+              "M05",
+              "M06",
+              "M07",
+              "M08",
+              "M09",
+              "M10",
+              "M11",
+              "M12",
+              "M13",
+              "M14",
+              "M15",
+              "M16",
+              "M17",
+              "M18",
+              "M19",
+              "M20",
+              "M21",
+              "M22",
+              "M23",
+              "M24",
+              "M25",
+              "M26",
+              "M27",
+              "M28",
+              "M29",
+              "M30",
+              "M31",
+              "M32",
+              "M33",
+              "M34",
+              "M35",
+              "M36"
+            ]
+          },
+          "status": {
+            "enum": [
+              "measured",
+              "unsupported",
+              "not_applicable",
+              "not_run",
+              "insufficient_samples",
+              "invalid"
+            ]
+          },
+          "unit": {
+            "type": "string"
+          },
+          "value": {
+            "type": [
+              "number",
+              "string",
+              "object",
+              "array",
+              "null"
+            ]
+          },
+          "reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "dimensions": {
+            "type": "object",
+            "additionalProperties": {
+              "type": [
+                "string",
+                "number",
+                "boolean",
+                "null"
+              ]
+            }
+          },
+          "numerator": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "denominator": {
+            "type": [
+              "number",
+              "null"
+            ]
+          }
+        },
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "status": {
+                  "enum": [
+                    "unsupported",
+                    "not_applicable",
+                    "not_run",
+                    "invalid"
+                  ]
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "value": {
+                  "type": "null"
+                },
+                "reason": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "status": {
+                  "const": "measured"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "value": {
+                  "not": {
+                    "type": "null"
+                  }
+                },
+                "reason": {
+                  "type": "null"
+                }
+              }
+            }
+          }
+        ]
+      }
+    },
+    "artifacts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "path",
+          "sha256"
+        ],
+        "properties": {
+          "path": {
+            "type": "string",
+            "minLength": 1
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[a-fA-F0-9]{64}$"
+          }
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "execution_status": {
+            "const": "not_run"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "validity": {
+            "const": "not_evaluated"
+          },
+          "cohort": {
+            "type": "null"
+          },
+          "elapsed_ns": {
+            "type": "null"
+          },
+          "artifacts": {
+            "maxItems": 0
+          },
+          "metrics": {
+            "items": {
+              "properties": {
+                "status": {
+                  "const": "not_run"
+                },
+                "value": {
+                  "type": "null"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "execution_status": {
+            "const": "completed"
+          },
+          "validity": {
+            "const": "valid"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "manifest_sha256": {
+            "type": "string",
+            "pattern": "^[a-fA-F0-9]{64}$"
+          },
+          "invalid_reasons": {
+            "maxItems": 0
+          },
+          "cohort": {
+            "type": "object",
+            "properties": {
+              "pending": {
+                "const": 0
+              }
+            }
+          },
+          "elapsed_ns": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "metrics": {
+            "minItems": 1
+          },
+          "artifacts": {
+            "minItems": 1
+          }
+        }
+      }
+    }
+  ]
+}

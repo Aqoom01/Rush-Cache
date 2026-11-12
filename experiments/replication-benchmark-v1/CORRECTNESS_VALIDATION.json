@@ -1,0 +1,156 @@
+{
+  "schema_version": "correctness-validation-v1",
+  "date": "2026-11-02",
+  "status": "passed",
+  "prior_tests": 760,
+  "new_tests": 80,
+  "total_tests": 840,
+  "suites": [
+    {
+      "module": "cache-core",
+      "task": "test",
+      "xml_files": 42,
+      "tests": 392,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "module": "cache-server",
+      "task": "test",
+      "xml_files": 31,
+      "tests": 90,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "module": "experiment-runner",
+      "task": "test",
+      "xml_files": 4,
+      "tests": 16,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "module": "experiment-runner",
+      "task": "benchmarkTest",
+      "xml_files": 15,
+      "tests": 121,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "module": "cache-server",
+      "task": "benchmarkTest",
+      "xml_files": 9,
+      "tests": 74,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "module": "cache-server",
+      "task": "variantBenchmarkTest",
+      "xml_files": 5,
+      "tests": 99,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "module": "cache-server",
+      "task": "correctnessBenchmarkTest",
+      "xml_files": 1,
+      "tests": 48,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    }
+  ],
+  "added_tests": {
+    "unit": 32,
+    "local_tcp": 48
+  },
+  "java": "21.0.11",
+  "evidence_directory": "build/ionia-validation/20261102-091004-35e8466c",
+  "command": ".\\experiments\\ionia-validation\\Run-Validation.ps1 -Mode Full -Repeat 1 -PortWaitSeconds 600",
+  "local_history_matrix": {
+    "variants": [
+      "O00",
+      "V01",
+      "V02",
+      "V03",
+      "V04",
+      "V05",
+      "V06",
+      "V07"
+    ],
+    "replicas": [
+      3,
+      5
+    ],
+    "schedulers": [
+      "closed",
+      "open"
+    ],
+    "conditions": 32,
+    "phases": [
+      4,
+      3,
+      12
+    ],
+    "logical_requests_per_run": 19,
+    "mix_get_set_delete": [
+      40,
+      30,
+      30
+    ],
+    "initial_state": "attested empty isolated storage",
+    "checker": "24 operations/200000 states/2 seconds"
+  },
+  "ack_audit": {
+    "conditions": 16,
+    "reserved_mutations_per_condition": 2,
+    "mutations": [
+      "SET exact payload",
+      "DELETE initialized key"
+    ],
+    "phases": [
+      "all replicas applied",
+      "one follower graceful close/restart/survivor recovery then READY"
+    ],
+    "exported_audits": 32,
+    "scope": "service GET; does not assert reads all served directly by restarted replica"
+  },
+  "artifacts": {
+    "actual_tcp": 64,
+    "semantic_controls": 4,
+    "rejected_artifact_negative_controls": 6,
+    "report": "CORRECTNESS_ARTIFACT_CHECK.json"
+  },
+  "initial_failure": {
+    "path": "build/correctness-initial-recovery-gate",
+    "failed_new_tests": 16,
+    "cause": "fixture evaluated RECOVERING using normal-state-only probe",
+    "correction": "explicit bounded recovery preparation before unchanged READY probe",
+    "existing_algorithms_changed": false
+  },
+  "protected_sources_unchanged": 289,
+  "new_java_sources": 12,
+  "not_run": [
+    "EC2/SSH/inventory",
+    "formal performance comparison",
+    "ACK-before-apply crash/leader kill/network partition/power loss",
+    "Git commit/push/merge"
+  ],
+  "remaining": [
+    "large/distributed correctness and standard performance result M28/M29 integration",
+    "host/JVM/protocol/storage metrics and one-second windows",
+    "clock/instrumentation overhead",
+    "V06 cold/steady learning/warmup policy",
+    "formal dataset/workload candidates and later authorized EC2 inventory/pilot"
+  ]
+}

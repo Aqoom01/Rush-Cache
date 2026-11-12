@@ -1,0 +1,192 @@
+{
+  "schema_version": "benchmark-b1-validation-v1",
+  "date": "2026-10-30",
+  "scope": "logical_trace_generator_and_local_regression",
+  "status": "generator_acceptance_passed_with_existing_tcp_flake_recorded",
+  "java": "Microsoft OpenJDK 21.0.11+10-LTS",
+  "gradle": "9.8.0",
+  "new_generator_tests": 31,
+  "commands": [
+    {
+      "command": ".\\gradlew.bat :experiment-runner:benchmarkTest --offline --console=plain",
+      "note": "Initial acceptance run 30 tests; final version adds one frozen-v1-vector test, bringing total to 31."
+    },
+    {
+      "command": ".\\experiments\\ionia-validation\\Run-Validation.ps1 -Mode Full -Repeat 1 -PortWaitSeconds 60",
+      "attempt": 1,
+      "status": "failed",
+      "evidence": "build/ionia-validation/20261030-120748-ba60ddda",
+      "results": {
+        "cache-core": {
+          "tests": 392,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "failed_cases": []
+        },
+        "cache-server": {
+          "tests": 90,
+          "failures": 1,
+          "errors": 0,
+          "skipped": 0,
+          "failed_cases": [
+            "io.openkache.server.ionia_eighth.IoniaMetaBatchTcpTest.thirtyTwoConcurrentHotKeyWritesAndReadsUseFourRealMetaEnvelopes()"
+          ]
+        },
+        "experiment-runner": {
+          "tests": 16,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "failed_cases": []
+        },
+        "experiment-runner-benchmark": {
+          "tests": 31,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "failed_cases": []
+        }
+      }
+    },
+    {
+      "command": ".\\gradlew.bat :cache-server:test --tests '*IoniaMetaBatchTcpTest' --rerun-tasks --offline --console=plain",
+      "status": "passed",
+      "evidence": "build/benchmark-b1-target-df50cbc5",
+      "results": {
+        "tests": 2,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "failed_cases": []
+      }
+    },
+    {
+      "command": ".\\experiments\\ionia-validation\\Run-Validation.ps1 -Mode Full -Repeat 1 -PortWaitSeconds 60",
+      "attempt": 2,
+      "status": "passed",
+      "evidence": "build/ionia-validation/20261030-121153-013f5350",
+      "results": {
+        "cache-core": {
+          "tests": 392,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "cache-server": {
+          "tests": 90,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "experiment-runner": {
+          "tests": 16,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "experiment-runner-benchmark": {
+          "tests": 31,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        }
+      },
+      "total_tests": 529,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "command": ".\\gradlew.bat :experiment-runner:benchmarkTrace --offline --console=plain --warning-mode=all -PtraceConfig=experiments/replication-benchmark-v1/trace-small.properties -PtraceOutput=build/trace-b1-gradle-final-013f5350",
+      "status": "passed",
+      "evidence": "build/trace-b1-gradle-final-013f5350.log",
+      "note": "After removing execution-time Task.project access. No deprecation warning in the final CLI run; no Java sources changed after the final full regression."
+    }
+  ],
+  "existing_tcp_issue": {
+    "test": "IoniaMetaBatchTcpTest.thirtyTwoConcurrentHotKeyWritesAndReadsUseFourRealMetaEnvelopes",
+    "first_outcome": "Expected OK, got UNAVAILABLE; trace included leader PROBE/BATCH ConnectException: Connection refused.",
+    "isolated_outcome": "2 tests passed",
+    "final_full_outcome": "529 tests passed",
+    "root_cause": "unconfirmed",
+    "code_or_timeout_changes": "none",
+    "resolution_claimed": false,
+    "observations": [
+      "An immediate isolated attempt was not run because the local port budget guard exceeded 10%; no pass was recorded for that attempt.",
+      "A later sandboxed port inventory read was denied and its incomplete output was discarded; the actual isolated run used a successful escalated read and enforced the original 10% threshold."
+    ]
+  },
+  "generator_checks": [
+    "Same-seed random-access/concurrent generation equality",
+    "Disjoint LOAD/WARMUP/MEASURE request-ID namespaces",
+    "Complete unique stream partition coverage including uneven/empty counts",
+    "LOAD every key once; key/value metadata agreement",
+    "GET/SET/DELETE pure and mixed probabilities; key range",
+    "UNIFORM/FIXED_HOT observed frequencies and probability endpoints",
+    "1,000,000 key codec round-trips; long index/client-ID boundaries",
+    "CRC32C corruption and invalid metadata rejection",
+    "Malformed config/sizing/mix/distribution/flags rejected",
+    "No overwrite of existing output directory",
+    "Binary header/records/EOF/counters/file SHA256 agreement",
+    "Hash-only equals emitted file; frozen v1 vectors",
+    "Output IO failures propagate"
+  ],
+  "cli": {
+    "kind": "local_generator_only",
+    "heap_limit": "64MiB",
+    "request_execution": "not_run",
+    "hash_output": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\build\\trace-b1-hash-3a8d6a30",
+    "file_output": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\build\\trace-b1-files-3a8d6a30",
+    "phases": [
+      {
+        "phase": "LOAD",
+        "count": 64,
+        "get": 0,
+        "set": 64,
+        "delete": 0,
+        "canonical_bytes": 10380,
+        "sha256": "815309ee90389d80302adceeb5f70c43d7eabfe49947eec5c7948ec347452151",
+        "verified": true
+      },
+      {
+        "phase": "WARMUP",
+        "count": 256,
+        "get": 198,
+        "set": 37,
+        "delete": 21,
+        "canonical_bytes": 19392,
+        "sha256": "2663d59f46a5ee981a72827f937ce4c130270701042b948f9ba5248a24c9962c",
+        "verified": true
+      },
+      {
+        "phase": "MEASURE",
+        "count": 10000,
+        "get": 8030,
+        "set": 1465,
+        "delete": 505,
+        "canonical_bytes": 756576,
+        "sha256": "ca161fc16838ec6be7f6ad49c64cb00fbabba239314fdf5590021dbccd8e10a9",
+        "verified": true
+      }
+    ]
+  },
+  "gradle_cli_matches_direct_cli": true,
+  "application_main_jar_benchmark_entries": 0,
+  "existing_source_files_checked": 214,
+  "existing_source_changes": 0,
+  "new_source_files": 13,
+  "preservation_artifact": "B1_SOURCE_PRESERVATION.json",
+  "remote_actions": 0,
+  "distributed_benchmark_runs": 0,
+  "performance_measurements": 0,
+  "commits": 0,
+  "pushes": 0,
+  "remaining": [
+    "O00/variant long-lived client adapters and actual attempt/outcome accounting",
+    "Phase scheduler, open-loop admission, latency histogram/metrics export",
+    "Distributed history checker/ACK audit/fault-controller integration",
+    "Zipf/moving-hot/read-latest/insert workloads",
+    "EC2 inventory and pilot qualification remain deferred by user"
+  ]
+}

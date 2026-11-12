@@ -1,0 +1,25 @@
+{
+  "schema_version": "replication-result-v1",
+  "run_id": "SHAPE-EXAMPLE-NOT-A-RUN",
+  "manifest_sha256": null,
+  "execution_status": "not_run",
+  "validity": "not_evaluated",
+  "invalid_reasons": [],
+  "cohort": null,
+  "elapsed_ns": null,
+  "metrics": [
+    {
+      "metric_id": "M05",
+      "status": "not_run",
+      "unit": "logical_ops/s",
+      "value": null,
+      "reason": "Schema example only; no benchmark executed",
+      "dimensions": {
+        "op": "GET"
+      },
+      "numerator": null,
+      "denominator": null
+    }
+  ],
+  "artifacts": []
+}

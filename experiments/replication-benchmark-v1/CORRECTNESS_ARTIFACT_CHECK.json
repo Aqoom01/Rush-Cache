@@ -1,0 +1,580 @@
+{
+  "evidence": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\build\\ionia-validation\\20261102-091004-35e8466c",
+  "suites": [
+    {
+      "module": "cache-core",
+      "task": "test",
+      "xml_files": 42,
+      "tests": 392,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "module": "cache-server",
+      "task": "test",
+      "xml_files": 31,
+      "tests": 90,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "module": "experiment-runner",
+      "task": "test",
+      "xml_files": 4,
+      "tests": 16,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "module": "experiment-runner",
+      "task": "benchmarkTest",
+      "xml_files": 15,
+      "tests": 121,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "module": "cache-server",
+      "task": "benchmarkTest",
+      "xml_files": 9,
+      "tests": 74,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "module": "cache-server",
+      "task": "variantBenchmarkTest",
+      "xml_files": 5,
+      "tests": 99,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "module": "cache-server",
+      "task": "correctnessBenchmarkTest",
+      "xml_files": 1,
+      "tests": 48,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    }
+  ],
+  "total_tests": 840,
+  "artifacts": [
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\experiment-runner\\build\\correctness-control-fixtures\\ack-loss-2da8c07b-8ea6-43a2-9f02-b0ebf90a194b",
+      "artifact_valid": true,
+      "history_verdict": "PASS",
+      "ack_verdict": "VIOLATION",
+      "operations": 1
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\experiment-runner\\build\\correctness-control-fixtures\\pass-e1897c0d-28a3-486d-a8ed-8a81692f8930",
+      "artifact_valid": true,
+      "history_verdict": "PASS",
+      "ack_verdict": "not_run",
+      "operations": 1
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\experiment-runner\\build\\correctness-control-fixtures\\stale-read-3d5d5b8c-0b37-4cb0-80d6-91fabcf44a1a",
+      "artifact_valid": true,
+      "history_verdict": "VIOLATION",
+      "ack_verdict": "not_run",
+      "operations": 2
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\experiment-runner\\build\\correctness-control-fixtures\\pending-ee343372-d204-435c-a439-d7459a7c09f4",
+      "artifact_valid": true,
+      "history_verdict": "INCONCLUSIVE",
+      "ack_verdict": "not_run",
+      "operations": 2
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\cache-server\\build\\correctness-fixtures\\correctness-O00-n3-closed-aa52e20a-e41e-48e1-9dfa-dd88fa6a9487",
+      "artifact_valid": true,
+      "history_verdict": "PASS",
+      "ack_verdict": "not_run",
+      "operations": 19
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\cache-server\\build\\correctness-fixtures\\correctness-O00-n3-open-26d4b345-a75e-4df7-b82a-4bcc8a6f2df6",
+      "artifact_valid": true,
+      "history_verdict": "PASS",
+      "ack_verdict": "not_run",
+      "operations": 19
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\cache-server\\build\\correctness-fixtures\\correctness-O00-n5-closed-ebb520df-0a8a-44f7-aa93-90f5e49d8019",
+      "artifact_valid": true,
+      "history_verdict": "PASS",
+      "ack_verdict": "not_run",
+      "operations": 19
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\cache-server\\build\\correctness-fixtures\\correctness-O00-n5-open-1a1826c7-a440-474e-995c-9982dad007aa",
+      "artifact_valid": true,
+      "history_verdict": "PASS",
+      "ack_verdict": "not_run",
+      "operations": 19
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\cache-server\\build\\correctness-fixtures\\correctness-V01-n3-closed-66e4b398-6d5e-4f5a-b7ac-8546daeb4ea2",
+      "artifact_valid": true,
+      "history_verdict": "PASS",
+      "ack_verdict": "not_run",
+      "operations": 19
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\cache-server\\build\\correctness-fixtures\\correctness-V01-n3-open-74b5fc91-a12c-43c8-926e-c33595157725",
+      "artifact_valid": true,
+      "history_verdict": "PASS",
+      "ack_verdict": "not_run",
+      "operations": 19
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\cache-server\\build\\correctness-fixtures\\correctness-V01-n5-closed-f0d36557-8c7f-4913-a10b-29f10cacd21d",
+      "artifact_valid": true,
+      "history_verdict": "PASS",
+      "ack_verdict": "not_run",
+      "operations": 19
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\cache-server\\build\\correctness-fixtures\\correctness-V01-n5-open-d870cdca-ed43-4b8f-a0db-f832892d786b",
+      "artifact_valid": true,
+      "history_verdict": "PASS",
+      "ack_verdict": "not_run",
+      "operations": 19
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\cache-server\\build\\correctness-fixtures\\correctness-V02-n3-closed-1956e015-3ab6-4022-95cb-b285619a029a",
+      "artifact_valid": true,
+      "history_verdict": "PASS",
+      "ack_verdict": "not_run",
+      "operations": 19
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\cache-server\\build\\correctness-fixtures\\correctness-V02-n3-open-f9749575-686a-4e97-b6da-803c58ef68da",
+      "artifact_valid": true,
+      "history_verdict": "PASS",
+      "ack_verdict": "not_run",
+      "operations": 19
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\cache-server\\build\\correctness-fixtures\\correctness-V02-n5-closed-527c56f8-f4de-4ad2-a756-d1adc6239b28",
+      "artifact_valid": true,
+      "history_verdict": "PASS",
+      "ack_verdict": "not_run",
+      "operations": 19
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\cache-server\\build\\correctness-fixtures\\correctness-V02-n5-open-2aab0c2f-f443-4f0c-8fe6-7949e157f072",
+      "artifact_valid": true,
+      "history_verdict": "PASS",
+      "ack_verdict": "not_run",
+      "operations": 19
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\cache-server\\build\\correctness-fixtures\\correctness-V03-n3-closed-971d3e7e-1df3-4cac-9677-86328e51b26e",
+      "artifact_valid": true,
+      "history_verdict": "PASS",
+      "ack_verdict": "not_run",
+      "operations": 19
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\cache-server\\build\\correctness-fixtures\\correctness-V03-n3-open-dccadf56-e494-4034-8585-3847fa836827",
+      "artifact_valid": true,
+      "history_verdict": "PASS",
+      "ack_verdict": "not_run",
+      "operations": 19
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\cache-server\\build\\correctness-fixtures\\correctness-V03-n5-closed-5d792f7b-7ca2-4b99-9e91-ee3a62ffa098",
+      "artifact_valid": true,
+      "history_verdict": "PASS",
+      "ack_verdict": "not_run",
+      "operations": 19
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\cache-server\\build\\correctness-fixtures\\correctness-V03-n5-open-390de0e6-74d8-4f33-863d-b85c6380bdac",
+      "artifact_valid": true,
+      "history_verdict": "PASS",
+      "ack_verdict": "not_run",
+      "operations": 19
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\cache-server\\build\\correctness-fixtures\\correctness-V04-n3-closed-c58fc3d9-f66a-4a41-aaf0-e3327b85d0d5",
+      "artifact_valid": true,
+      "history_verdict": "PASS",
+      "ack_verdict": "not_run",
+      "operations": 19
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\cache-server\\build\\correctness-fixtures\\correctness-V04-n3-open-91002013-c96d-41be-a3d0-97f13468b26a",
+      "artifact_valid": true,
+      "history_verdict": "PASS",
+      "ack_verdict": "not_run",
+      "operations": 19
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\cache-server\\build\\correctness-fixtures\\correctness-V04-n5-closed-1bed631a-4235-4f20-8670-20b8b1f3e45c",
+      "artifact_valid": true,
+      "history_verdict": "PASS",
+      "ack_verdict": "not_run",
+      "operations": 19
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\cache-server\\build\\correctness-fixtures\\correctness-V04-n5-open-25a1b10c-d7f4-4ed8-b9bd-43ec55c8348f",
+      "artifact_valid": true,
+      "history_verdict": "PASS",
+      "ack_verdict": "not_run",
+      "operations": 19
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\cache-server\\build\\correctness-fixtures\\correctness-V05-n3-closed-eafdbff6-af56-4f02-9553-664dab7ee9d5",
+      "artifact_valid": true,
+      "history_verdict": "PASS",
+      "ack_verdict": "not_run",
+      "operations": 19
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\cache-server\\build\\correctness-fixtures\\correctness-V05-n3-open-3187ca4f-0f32-45d6-9f8b-fb4ee958d272",
+      "artifact_valid": true,
+      "history_verdict": "PASS",
+      "ack_verdict": "not_run",
+      "operations": 19
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\cache-server\\build\\correctness-fixtures\\correctness-V05-n5-closed-9ac48d13-889e-4a32-99e3-72721e37087b",
+      "artifact_valid": true,
+      "history_verdict": "PASS",
+      "ack_verdict": "not_run",
+      "operations": 19
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\cache-server\\build\\correctness-fixtures\\correctness-V05-n5-open-6aa7fa13-7358-46bd-82a0-6aa1907fc1ee",
+      "artifact_valid": true,
+      "history_verdict": "PASS",
+      "ack_verdict": "not_run",
+      "operations": 19
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\cache-server\\build\\correctness-fixtures\\correctness-V06-n3-closed-319b4cf9-093d-43ad-8d7e-0c9d8abfc7fc",
+      "artifact_valid": true,
+      "history_verdict": "PASS",
+      "ack_verdict": "not_run",
+      "operations": 19
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\cache-server\\build\\correctness-fixtures\\correctness-V06-n3-open-8c92fba0-18d8-484a-8ce9-d860af3fac65",
+      "artifact_valid": true,
+      "history_verdict": "PASS",
+      "ack_verdict": "not_run",
+      "operations": 19
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\cache-server\\build\\correctness-fixtures\\correctness-V06-n5-closed-c3a59704-6678-4408-b4d7-9836f207b2cd",
+      "artifact_valid": true,
+      "history_verdict": "PASS",
+      "ack_verdict": "not_run",
+      "operations": 19
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\cache-server\\build\\correctness-fixtures\\correctness-V06-n5-open-f20e1560-e8df-422f-8b48-793fdb03a73c",
+      "artifact_valid": true,
+      "history_verdict": "PASS",
+      "ack_verdict": "not_run",
+      "operations": 19
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\cache-server\\build\\correctness-fixtures\\correctness-V07-n3-closed-2b33c979-6d8c-4884-8854-c24c858f0137",
+      "artifact_valid": true,
+      "history_verdict": "PASS",
+      "ack_verdict": "not_run",
+      "operations": 19
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\cache-server\\build\\correctness-fixtures\\correctness-V07-n3-open-a5e7a83b-0ceb-48ee-992d-d570e7a6839e",
+      "artifact_valid": true,
+      "history_verdict": "PASS",
+      "ack_verdict": "not_run",
+      "operations": 19
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\cache-server\\build\\correctness-fixtures\\correctness-V07-n5-closed-776094c6-5e5b-4282-83c7-871c9ae368b0",
+      "artifact_valid": true,
+      "history_verdict": "PASS",
+      "ack_verdict": "not_run",
+      "operations": 19
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\cache-server\\build\\correctness-fixtures\\correctness-V07-n5-open-fc137d3a-e391-4cd5-9113-f1ae61eae23c",
+      "artifact_valid": true,
+      "history_verdict": "PASS",
+      "ack_verdict": "not_run",
+      "operations": 19
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\cache-server\\build\\correctness-fixtures\\ack-O00-n3-before-rejoin-fcec752a-6970-48ce-b764-c8842d217965",
+      "artifact_valid": true,
+      "history_verdict": "PASS",
+      "ack_verdict": "PASS",
+      "operations": 2
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\cache-server\\build\\correctness-fixtures\\ack-O00-n3-after-rejoin-25be4e7a-7562-4c6f-8b49-b5051a5337a4",
+      "artifact_valid": true,
+      "history_verdict": "PASS",
+      "ack_verdict": "PASS",
+      "operations": 2
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\cache-server\\build\\correctness-fixtures\\ack-O00-n5-before-rejoin-c2a3f6bc-31e8-475e-9ca3-c9b7bb8777a9",
+      "artifact_valid": true,
+      "history_verdict": "PASS",
+      "ack_verdict": "PASS",
+      "operations": 2
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\cache-server\\build\\correctness-fixtures\\ack-O00-n5-after-rejoin-61055107-5093-4624-9bb9-36d31c804603",
+      "artifact_valid": true,
+      "history_verdict": "PASS",
+      "ack_verdict": "PASS",
+      "operations": 2
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\cache-server\\build\\correctness-fixtures\\ack-V01-n3-before-rejoin-f9a452f4-3394-419c-804c-87c91dbfd3fe",
+      "artifact_valid": true,
+      "history_verdict": "PASS",
+      "ack_verdict": "PASS",
+      "operations": 2
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\cache-server\\build\\correctness-fixtures\\ack-V01-n3-after-rejoin-702e450e-0b37-4ec8-9900-d188acbf39fa",
+      "artifact_valid": true,
+      "history_verdict": "PASS",
+      "ack_verdict": "PASS",
+      "operations": 2
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\cache-server\\build\\correctness-fixtures\\ack-V01-n5-before-rejoin-774e73e8-5cc6-4862-9bde-33a5885786c0",
+      "artifact_valid": true,
+      "history_verdict": "PASS",
+      "ack_verdict": "PASS",
+      "operations": 2
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\cache-server\\build\\correctness-fixtures\\ack-V01-n5-after-rejoin-da50d633-436a-4918-9072-f792399efaef",
+      "artifact_valid": true,
+      "history_verdict": "PASS",
+      "ack_verdict": "PASS",
+      "operations": 2
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\cache-server\\build\\correctness-fixtures\\ack-V02-n3-before-rejoin-ea51eff1-3a9b-4063-bf22-b02607b41d0d",
+      "artifact_valid": true,
+      "history_verdict": "PASS",
+      "ack_verdict": "PASS",
+      "operations": 2
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\cache-server\\build\\correctness-fixtures\\ack-V02-n3-after-rejoin-fb131aae-4b73-40e3-a421-5f041142a201",
+      "artifact_valid": true,
+      "history_verdict": "PASS",
+      "ack_verdict": "PASS",
+      "operations": 2
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\cache-server\\build\\correctness-fixtures\\ack-V02-n5-before-rejoin-8f288e08-1130-41ad-add6-0e794b420d9c",
+      "artifact_valid": true,
+      "history_verdict": "PASS",
+      "ack_verdict": "PASS",
+      "operations": 2
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\cache-server\\build\\correctness-fixtures\\ack-V02-n5-after-rejoin-9df982f4-a7be-4e90-b78b-c0d64e43b5a4",
+      "artifact_valid": true,
+      "history_verdict": "PASS",
+      "ack_verdict": "PASS",
+      "operations": 2
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\cache-server\\build\\correctness-fixtures\\ack-V03-n3-before-rejoin-eefa247b-6978-4a2e-99d2-7e7782459515",
+      "artifact_valid": true,
+      "history_verdict": "PASS",
+      "ack_verdict": "PASS",
+      "operations": 2
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\cache-server\\build\\correctness-fixtures\\ack-V03-n3-after-rejoin-05c3aef1-ec0c-40a4-ab5a-a2ef5ab03d2f",
+      "artifact_valid": true,
+      "history_verdict": "PASS",
+      "ack_verdict": "PASS",
+      "operations": 2
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\cache-server\\build\\correctness-fixtures\\ack-V03-n5-before-rejoin-fb63758e-0ca4-408d-a517-6bd569f27d00",
+      "artifact_valid": true,
+      "history_verdict": "PASS",
+      "ack_verdict": "PASS",
+      "operations": 2
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\cache-server\\build\\correctness-fixtures\\ack-V03-n5-after-rejoin-1b86f1a3-7393-4636-9d85-16079f2d1f6e",
+      "artifact_valid": true,
+      "history_verdict": "PASS",
+      "ack_verdict": "PASS",
+      "operations": 2
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\cache-server\\build\\correctness-fixtures\\ack-V04-n3-before-rejoin-f7510350-d6ad-41b2-a71b-4c62264fda85",
+      "artifact_valid": true,
+      "history_verdict": "PASS",
+      "ack_verdict": "PASS",
+      "operations": 2
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\cache-server\\build\\correctness-fixtures\\ack-V04-n3-after-rejoin-1ed78283-176a-4d7c-95f4-7a1f1dbd0257",
+      "artifact_valid": true,
+      "history_verdict": "PASS",
+      "ack_verdict": "PASS",
+      "operations": 2
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\cache-server\\build\\correctness-fixtures\\ack-V04-n5-before-rejoin-3bfe522e-b4ad-4b2a-a82c-3100e09f4c1c",
+      "artifact_valid": true,
+      "history_verdict": "PASS",
+      "ack_verdict": "PASS",
+      "operations": 2
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\cache-server\\build\\correctness-fixtures\\ack-V04-n5-after-rejoin-58ec76a6-f6ca-4a81-9b07-3caa19cfae77",
+      "artifact_valid": true,
+      "history_verdict": "PASS",
+      "ack_verdict": "PASS",
+      "operations": 2
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\cache-server\\build\\correctness-fixtures\\ack-V05-n3-before-rejoin-01db6bd4-3db4-4dd5-9356-8510fd79590b",
+      "artifact_valid": true,
+      "history_verdict": "PASS",
+      "ack_verdict": "PASS",
+      "operations": 2
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\cache-server\\build\\correctness-fixtures\\ack-V05-n3-after-rejoin-8ae3cb54-4c3f-4eda-aa91-ac61f3a5f967",
+      "artifact_valid": true,
+      "history_verdict": "PASS",
+      "ack_verdict": "PASS",
+      "operations": 2
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\cache-server\\build\\correctness-fixtures\\ack-V05-n5-before-rejoin-c2c5f953-4ec7-49a0-97b1-cc573abbb5e8",
+      "artifact_valid": true,
+      "history_verdict": "PASS",
+      "ack_verdict": "PASS",
+      "operations": 2
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\cache-server\\build\\correctness-fixtures\\ack-V05-n5-after-rejoin-b7dd05db-f664-431e-96c5-901554562e5c",
+      "artifact_valid": true,
+      "history_verdict": "PASS",
+      "ack_verdict": "PASS",
+      "operations": 2
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\cache-server\\build\\correctness-fixtures\\ack-V06-n3-before-rejoin-6122b3d8-6e71-42dc-ac56-04eeb11217cf",
+      "artifact_valid": true,
+      "history_verdict": "PASS",
+      "ack_verdict": "PASS",
+      "operations": 2
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\cache-server\\build\\correctness-fixtures\\ack-V06-n3-after-rejoin-807e56d8-1f93-43d8-9e37-842b07aad607",
+      "artifact_valid": true,
+      "history_verdict": "PASS",
+      "ack_verdict": "PASS",
+      "operations": 2
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\cache-server\\build\\correctness-fixtures\\ack-V06-n5-before-rejoin-ab94e484-b2c8-4c4c-a730-ea38198f93a4",
+      "artifact_valid": true,
+      "history_verdict": "PASS",
+      "ack_verdict": "PASS",
+      "operations": 2
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\cache-server\\build\\correctness-fixtures\\ack-V06-n5-after-rejoin-a7a5092e-7ffc-43da-a557-b0bca8ede73f",
+      "artifact_valid": true,
+      "history_verdict": "PASS",
+      "ack_verdict": "PASS",
+      "operations": 2
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\cache-server\\build\\correctness-fixtures\\ack-V07-n3-before-rejoin-6fbbcf42-3034-4e7c-b8f1-6b48abe969d4",
+      "artifact_valid": true,
+      "history_verdict": "PASS",
+      "ack_verdict": "PASS",
+      "operations": 2
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\cache-server\\build\\correctness-fixtures\\ack-V07-n3-after-rejoin-bfb7293f-9bb4-410a-96be-06c3631cce95",
+      "artifact_valid": true,
+      "history_verdict": "PASS",
+      "ack_verdict": "PASS",
+      "operations": 2
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\cache-server\\build\\correctness-fixtures\\ack-V07-n5-before-rejoin-0f8da935-60b0-4293-933d-746b5d2fca6c",
+      "artifact_valid": true,
+      "history_verdict": "PASS",
+      "ack_verdict": "PASS",
+      "operations": 2
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\cache-server\\build\\correctness-fixtures\\ack-V07-n5-after-rejoin-e5367409-0806-46d4-a337-fc58d946692a",
+      "artifact_valid": true,
+      "history_verdict": "PASS",
+      "ack_verdict": "PASS",
+      "operations": 2
+    }
+  ],
+  "negative_controls": [
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\build\\ionia-validation\\20261102-091004-35e8466c\\artifact-negative-controls\\missing-marker",
+      "rejected": true,
+      "reason": "completion marker missing"
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\build\\ionia-validation\\20261102-091004-35e8466c\\artifact-negative-controls\\altered-history",
+      "rejected": true,
+      "reason": "file hash: history.jsonl"
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\build\\ionia-validation\\20261102-091004-35e8466c\\artifact-negative-controls\\wrong-payload-with-valid-file-hashes",
+      "rejected": true,
+      "reason": "payload length/hash"
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\build\\ionia-validation\\20261102-091004-35e8466c\\artifact-negative-controls\\missing-witness-with-valid-file-hashes",
+      "rejected": true,
+      "reason": "PASS without witness"
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\build\\ionia-validation\\20261102-091004-35e8466c\\artifact-negative-controls\\false-pending-pass",
+      "rejected": true,
+      "reason": "uncertain/empty PASS"
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\build\\ionia-validation\\20261102-091004-35e8466c\\artifact-negative-controls\\hidden-ack-loss",
+      "rejected": true,
+      "reason": "audit mismatch hidden"
+    }
+  ],
+  "scope": "local single JVM correctness evidence; no EC2/performance/power loss proof"
+}

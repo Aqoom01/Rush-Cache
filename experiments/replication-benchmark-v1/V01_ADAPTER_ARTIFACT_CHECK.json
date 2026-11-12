@@ -1,0 +1,154 @@
+{
+  "status": "passed",
+  "fixture_count": 8,
+  "fixtures": [
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\cache-server\\build\\benchmark-v01-fixtures\\v01-n3-open-read-8970aa2e-6958-463d-9b34-d704026d9b2b",
+      "schema": "passed",
+      "hash_population_percentile_check": "passed",
+      "nodes": 3,
+      "mode": "open_loop",
+      "mix": [
+        100,
+        0,
+        0
+      ],
+      "measure_operations": [
+        "GET"
+      ],
+      "validity": "valid"
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\cache-server\\build\\benchmark-v01-fixtures\\v01-n5-open-read-4544488c-9380-4dc6-bb9d-9d1aa1c7781c",
+      "schema": "passed",
+      "hash_population_percentile_check": "passed",
+      "nodes": 5,
+      "mode": "open_loop",
+      "mix": [
+        100,
+        0,
+        0
+      ],
+      "measure_operations": [
+        "GET"
+      ],
+      "validity": "valid"
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\cache-server\\build\\benchmark-v01-fixtures\\v01-n3-closed-read-15bef292-1808-4c90-aa6c-22a5b78eab40",
+      "schema": "passed",
+      "hash_population_percentile_check": "passed",
+      "nodes": 3,
+      "mode": "closed_loop",
+      "mix": [
+        100,
+        0,
+        0
+      ],
+      "measure_operations": [
+        "GET"
+      ],
+      "validity": "valid"
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\cache-server\\build\\benchmark-v01-fixtures\\v01-n5-closed-read-aa4ebf59-088a-49db-b363-bbe22ddb915e",
+      "schema": "passed",
+      "hash_population_percentile_check": "passed",
+      "nodes": 5,
+      "mode": "closed_loop",
+      "mix": [
+        100,
+        0,
+        0
+      ],
+      "measure_operations": [
+        "GET"
+      ],
+      "validity": "valid"
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\cache-server\\build\\benchmark-v01-fixtures\\v01-n3-open-mixed-9ce8e12e-f7b6-40cf-a66f-41f80a40289e",
+      "schema": "passed",
+      "hash_population_percentile_check": "passed",
+      "nodes": 3,
+      "mode": "open_loop",
+      "mix": [
+        40,
+        30,
+        30
+      ],
+      "measure_operations": [
+        "DELETE",
+        "GET",
+        "SET"
+      ],
+      "validity": "valid"
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\cache-server\\build\\benchmark-v01-fixtures\\v01-n5-open-mixed-0d5274a1-9fe0-4005-a0f9-445916162e08",
+      "schema": "passed",
+      "hash_population_percentile_check": "passed",
+      "nodes": 5,
+      "mode": "open_loop",
+      "mix": [
+        40,
+        30,
+        30
+      ],
+      "measure_operations": [
+        "DELETE",
+        "GET",
+        "SET"
+      ],
+      "validity": "valid"
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\cache-server\\build\\benchmark-v01-fixtures\\v01-n3-closed-mixed-bd26da51-2ca6-4f1a-bbd7-419f2c73dc21",
+      "schema": "passed",
+      "hash_population_percentile_check": "passed",
+      "nodes": 3,
+      "mode": "closed_loop",
+      "mix": [
+        40,
+        30,
+        30
+      ],
+      "measure_operations": [
+        "DELETE",
+        "GET",
+        "SET"
+      ],
+      "validity": "valid"
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\cache-server\\build\\benchmark-v01-fixtures\\v01-n5-closed-mixed-542b9f29-a08a-45db-abac-0b479d1598af",
+      "schema": "passed",
+      "hash_population_percentile_check": "passed",
+      "nodes": 5,
+      "mode": "closed_loop",
+      "mix": [
+        40,
+        30,
+        30
+      ],
+      "measure_operations": [
+        "DELETE",
+        "GET",
+        "SET"
+      ],
+      "validity": "valid"
+    }
+  ],
+  "routing_evidence": [
+    "V01 TCP n=3, mode=open, mix=100/0/0, phases4/3/30, applied=4, V01 READ/META0, control READ/META1, probe=132; functional only",
+    "V01 TCP n=5, mode=open, mix=100/0/0, phases4/3/30, applied=4, V01 READ/META0, control READ/META1, probe=220; functional only",
+    "V01 TCP n=3, mode=closed, mix=100/0/0, phases4/3/30, applied=4, V01 READ/META0, control READ/META1, probe=132; functional only",
+    "V01 TCP n=5, mode=closed, mix=100/0/0, phases4/3/30, applied=4, V01 READ/META0, control READ/META1, probe=220; functional only",
+    "V01 TCP n=3, mode=open, mix=40/30/30, phases4/3/30, applied=22, V01 READ/META0, control READ/META1, probe=78; functional only",
+    "V01 TCP n=5, mode=open, mix=40/30/30, phases4/3/30, applied=22, V01 READ/META0, control READ/META1, probe=130; functional only",
+    "V01 TCP n=3, mode=closed, mix=40/30/30, phases4/3/30, applied=22, V01 READ/META0, control READ/META1, probe=78; functional only",
+    "V01 TCP n=5, mode=closed, mix=40/30/30, phases4/3/30, applied=22, V01 READ/META0, control READ/META1, probe=130; functional only"
+  ],
+  "routing_assertions": "V01 READ/META calls zero, majority view probes retained; separate O00 control READ/META one each",
+  "scope": "local functional fixtures, not performance comparison"
+}

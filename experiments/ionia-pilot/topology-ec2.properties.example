@@ -1,0 +1,5 @@
+# Replace all hosts with the three replicas' mutually reachable private IPv4 addresses.
+# A fourth host is the single load coordinator. Do not use the sample literally.
+schema=ionia-pilot-topology-v1
+leader.id=1
+replicas=1@REPLICA_1_PRIVATE_IP:19001,2@REPLICA_2_PRIVATE_IP:19001,3@REPLICA_3_PRIVATE_IP:19001

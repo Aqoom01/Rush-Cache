@@ -2,9 +2,9 @@
 
 고성능 분산 캐시의 가용성과 확장성에 관한 선행연구 알고리즘을 공통 서버 뼈대 위에서 구현하고 비교하는 Java 21 프로젝트입니다.
 
-현재는 **프로젝트 뼈대 단계**입니다.
-- **동작하는 것:** TCP 연결, PING, `/metrics`
-- **아직 없는 것:** GET/SET/DELETE와 연구 알고리즘. GET/SET/DELETE는 `NOT_IMPLEMENTED`로 응답합니다.
+단일 노드 기준선과 IONIA O00 연구 실행부를 제공합니다.
+- **단일 노드 기준선:** TCP, PING, GET/SET/DELETE, `/metrics`
+- **IONIA O00:** 독립 Java 프로세스, TCP, 복제 RAM 로그, 디스크 KV, View Change/DAG Recovery. 실행·검증·한계는 [IONIA O00 안내](docs/IONIA_O00.md)를 참고하세요.
 
 구조와 규칙은 아래 문서에 있습니다.
 - [docs/architecture.md](docs/architecture.md): 구조, thread 경계, 기동·종료

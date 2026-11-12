@@ -1,0 +1,111 @@
+{
+  "date": "2026-11-02",
+  "status": "implemented_and_locally_validated",
+  "total_tests": 949,
+  "new_tests": 50,
+  "groups": [
+    {
+      "module": "cache-core",
+      "task": "test",
+      "tests": 392,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "module": "cache-server",
+      "task": "test",
+      "tests": 103,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "module": "experiment-runner",
+      "task": "test",
+      "tests": 16,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "module": "experiment-runner",
+      "task": "benchmarkTest",
+      "tests": 148,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "module": "cache-server",
+      "task": "benchmarkTest",
+      "tests": 74,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "module": "cache-server",
+      "task": "variantBenchmarkTest",
+      "tests": 99,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "module": "cache-server",
+      "task": "correctnessBenchmarkTest",
+      "tests": 48,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "module": "cache-server",
+      "task": "jvmBenchmarkTest",
+      "tests": 32,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "module": "cache-server",
+      "task": "networkBenchmarkTest",
+      "tests": 37,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    }
+  ],
+  "evidence": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\build\\ionia-validation\\20261102-144644-a3a346a1",
+  "command": ".\\experiments\\ionia-validation\\Run-Validation.ps1 -Mode Full -Repeat 1 -PortWaitSeconds 600",
+  "source_summary": {
+    "protected": 310,
+    "unchanged": 307,
+    "modified_shared_IO": 3,
+    "new_java": 6
+  },
+  "artifacts": {
+    "normal": 33,
+    "invalid": 2,
+    "burst": 2,
+    "negative": 6,
+    "total_checks": 43
+  },
+  "verified": "O00/V01-V07 x 3/5 x closed/open32; CRUD cohorts4/3/12; actual Meta4->batch1 x2; complete diagnostic export despite refused preflight connection; null unsupported sources; process-local scope",
+  "preliminary_failures": [
+    "Strict try-lint flagged deliberate test closure; documented suppression applies only to new tests, compiler Werror unchanged.",
+    "Initial logical cohort map had record keys unsupported by the strict JSON encoder; stopped own preliminary task and changed export to typed cohort rows. Partial files retained without COMPLETE."
+  ],
+  "limitations": [
+    "local JDK stream bytes include length+protocol headers, not TCP/IP/TLS packets or delivery",
+    "frame event window and exchange admission cohort differ at subscription/phase boundaries",
+    "preexisting sockets and OS TIME_WAIT unobserved",
+    "counter/event-gauge peaks are not OS peaks",
+    "unknown partial writes invalidate exact byte qualification",
+    "standard M15/M16/M17 remain unsupported until profile/process coverage integration",
+    "overhead/EC2/formal SSD performance not run"
+  ],
+  "external_actions": "No Jira, Notion, EC2, commit, push or merge actions",
+  "next": "Storage file I/O/force instrumentation; common dataset candidates follow metrics/warmup integration"
+}

@@ -1,0 +1,228 @@
+{
+  "schema_version": "benchmark-b4-validation-v1",
+  "date": "2026-10-30",
+  "scope": "fixed-rate open-loop; local functional and controlled overload fixtures",
+  "status": "passed",
+  "java": "Microsoft OpenJDK21.0.11+10-LTS",
+  "gradle": "9.8.0",
+  "new_tests": 22,
+  "prior_tests": 585,
+  "total_tests": 607,
+  "failures": 0,
+  "errors": 0,
+  "skipped": 0,
+  "command": ".\\experiments\\ionia-validation\\Run-Validation.ps1 -Mode Full -Repeat 1 -PortWaitSeconds 60",
+  "evidence": "build/ionia-validation/20261030-140557-b0d5cb6b",
+  "manifest": {
+    "mode": "Full",
+    "repeat": 1,
+    "javaHome": "C:\\Users\\SSAFY\\.jdks\\ms-21.0.11",
+    "windowsPortGate": true,
+    "maxObservedPortFraction": 0.1,
+    "gradleArgs": [
+      "build",
+      ":cache-server:installDist",
+      "--rerun-tasks",
+      "--console=plain"
+    ],
+    "status": "passed",
+    "completedRuns": 1
+  },
+  "results": {
+    "cache-core": {
+      "tests": 392,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "suites": []
+    },
+    "cache-server": {
+      "tests": 90,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "suites": []
+    },
+    "experiment-runner": {
+      "tests": 16,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "suites": []
+    },
+    "experiment-runner-benchmark": {
+      "tests": 65,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "suites": [
+        {
+          "name": "io.openkache.runner.benchmark.client.ClientAccountingTest",
+          "tests": 2
+        },
+        {
+          "name": "io.openkache.runner.benchmark.execution.ClosedLoopRunnerTest",
+          "tests": 14
+        },
+        {
+          "name": "io.openkache.runner.benchmark.execution.FixedRateScheduleTest",
+          "tests": 4
+        },
+        {
+          "name": "io.openkache.runner.benchmark.execution.OpenLoopRunnerTest",
+          "tests": 14
+        },
+        {
+          "name": "io.openkache.runner.benchmark.KeyValueCodecTest",
+          "tests": 6
+        },
+        {
+          "name": "io.openkache.runner.benchmark.TraceGeneratorTest",
+          "tests": 15
+        },
+        {
+          "name": "io.openkache.runner.benchmark.TraceToolTest",
+          "tests": 5
+        },
+        {
+          "name": "io.openkache.runner.benchmark.TraceWriterTest",
+          "tests": 5
+        }
+      ]
+    },
+    "cache-server-benchmark": {
+      "tests": 44,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "suites": [
+        {
+          "name": "io.openkache.server.benchmark.ionia.ClosedLoopO00TcpTest",
+          "tests": 4
+        },
+        {
+          "name": "io.openkache.server.benchmark.ionia.LocalO00DrainProbeTest",
+          "tests": 5
+        },
+        {
+          "name": "io.openkache.server.benchmark.ionia.O00BenchmarkClientTest",
+          "tests": 25
+        },
+        {
+          "name": "io.openkache.server.benchmark.ionia.O00BenchmarkTcpTest",
+          "tests": 3
+        },
+        {
+          "name": "io.openkache.server.benchmark.ionia.ObservedRpcTest",
+          "tests": 3
+        },
+        {
+          "name": "io.openkache.server.benchmark.ionia.OpenLoopO00TcpTest",
+          "tests": 4
+        }
+      ]
+    }
+  },
+  "tcp_evidence": "Open-loop local TCP n=3, mix=100/0/0, phases=4/3/10, rates=20/20/30ops-s, bound8, considered17, healthy17, applied=4; functional fixture only, no capacity/performance claim.\nOpen-loop local TCP n=5, mix=100/0/0, phases=4/3/10, rates=20/20/30ops-s, bound8, considered17, healthy17, applied=4; functional fixture only, no capacity/performance claim.\nOpen-loop local TCP n=3, mix=80/15/5, phases=4/3/10, rates=20/20/30ops-s, bound8, considered17, healthy17, applied=6; functional fixture only, no capacity/performance claim.\nOpen-loop local TCP n=5, mix=80/15/5, phases=4/3/10, rates=20/20/30ops-s, bound8, considered17, healthy17, applied=6; functional fixture only, no capacity/performance claim.\n",
+  "checks": [
+    "Exact integer fixed-rate offsets and due-count inverse; empty/single/boundary/rate/horizon/overflow rejection",
+    "Absolute due times do not shift with responses or admission outcomes",
+    "Controlled held-response model: maxInFlight3, measure20 arrivals all considered before releasing responses, capacityDrop17; collection valid but service unhealthy",
+    "Backend admission rejections are never retried by coordinator; logical counts and attempts remain distinct",
+    "Read error/no-response outcomes do not stop the remaining measurement schedule; setup loss stops advancement",
+    "Driver pause produces timingMiss, separate from capacityDrop; lag populations retain failures/drop context",
+    "Fatal/cutoff preserves unissued, dueButUnissued and futureCancelled counts",
+    "Unknown write effects prevent replica drain qualification",
+    "Outcome identity, observer exceptions, uncooperative pending outcomes and interrupt restoration negative controls",
+    "Phase/op conservation and backend lifetime snapshot delta reconciliation"
+  ],
+  "local_tcp_fixtures": [
+    {
+      "replicas": 3,
+      "mix": "GET100",
+      "phases": {
+        "load": 4,
+        "warmup": 3,
+        "measure": 10
+      },
+      "rates_ops_per_second": {
+        "load": 20,
+        "warmup": 20,
+        "measure": 30
+      },
+      "max_in_flight": 8,
+      "applied_frontier": 4
+    },
+    {
+      "replicas": 5,
+      "mix": "GET100",
+      "phases": {
+        "load": 4,
+        "warmup": 3,
+        "measure": 10
+      },
+      "rates_ops_per_second": {
+        "load": 20,
+        "warmup": 20,
+        "measure": 30
+      },
+      "max_in_flight": 8,
+      "applied_frontier": 4
+    },
+    {
+      "replicas": 3,
+      "mix": "GET80/SET15/DELETE5",
+      "phases": {
+        "load": 4,
+        "warmup": 3,
+        "measure": 10
+      },
+      "rates_ops_per_second": {
+        "load": 20,
+        "warmup": 20,
+        "measure": 30
+      },
+      "max_in_flight": 8,
+      "applied_frontier": 6
+    },
+    {
+      "replicas": 5,
+      "mix": "GET80/SET15/DELETE5",
+      "phases": {
+        "load": 4,
+        "warmup": 3,
+        "measure": 10
+      },
+      "rates_ops_per_second": {
+        "load": 20,
+        "warmup": 20,
+        "measure": 30
+      },
+      "max_in_flight": 8,
+      "applied_frontier": 6
+    }
+  ],
+  "main_jar_benchmark_entries": {
+    "cache-server/build/libs/cache-server-0.1.0-SNAPSHOT.jar": 0,
+    "experiment-runner/build/libs/experiment-runner-0.1.0-SNAPSHOT.jar": 0
+  },
+  "existing_source_files_checked": 246,
+  "existing_source_changes": 0,
+  "new_source_files": 7,
+  "preservation_artifact": "B4_SOURCE_PRESERVATION.json",
+  "remote_actions": 0,
+  "ec2_diagnostics": 0,
+  "common_performance_comparisons": 0,
+  "commits": 0,
+  "pushes": 0,
+  "limitations": [
+    "Regular integer-rate fixed-N schedule for one JVM/load slot only; no Poisson/fixed-duration/distributed scheduling or EC2 launcher.",
+    "Overload was controlled with held responses/driver pauses in a local model; TCP fixtures were small normal-load integration, not server capacity measurements.",
+    "collectionValid/scheduleQualified/serviceHealthy are distinct; overload accounting validity does not establish a lossless offered workload or service capacity.",
+    "Only phase-level lag summaries are implemented; latency histogram/percentiles/standard result export remain pending.",
+    "Observer callbacks must be nonblocking; deliberate pauses in negative fixtures test loss accounting, not realtime guarantees.",
+    "Raw/apply qualification remains local and conservative; unknown write effects do not pass replica drain qualification.",
+    "Original O00 RPC-per-socket transport/algorithms and prior recorded V07 intermittent issue remain unchanged; no failures in this final full run.",
+    "Final dataset/request counts/rates/lag tolerance/instrumentation need pilot qualification; template remains draft/disabled."
+  ]
+}
