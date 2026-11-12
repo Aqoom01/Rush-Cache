@@ -1,5 +1,6 @@
 package io.openkache.runner.benchmark.correctness;
 
+import io.openkache.core.replication.ionia.IoniaCommands;
 import io.openkache.core.api.*;
 import io.openkache.core.model.Bytes;
 import io.openkache.runner.benchmark.LogicalRequest;
@@ -20,7 +21,7 @@ public final class AckLedger {
         Objects.requireNonNull(reservedKeys);Map<Bytes,List<HistoryRecorder.Operation>> byKey=new LinkedHashMap<>();
         for(var key:reservedKeys){byKey.put(key,new ArrayList<>());}
         for(var op:h.operations()){
-            if(!(op.request().command() instanceof Command.Get)&&!op.definitelyNotAdmitted()&&byKey.containsKey(op.request().command().key())){byKey.get(op.request().command().key()).add(op);}
+            if(!(op.request().command() instanceof Command.Get)&&!op.definitelyNotAdmitted()&&byKey.containsKey(IoniaCommands.key(op.request().command()))){byKey.get(IoniaCommands.key(op.request().command())).add(op);}
         }
         List<Entry> entries=new ArrayList<>();Map<Bytes,String> excluded=new LinkedHashMap<>();
         for(var key:reservedKeys){
@@ -49,7 +50,7 @@ public final class AckLedger {
     /** READY와 barrier는 호출자가 관측한 같은 clock의 quiescence 증거다. 자동 장애 주입/원격 clock 보정은 하지 않는다. */
     public static Audit audit(Ledger ledger,String label,long barrierNanos,DrainProbe.Observation readiness,List<Read> reads){
         List<Item> items=new ArrayList<>();boolean bad=false,unknown=!ledger.exclusions().isEmpty()||ledger.entries().isEmpty();
-        Map<Bytes,List<Read>> byKey=new HashMap<>();for(var r:reads){byKey.computeIfAbsent(r.request().command().key(),ignored->new ArrayList<>()).add(r);}
+        Map<Bytes,List<Read>> byKey=new HashMap<>();for(var r:reads){byKey.computeIfAbsent(IoniaCommands.key(r.request().command()),ignored->new ArrayList<>()).add(r);}
         for(var entry:ledger.entries()){
             var candidates=byKey.getOrDefault(entry.key(),List.of());Read read=candidates.size()==1?candidates.getFirst():null;
             String reason=null,status="MATCH";

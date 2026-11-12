@@ -1,0 +1,28 @@
+{
+  "runCount": 12,
+  "normalSuccesses": 1536,
+  "verifiedCopiesIncludingWarmup": 5688,
+  "snapshotFrames": 23,
+  "getStateFrames": 67,
+  "commitGapRequests": 67,
+  "snapshotBytes": 14755488,
+  "totalBytes": 28278879,
+  "transferResends": 0,
+  "runsWithSnapshot": 4,
+  "snapshotThrottled": 44,
+  "distributionSha256": "8243638ec2e237d212f1839006f2a75caf4cb07d673b83f78d466c3f4bf9175b",
+  "rawSha256": {
+    "VR-v64-t1000-r1.json": "b2d93373d8e47f4e7012ce84fc6c113cd5aa12db358947dd2d76445c4c9a95e5",
+    "VR-v64-t1000-r2.json": "f7d68426d4a39064260badf2417c12c817aa8e0a6a447056efa9ddd9dbdb85c6",
+    "VR-v64-t1000-r3.json": "41b3bf59a6c6adc9e8e1f7a4edd3802b3eb4f4ce38b5fc963139993f029997fc",
+    "VR-v64-t500-r1.json": "4b8153bebfa0c668a922e4e229ae2f58dad53b8bfed388813534fd5984a06a66",
+    "VR-v64-t500-r2.json": "24df7de76a75af9f0cf64ccd554657f44b9ba36cb824ee3dc41905b8ecca21f2",
+    "VR-v64-t500-r3.json": "a1e8d75568b91854d906a973f336d56c0db2ff9078f52ce6cc9ae9ec2d479371",
+    "VR-v8192-t1000-r1.json": "b0d0206a637873b1836e1d1174e73a36ab61b8e54988a42d8810d6a9cedda077",
+    "VR-v8192-t1000-r2.json": "306d3c7dc2605f95f6cbcc7383990b41b3265b78ddcf10660accc3a40b008ea1",
+    "VR-v8192-t1000-r3.json": "870a4413035fb5845f4a581797011b6bcd442b8ea5b18df4721348489770bd01",
+    "VR-v8192-t500-r1.json": "6e70ebf8f354d20a2836447fe3bb656d80dfe215b6cfc6bb1cd83773c06e3e7f",
+    "VR-v8192-t500-r2.json": "e7f34c14f31cc7a6ef4c0d605e41e98a28755f7f094e6a2b773c332060f6bdb5",
+    "VR-v8192-t500-r3.json": "fc166d0988dd508579dff004506b6c775241549ad4f821a0fec94c205f4bac63"
+  }
+}

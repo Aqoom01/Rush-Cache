@@ -319,11 +319,11 @@ class IoniaFifthRegressionTest {
         public CompletionStage<Result> execute(Command command, RequestContext context) {
             CompletableFuture<Result> future = new CompletableFuture<>();
             if(!(command instanceof Command.Get)) {
-                if(throwApply && (failOnlyKey==null || failOnlyKey.equals(command.key())))throw new IllegalStateException("injected apply rejection");
-                if(exceptionalApply && (failOnlyKey==null || failOnlyKey.equals(command.key())))return CompletableFuture.failedFuture(new IllegalStateException("injected failure"));
-                if(cancelApply && (failOnlyKey==null || failOnlyKey.equals(command.key()))){future.cancel(false);return future;}
-                if(rejectApply!=null && (failOnlyKey==null || failOnlyKey.equals(command.key())))return CompletableFuture.completedFuture(plain(rejectApply));
-                startedKeys.add(command.key());active++;peak=Math.max(peak,active);
+                if(throwApply && (failOnlyKey==null || failOnlyKey.equals(IoniaCommands.key(command))))throw new IllegalStateException("injected apply rejection");
+                if(exceptionalApply && (failOnlyKey==null || failOnlyKey.equals(IoniaCommands.key(command))))return CompletableFuture.failedFuture(new IllegalStateException("injected failure"));
+                if(cancelApply && (failOnlyKey==null || failOnlyKey.equals(IoniaCommands.key(command)))){future.cancel(false);return future;}
+                if(rejectApply!=null && (failOnlyKey==null || failOnlyKey.equals(IoniaCommands.key(command))))return CompletableFuture.completedFuture(plain(rejectApply));
+                startedKeys.add(IoniaCommands.key(command));active++;peak=Math.max(peak,active);
                 future.whenComplete((value,error)->active--);
             }
             Runnable apply = () -> {
@@ -333,9 +333,9 @@ class IoniaFifthRegressionTest {
                 }
                 else if (command instanceof Command.Set set) { values.put(set.key(), set.value()); long version = versions.merge(set.key(), 1L, Long::sum);
                     future.complete(new Result(ResultStatus.OK, Optional.empty(), version, RoutingVersion.ZERO, OwnershipEpoch.ZERO, Optional.empty())); }
-                else { boolean existed = values.remove(command.key()) != null; versions.remove(command.key()); future.complete(plain(existed ? ResultStatus.OK : ResultStatus.MISS)); }
+                else { boolean existed = values.remove(IoniaCommands.key(command)) != null; versions.remove(IoniaCommands.key(command)); future.complete(plain(existed ? ResultStatus.OK : ResultStatus.MISS)); }
             };
-            if (!(command instanceof Command.Get) && held.contains(command.key())) blocked.computeIfAbsent(command.key(),ignored->new ArrayList<>()).add(apply); else tasks.add(apply);
+            if (!(command instanceof Command.Get) && held.contains(IoniaCommands.key(command))) blocked.computeIfAbsent(IoniaCommands.key(command),ignored->new ArrayList<>()).add(apply); else tasks.add(apply);
             return future;
         }
         void release(Bytes key) { held.remove(key);tasks.addAll(blocked.getOrDefault(key,List.of()));blocked.remove(key); }

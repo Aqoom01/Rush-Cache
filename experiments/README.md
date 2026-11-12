@@ -5,9 +5,10 @@
 - **디렉터리 구성:** 연구 ID별로 나눕니다(예: `experiments/b2-load-balancing/`). `baseline-single-node/`는
   단일 노드 KV baseline 예시입니다.
 - **결과 파일:** 원본 결과(`<executionId>.json`)는 Git에 올리지 않습니다(`.gitignore`). 비교용 요약
-  (`summary.csv`)과 설정 파일(`config.properties`)만 커밋합니다.
+  (`summary.csv`)과 설정 파일(`config.properties`)만 커밋합니다. 연구 모드의 `runs/`는 각 반복 폴더의 `summary.csv`·`results.md`만
+  커밋하고, 실행 snapshot·manifest·로그·완료 표시·원본 JSON은 ignore합니다.
 - **실험 코드:** 실험이 사용하는 알고리즘 코드는 `cache-core`의 연구 패키지에 두고, 이 디렉터리에는 실험 설정과 실행
-  절차만 둡니다. Runner·Workload Generator 코드 자체는 `experiment-runner` 모듈에 있습니다.
+  절차만 둡니다. 설정 선택·실행 조율·반복·실제 제한 시간·결과 수집의 진입점은 `experiment-runner`입니다. 연구별 backend와 최소 fixture는 해당 연구의 core test 패키지에 둘 수 있으며, 공통 Runner가 config에 지정한 JVM main을 호출합니다. 공통 Workload Generator는 `experiment-runner`에 있습니다.
 
 ## Experiment Runner 실행
 
@@ -29,3 +30,20 @@ experiment-runner/build/install/openkache-experiment-runner/bin/openkache-experi
 - 결과 JSON의 `storageLayer`는 항상 인메모리이고, `faultScenario`는 항상 `"none"`입니다. SSD IOPS·byte, 분산
   failover 시간은 이 Runner가 다루지 않으므로 결과에 그런 필드 자체가 없습니다 — 측정하지 않은 것을 0으로 보고하지
   않습니다.
+
+## 연구용 backend 실행
+
+TCP 결과의 Git 출처는 commit으로 기록합니다. 작업 트리 변경 여부는 수집하지 않습니다. 이전 열 구성을 가진 누적 CSV에는 새 형식의 행을 섞어 쓰지 않으므로 새 `results.dir`로 실행합니다.
+
+공통 Runner는 기본 TCP 모드와 `execution.mode=research`의 config 지정 JVM backend를 지원합니다. 연구 모드는 `backend.main`·classpath·인자로 실행 대상을 선택하며 연구 이름으로 분기하지 않습니다. 서버 host/port·실측 p99 설정은 요구하지 않습니다. 공통 설정과 다른 연구 연결 방법은 [연구 backend 계약](research-backends.md)을 따릅니다.
+
+```powershell
+.\gradlew.bat build :experiment-runner:installDist
+.\experiment-runner\build\install\openkache-experiment-runner\bin\openkache-experiment-runner.bat experiments/b3-live-migration/migration-comparison/baseline.properties
+```
+
+전체 설정은 [B3 baseline.properties](b3-live-migration/migration-comparison/baseline.properties), 빠른 2회 반복은 [baseline-quick.properties](b3-live-migration/migration-comparison/baseline-quick.properties)를 사용합니다. [B3 실행·결과 안내](b3-live-migration/migration-comparison/README.md)를 따릅니다.
+
+연구 backend는 별도 JVM에서 config의 classpath로 실행됩니다. 현재 B3는 빌드된 checkout의 core main/test를 사용합니다. 다른 연구도 결과 계약을 만족하는 main과 config를 준비하면 공통 Runner 코드 수정 없이 같은 경로를 사용합니다. B1의 기존 main은 결과 계약 연결이 필요하고 B2 시나리오 실험 main은 아직 없습니다.
+
+JSON이 실행 원본이고 CSV·Markdown은 파생 요약입니다. B3의 원본은 각 반복 폴더의 `results/*.json`이며 Git에 올리지 않습니다. `runs/`에서 Git에 올라가는 것은 각 반복의 `summary.csv`·`results.md`뿐입니다. 실제 프로세스 시간 제한과 연구 모델의 virtual tick timeout은 별도로 기록합니다.

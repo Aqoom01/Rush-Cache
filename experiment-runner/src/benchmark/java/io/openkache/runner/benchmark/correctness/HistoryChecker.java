@@ -1,5 +1,6 @@
 package io.openkache.runner.benchmark.correctness;
 
+import io.openkache.core.replication.ionia.IoniaCommands;
 import io.openkache.core.api.*;
 import io.openkache.core.model.Bytes;
 import io.openkache.runner.benchmark.client.ClientOutcome;
@@ -40,7 +41,7 @@ public final class HistoryChecker {
         if(history.operations().isEmpty()){return result(history,Verdict.INCONCLUSIVE,"NO_OPERATIONS",0,0,0,0,List.of());}
         if(required==0){return result(history,Verdict.INCONCLUSIVE,"NO_SUCCESSFUL_RESULTS_TO_CHECK",0,0,uncertain,notAdmitted,List.of());}
         if(operations.size()>limits.maxOperations()){return result(history,Verdict.INCONCLUSIVE,"OPERATION_LIMIT",0,required,uncertain,notAdmitted,List.of());}
-        Map<Bytes,Bytes> relevantInitial=new HashMap<>();for(var op:operations){var key=op.operation().request().command().key();if(knownInitialState.containsKey(key)){relevantInitial.put(key,knownInitialState.get(key));}}
+        Map<Bytes,Bytes> relevantInitial=new HashMap<>();for(var op:operations){var key=IoniaCommands.key(op.operation().request().command());if(knownInitialState.containsKey(key)){relevantInitial.put(key,knownInitialState.get(key));}}
         Search search=new Search(operations,limits);boolean found=search.run(0,relevantInitial,new ArrayList<>());
         if(search.cutoff!=null){return result(history,Verdict.INCONCLUSIVE,search.cutoff,search.explored,required,uncertain,notAdmitted,List.of());}
         if(!found){return result(history,Verdict.VIOLATION,"NO_LEGAL_COMPLETION_EXTENSION",search.explored,required,uncertain,notAdmitted,List.of());}
@@ -92,17 +93,17 @@ public final class HistoryChecker {
             if(!visited.add(new State(used,state))){return false;}
             for(int i=0;i<ops.size();i++){
                 long bit=1L<<i;if((used&bit)!=0||(predecessors[i]&~used)!=0){continue;}
-                var op=ops.get(i);Map<Bytes,Bytes> next=new HashMap<>(state);var command=op.operation().request().command();Bytes old=state.get(command.key());
+                var op=ops.get(i);Map<Bytes,Bytes> next=new HashMap<>(state);var command=op.operation().request().command();Bytes old=state.get(IoniaCommands.key(command));
                 boolean valid;
                 if(!op.required()){
-                    if(command instanceof Command.Set set){next.put(set.key(),set.value());}else{next.remove(command.key());}valid=true;
+                    if(command instanceof Command.Set set){next.put(set.key(),set.value());}else{next.remove(IoniaCommands.key(command));}valid=true;
                 }else{
                     var result=op.operation().outcome().result();
                     if(result==null){continue;}
                     if(command instanceof Command.Get){valid=old==null?result.status()==ResultStatus.MISS&&result.value().isEmpty()
                             :result.status()==ResultStatus.OK&&result.value().equals(Optional.of(old));}
                     else if(command instanceof Command.Set set){valid=result.status()==ResultStatus.OK&&result.value().isEmpty();next.put(set.key(),set.value());}
-                    else{valid=result.status()==(old==null?ResultStatus.MISS:ResultStatus.OK)&&result.value().isEmpty();next.remove(command.key());}
+                    else{valid=result.status()==(old==null?ResultStatus.MISS:ResultStatus.OK)&&result.value().isEmpty();next.remove(IoniaCommands.key(command));}
                 }
                 if(valid){order.add(op.historyIndex());if(run(used|bit,next,order)){return true;}order.removeLast();if(cutoff!=null){return false;}}
             }return false;

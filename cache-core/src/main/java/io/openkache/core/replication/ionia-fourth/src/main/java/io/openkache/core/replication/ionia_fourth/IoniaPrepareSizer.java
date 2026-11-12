@@ -1,5 +1,6 @@
 package io.openkache.core.replication.ionia_fourth;
 
+import io.openkache.core.replication.ionia.IoniaCommands;
 import io.openkache.core.api.Command;
 import io.openkache.core.replication.ionia.IoniaMessage.LogEntry;
 import java.util.*;
@@ -30,7 +31,7 @@ public final class IoniaPrepareSizer {
     public boolean admissible(Command command) {
         long value = command instanceof Command.Set set ? set.value().size() : 0;
         return (command instanceof Command.Set || command instanceof Command.Delete)
-                && 17L + command.key().size() + value <= MAX_KV_PAYLOAD
+                && 17L + IoniaCommands.key(command).size() + value <= MAX_KV_PAYLOAD
                 && headerBytes + entryBytes(command) <= IoniaBatchSettings.MAX_PACKET_BYTES;
     }
     public long packetBytes(List<LogEntry> entries) {

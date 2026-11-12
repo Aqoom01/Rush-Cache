@@ -44,8 +44,13 @@ public final class IoniaWire {
         return Bytes.copyOf(in.readNBytes(size));
     }
     public static void command(DataOutputStream out, Command command) throws IOException {
-        out.writeByte(command instanceof Command.Get ? 1 : command instanceof Command.Set ? 2 : 3);
-        bytes(out, command.key()); if (command instanceof Command.Set set) bytes(out, set.value());
+        out.writeByte(switch (command) {
+            case Command.Get ignored -> 1;
+            case Command.Set ignored -> 2;
+            case Command.Delete ignored -> 3;
+            default -> throw new IOException("unsupported IONIA command");
+        });
+        bytes(out, IoniaCommands.key(command)); if (command instanceof Command.Set set) bytes(out, set.value());
     }
     public static Command command(DataInputStream in) throws IOException {
         int type = in.readUnsignedByte(); Bytes key = bytes(in);

@@ -1,5 +1,6 @@
 package io.openkache.runner.benchmark;
 
+import io.openkache.core.replication.ionia.IoniaCommands;
 import io.openkache.core.api.Command;
 import java.io.BufferedOutputStream;
 import java.io.DataOutputStream;
@@ -62,8 +63,9 @@ public final class TraceWriter {
                 case Command.Get ignored -> { data.writeByte(0); gets++; }
                 case Command.Set set -> { data.writeByte(1); sets++; value = set.value().toByteArray(); }
                 case Command.Delete ignored -> { data.writeByte(2); deletes++; }
+                default -> throw new IllegalArgumentException("Unsupported benchmark command");
             }
-            byte[] key = request.command().key().toByteArray();
+            byte[] key = IoniaCommands.key(request.command()).toByteArray();
             data.writeInt(key.length);
             data.write(key);
             data.writeInt(value == null ? -1 : value.length);

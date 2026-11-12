@@ -10,6 +10,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.TreeMap;
 
 /**
  * {@link ExperimentResult}를 JSON(실행 설정·결과의 원본)과 CSV(비교용 요약, 1행 append)로 기록한다.
@@ -33,12 +34,51 @@ final class ResultWriter {
         }
     }
 
+    /**
+     * window 실행 결과를 {@code resultsDir/<study>/windows-<executionId>.csv}에 쓴다. window 실행이 아니면 아무것도 쓰지 않고
+     * {@code null}.
+     */
+    static Path writeWindowsCsv(ExperimentResult result, Path resultsDir) {
+        if (result.windows().isEmpty()) {
+            return null;
+        }
+        try {
+            Path studyDir = resultsDir.resolve(sanitize(result.study()));
+            Files.createDirectories(studyDir);
+            Path file = studyDir.resolve("windows-" + result.executionId() + ".csv");
+            List<String> lines = new ArrayList<>();
+            lines.add("executionId,window,address,burst,movedTablets,requests,hit,miss,writeOk,failed,p50Nanos,p99Nanos,"
+                    + "elapsedNanos,cpuUtilization,refills");
+            for (WindowResult w : result.windows()) {
+                Map<Outcome, Long> c = w.outcomeCounts();
+                long failed = c.getOrDefault(Outcome.BUSY, 0L) + c.getOrDefault(Outcome.TIMEOUT, 0L)
+                        + c.getOrDefault(Outcome.UNAVAILABLE, 0L) + c.getOrDefault(Outcome.SERVER_ERROR, 0L)
+                        + c.getOrDefault(Outcome.CLIENT_FAILURE, 0L);
+                lines.add(String.format(Locale.ROOT, "%s,%d,%s,%b,%d,%d,%d,%d,%d,%d,%d,%d,%d,%s,%d",
+                        result.executionId(), w.window(), w.address(), w.burst(), w.movedTablets(), w.requests(),
+                        c.getOrDefault(Outcome.HIT, 0L), c.getOrDefault(Outcome.MISS, 0L), c.getOrDefault(Outcome.WRITE_OK, 0L),
+                        failed, w.p50Nanos(), w.p99Nanos(), w.elapsedNanos(),
+                        Double.isNaN(w.cpuUtilization()) ? "NA" : String.format(Locale.ROOT, "%.4f", w.cpuUtilization()),
+                        w.refills()));
+            }
+            Files.write(file, lines, StandardCharsets.UTF_8);
+            return file;
+        } catch (IOException e) {
+            throw new UncheckedIOException("failed to write window CSV", e);
+        }
+    }
+
     static Path appendCsv(ExperimentResult result, Path resultsDir) {
         try {
             Path studyDir = resultsDir.resolve(sanitize(result.study()));
             Files.createDirectories(studyDir);
             Path file = studyDir.resolve("summary.csv");
-            boolean writeHeader = Files.notExists(file);
+            boolean writeHeader = Files.notExists(file) || Files.size(file) == 0;
+            if (!writeHeader) {
+                try (var reader = Files.newBufferedReader(file, StandardCharsets.UTF_8)) {
+                    if (!csvHeader().equals(reader.readLine())) throw new IOException("기존 CSV 열 구성이 다릅니다. 새 결과 폴더를 사용하세요: " + file);
+                }
+            }
             try (var writer =
                     Files.newBufferedWriter(
                             file, StandardCharsets.UTF_8, StandardOpenOption.CREATE, StandardOpenOption.APPEND)) {
@@ -55,7 +95,7 @@ final class ResultWriter {
         }
     }
 
-    private static String sanitize(String value) {
+    static String sanitize(String value) {
         return value.replaceAll("[^a-zA-Z0-9._-]", "_");
     }
 
@@ -63,12 +103,12 @@ final class ResultWriter {
         return String.join(
                 ",",
                 List.of(
-                        "executionId", "startedAtEpochMillis", "study", "variant", "scenario", "seed",
+                        "executionId", "startedAtEpochMillis", "study", "variant", "scenario", "seed", "runNumber", "repeatCount",
                         "nodeCount", "concurrency", "serverWorkerCountHint", "storageLayer",
                         "warmupRequests", "warmupElapsedNanos", "measuredRequests", "measuredElapsedNanos",
                         "throughputPerSecond", "p50Nanos", "p99Nanos", "latencySampleCount",
                         "latencyTotalObserved", "hit", "miss", "writeOk", "busy", "timeout", "unavailable",
-                        "serverError", "clientFailure", "gitCommit", "workingTreeDirty",
+                        "serverError", "clientFailure", "gitCommit",
                         "resultSchemaVersion"));
     }
 
@@ -83,6 +123,8 @@ final class ResultWriter {
                         csvField(r.variant()),
                         csvField(r.scenario()),
                         Long.toString(r.seed()),
+                        Integer.toString(r.runNumber()),
+                        Integer.toString(r.repeatCount()),
                         Integer.toString(r.nodeCount()),
                         Integer.toString(r.concurrency()),
                         Integer.toString(r.serverWorkerCountHint()),
@@ -105,7 +147,6 @@ final class ResultWriter {
                         Long.toString(counts.getOrDefault(Outcome.SERVER_ERROR, 0L)),
                         Long.toString(counts.getOrDefault(Outcome.CLIENT_FAILURE, 0L)),
                         csvField(r.gitCommit().orElse("")),
-                        r.workingTreeDirty().map(String::valueOf).orElse(""),
                         csvField(r.resultSchemaVersion())));
     }
 
@@ -125,6 +166,10 @@ final class ResultWriter {
         entries.add(entry("variant", r.variant()));
         entries.add(entry("scenario", r.scenario()));
         entries.add(entry("seed", r.seed()));
+        entries.add(entry("runNumber", r.runNumber()));
+        entries.add(entry("repeatCount", r.repeatCount()));
+        entries.add(entryStringMap("configSnapshot", r.configSnapshot()));
+        entries.add(entryInvocation("invocation", r.invocation().orElse(null)));
         entries.add(entry("nodeCount", r.nodeCount()));
         entries.add(entry("concurrency", r.concurrency()));
         entries.add(
@@ -150,8 +195,7 @@ final class ResultWriter {
         entries.add(entryOutcomeCounts(r.outcomeCounts()));
         entries.add(entry("faultScenario", r.faultScenario()));
         entries.add(entryNullableString("gitCommit", r.gitCommit().orElse(null)));
-        entries.add(
-                entryNullableString("workingTreeDirty", r.workingTreeDirty().map(String::valueOf).orElse(null)));
+        entries.add(entryTargets(r.targets()));
 
         return "{\n  " + String.join(",\n  ", entries) + "\n}\n";
     }
@@ -164,12 +208,57 @@ final class ResultWriter {
         return quote("outcomeCounts") + ": {" + String.join(", ", parts) + "}";
     }
 
+    /** 서버별 측정 결과. 단일 서버 실행도 원소 하나로 쓴다. */
+    private static String entryTargets(List<TargetResult> targets) {
+        List<String> objects = new ArrayList<>();
+        for (TargetResult t : targets) {
+            objects.add(
+                    "{"
+                            + String.join(
+                                    ", ",
+                                    entry("address", t.address()),
+                                    entry("hashRange", t.hashRange()),
+                                    entry("requests", t.requests()),
+                                    entry("p50Nanos", t.p50Nanos()),
+                                    entry("p99Nanos", t.p99Nanos()),
+                                    entryOutcomeCounts(t.outcomeCounts()))
+                            + "}");
+        }
+        return quote("targets") + ": [" + String.join(", ", objects) + "]";
+    }
+
     private static String entryStringArray(String key, List<String> values) {
         List<String> quoted = new ArrayList<>();
         for (String value : values) {
             quoted.add(quote(value));
         }
         return quote(key) + ": [" + String.join(", ", quoted) + "]";
+    }
+
+    private static String entryStringMap(String key, Map<String, String> values) {
+        List<String> entries = new ArrayList<>();
+        for (Map.Entry<String, String> entry : new TreeMap<>(values).entrySet()) {
+            entries.add(quote(entry.getKey()) + ": " + quote(entry.getValue()));
+        }
+        return quote(key) + ": {" + String.join(", ", entries) + "}";
+    }
+
+    private static String entryInvocation(String key, RunnerInvocation invocation) {
+        if (invocation == null) {
+            return quote(key) + ": null";
+        }
+        return quote(key)
+                + ": {"
+                + quote("command")
+                + ": "
+                + quote(invocation.command())
+                + ", "
+                + quote("configPath")
+                + ": "
+                + quote(invocation.configPath())
+                + ", "
+                + entryStringArray("arguments", invocation.arguments())
+                + "}";
     }
 
     private static String entry(String key, String value) {

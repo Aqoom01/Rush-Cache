@@ -1,5 +1,6 @@
 package io.openkache.server.benchmark.ionia;
 
+import io.openkache.core.replication.ionia.IoniaCommands;
 import static org.junit.jupiter.api.Assertions.*;
 
 import io.openkache.core.api.*;
@@ -70,7 +71,7 @@ class O00BenchmarkTcpTest {
                 assertEquals(ResultStatus.OK, AdapterFixtures.get(client.submit(audit(generator, next++, new Command.Delete(key)))).result().status());
                 assertEquals(ResultStatus.MISS, AdapterFixtures.get(client.submit(audit(generator, next++, new Command.Get(key)))).result().status());
                 assertEquals(ResultStatus.MISS, AdapterFixtures.get(client.submit(audit(generator, next++, new Command.Delete(key)))).result().status());
-                while (!generator.at(TracePhase.MEASURE, next).command().key().equals(key)) { next++; }
+                while (!IoniaCommands.key(generator.at(TracePhase.MEASURE, next).command()).equals(key)) { next++; }
                 LogicalRequest reinsertion = generator.at(TracePhase.MEASURE, next++);
                 Bytes reinsert = ((Command.Set) reinsertion.command()).value();
                 assertEquals(ResultStatus.OK, AdapterFixtures.get(client.submit(reinsertion)).result().status());

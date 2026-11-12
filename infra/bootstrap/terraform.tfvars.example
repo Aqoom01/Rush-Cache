@@ -1,0 +1,4 @@
+# terraform.tfvars로 복사해 실제 값을 넣는다. terraform.tfvars는 커밋하지 않는다.
+account_id    = "123456789012"
+iam_user_name = "openkache-terraform"
+budget_email  = "you@example.com"

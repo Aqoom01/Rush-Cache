@@ -8,8 +8,11 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
+import java.util.Optional;
 import java.util.Properties;
 import java.util.Set;
+import java.util.TreeMap;
 
 /**
  * 검증을 마친 Runner 설정. 불변이다.
@@ -35,11 +38,29 @@ import java.util.Set;
  * @param warmupRequests thread당이 아닌 전체 warm-up 요청 수. 결과 집계에 포함하지 않는다
  * @param measuredRequests thread당이 아닌 전체 측정 요청 수. 결과 집계에 포함한다
  * @param requestTimeoutMs 요청마다 wire로 보내는 상대 timeout(ms)이자 소켓 read timeout
+ * @param repeatCount 같은 설정으로 실행할 횟수. 모든 반복은 같은 seed로 같은 요청열을 사용한다
+ * @param runTimeoutMs 반복 한 건의 실행 제한 시간(ms)
+ * @param executionTimeoutMs 반복을 모두 포함한 전체 실험 실행 제한 시간(ms)
+ * @param configSnapshot 결과 파일에 남길 전체 설정값. 재현을 위해 key 순서가 고정돼 있다
  * @param resultsDir 결과 JSON/CSV를 쓸 디렉터리
  * @param serverWorkerCountHint 서버를 띄울 때 쓴 worker 수. Runner가 직접 측정하지 않으므로 운영자가 적어 넣는 참고값이다.
  *     기록하지 않으면 -1(미측정)
  * @param serverJvmOptsNote 서버 JVM 실행 옵션에 대한 참고용 자유 기술. Runner는 서버 JVM을 직접 관측하지 않는다. 기록하지
  *     않으면 빈 문자열(미측정)
+ * @param serverStorageNote 서버 KV 저장소 종류에 대한 참고값({@code server.storage.note}). Runner는 서버 저장소를 관측하지
+ *     않는다. 기록하지 않으면 {@link #DEFAULT_SERVER_STORAGE}
+ * @param targets 요청을 보낼 서버들({@code target.hosts}, {@code host:port} 쉼표 구분). 없으면 {@code target.host}·
+ *     {@code target.port} 하나
+ * @param routingBoundaries key 해시 구간 경계({@code routing.boundaries}, 부호 없는 64비트 10진수 오름차순). 해시값이 i번째
+ *     경계 미만인 가장 앞 구간의 서버로 보낸다. 경계 k개면 앞 k+1개 서버를 쓴다. 비어 있으면 모든 요청이 첫 서버로 간다
+ * @param hotRangeKeyFraction {@link Distribution#HOT_RANGE}에서 뜨거운 key 비율(해시값이 작은 쪽, 0 초과 1 미만)
+ * @param hotRangeRequestFraction {@link Distribution#HOT_RANGE}에서 뜨거운 key로 가는 요청 비율(0-1)
+ * @param hotRangeShiftPerWindow {@link Distribution#HOT_RANGE}의 뜨거운 구간이 window마다 이동하는 비율(key 수 대비, 0-1, 기본 0)
+ * @param zipfExponent {@link Distribution#ZIPF}의 지수(0 초과, 기본 1.0)
+ * @param burstEveryWindows 이 window 수마다 마지막 window에 burst를 넣는다. 0이면 burst 없음
+ * @param burstFactor burst window에 추가하는 요청 = 기본 요청 × 이 값. 추가분은 임의의 burst 구간에 몰린다
+ * @param burstWidth burst 구간 폭(key 수 대비, 해시 순서로 이어진 구간)
+ * @param windowed {@code schedule.file}이 있으면 window 단위 실행 설정. 없으면 기존처럼 warm-up + 측정 한 구간
  */
 public record RunnerConfig(
         String targetHost,
@@ -60,12 +81,67 @@ public record RunnerConfig(
         long warmupRequests,
         long measuredRequests,
         long requestTimeoutMs,
+        int repeatCount,
+        long runTimeoutMs,
+        long executionTimeoutMs,
+        Map<String, String> configSnapshot,
         Path resultsDir,
         int serverWorkerCountHint,
-        String serverJvmOptsNote) {
+        String serverJvmOptsNote,
+        String serverStorageNote,
+        List<Target> targets,
+        List<Long> routingBoundaries,
+        double hotRangeKeyFraction,
+        double hotRangeRequestFraction,
+        double hotRangeShiftPerWindow,
+        double zipfExponent,
+        int burstEveryWindows,
+        double burstFactor,
+        double burstWidth,
+        Optional<Windowed> windowed) {
+
+    /**
+     * window 단위 실행: {@link Schedule}의 window마다 그 window의 라우팅과 부하로 요청 {@code windowRequests}건(burst window는 더 많이)을
+     * 보내고, window × 서버별 결과와 서버 CPU를 기록한다.
+     *
+     * @param schedule window별 라우팅 계획
+     * @param windowRequests window 하나의 기본 요청 수
+     * @param prefill true면 측정 전에 모든 key를 한 번씩 SET한다(window 0 라우팅). 이동 뒤의 MISS가 "옮긴 Tablet이 빈 상태"만 뜻하게
+     *     하려고 쓴다
+     * @param metricsPort 서버 {@code /metrics} 포트(CPU 수집)
+     * @param refillOnMiss true면 GET이 MISS일 때 같은 서버에 그 key를 바로 SET한다(cache-aside: 원본에서 읽어 다시 채움). 다시 채우는
+     *     SET은 지연·결과 통계에 넣지 않고 window별 횟수만 센다
+     */
+    public record Windowed(Schedule schedule, long windowRequests, boolean prefill, int metricsPort, boolean refillOnMiss) {}
+
+    /** 요청 대상 서버. */
+    public record Target(String host, int port) {
+        @Override
+        public String toString() {
+            return host + ":" + port;
+        }
+    }
+
+    /** {@link #routingBoundaries}로 실제로 요청을 받는 서버 수. */
+    public int routedTargetCount() {
+        return routingBoundaries.size() + 1;
+    }
+
+    /** 해시값 {@code keyHash}의 key를 보낼 서버 번호(0부터). */
+    public int targetIndex(long keyHash) {
+        int index = 0;
+        while (index < routingBoundaries.size() && Long.compareUnsigned(keyHash, routingBoundaries.get(index)) >= 0) {
+            index++;
+        }
+        return index;
+    }
+
+    /** {@code server.storage.note}가 없을 때 기록하는 저장소. 서버 기본값(메모리 저장소)이다. */
+    public static final String DEFAULT_SERVER_STORAGE = "in-memory (io.openkache.core.kv.KvEngine)";
 
     private static final Set<String> KEYS =
             Set.of(
+                    "execution.mode",
                     "target.host",
                     "target.port",
                     "study",
@@ -84,9 +160,27 @@ public record RunnerConfig(
                     "warmup.requests",
                     "measured.requests",
                     "request.timeout.ms",
+                    "repeat.count",
+                    "run.timeout.ms",
+                    "execution.timeout.ms",
                     "results.dir",
                     "server.workers.hint",
-                    "server.jvm.opts.note");
+                    "server.jvm.opts.note",
+                    "server.storage.note",
+                    "target.hosts",
+                    "routing.boundaries",
+                    "hot.range.key.fraction",
+                    "hot.range.request.fraction",
+                    "hot.range.shift.per.window",
+                    "zipf.exponent",
+                    "burst.every.windows",
+                    "burst.factor",
+                    "burst.width",
+                    "schedule.file",
+                    "window.requests",
+                    "prefill",
+                    "metrics.port",
+                    "refill.on.miss");
 
     /** {@code path}의 properties 파일을 읽어 검증한다. */
     public static RunnerConfig load(Path path) {
@@ -104,12 +198,13 @@ public record RunnerConfig(
         Parser p = new Parser(properties);
 
         for (String key : properties.stringPropertyNames()) {
-            if (!KEYS.contains(key)) {
+            if (!KEYS.contains(key) && !ClusterConfig.KEYS.contains(key)) {
                 p.errors.add("unknown key '" + key + "'");
             }
         }
 
         String targetHost = p.text("target.host");
+        if (!p.optionalText("execution.mode", "tcp").equals("tcp")) p.errors.add("TCP Runner의 execution.mode는 tcp여야 합니다");
         int targetPort = (int) p.longValue("target.port", 1, 65535);
         String study = p.text("study");
         String variant = p.text("variant");
@@ -141,12 +236,38 @@ public record RunnerConfig(
         long warmupRequests = p.longValue("warmup.requests", 0, Long.MAX_VALUE);
         long measuredRequests = p.longValue("measured.requests", 1, Long.MAX_VALUE);
         long requestTimeoutMs = p.longValue("request.timeout.ms", 1, ONE_HOUR_MS);
+        int repeatCount = (int) p.optionalLongValue("repeat.count", "1", 1, 10_000);
+        long runTimeoutMs = p.optionalLongValue("run.timeout.ms", "600000", 1, ONE_HOUR_MS);
+        long executionTimeoutMs = p.optionalLongValue("execution.timeout.ms", "3600000", 1, ONE_HOUR_MS);
         String resultsDirText = p.text("results.dir");
         int serverWorkerCountHint = (int) p.optionalLongValue("server.workers.hint", "-1", -1, 10_000);
         String serverJvmOptsNote = p.optionalText("server.jvm.opts.note", "");
+        String serverStorageNote = p.optionalText("server.storage.note", DEFAULT_SERVER_STORAGE);
+        List<Target> targets = p.targets(targetHost, targetPort);
+        List<Long> routingBoundaries = p.boundaries(targets.size());
+        double hotRangeKeyFraction = p.doubleValue("hot.range.key.fraction", "0.2", 0.0, 1.0);
+        double hotRangeRequestFraction = p.doubleValue("hot.range.request.fraction", "0.8", 0.0, 1.0);
+        if (distribution == Distribution.HOT_RANGE) {
+            int hotKeys = (int) (keyCount * hotRangeKeyFraction);
+            if (hotKeys < 1 || hotKeys >= keyCount) {
+                p.errors.add("'hot.range.key.fraction' must leave at least one hot and one cold key: " + hotRangeKeyFraction);
+            }
+        }
+        double hotRangeShiftPerWindow = p.doubleValue("hot.range.shift.per.window", "0", 0.0, 1.0);
+        double zipfExponent = p.doubleValue("zipf.exponent", "1.0", 1e-9, 10.0);
+        int burstEveryWindows = (int) p.optionalLongValue("burst.every.windows", "0", 0, 10_000);
+        double burstFactor = p.doubleValue("burst.factor", "3.0", 0.0, 1000.0);
+        double burstWidth = p.doubleValue("burst.width", "0.05", 1e-9, 1.0);
+        Optional<Windowed> windowed = p.windowed(targets.size(), routingBoundaries);
+        ClusterConfig.parse(properties::getProperty, p.errors, targets.size());
 
         if (!p.errors.isEmpty()) {
             throw new ConfigException("invalid config: " + String.join("; ", p.errors));
+        }
+
+        Map<String, String> configSnapshot = new TreeMap<>();
+        for (String key : properties.stringPropertyNames()) {
+            configSnapshot.put(key, properties.getProperty(key));
         }
 
         return new RunnerConfig(
@@ -168,9 +289,24 @@ public record RunnerConfig(
                 warmupRequests,
                 measuredRequests,
                 requestTimeoutMs,
+                repeatCount,
+                runTimeoutMs,
+                executionTimeoutMs,
+                Map.copyOf(configSnapshot),
                 Path.of(resultsDirText),
                 serverWorkerCountHint,
-                serverJvmOptsNote);
+                serverJvmOptsNote,
+                serverStorageNote,
+                targets,
+                routingBoundaries,
+                hotRangeKeyFraction,
+                hotRangeRequestFraction,
+                hotRangeShiftPerWindow,
+                zipfExponent,
+                burstEveryWindows,
+                burstFactor,
+                burstWidth,
+                windowed);
     }
 
     private static final long ONE_HOUR_MS = 3_600_000;
@@ -239,6 +375,89 @@ public record RunnerConfig(
             }
         }
 
+        List<Target> targets(String defaultHost, int defaultPort) {
+            String value = optionalText("target.hosts", "");
+            if (value.isEmpty()) {
+                return List.of(new Target(defaultHost, defaultPort));
+            }
+            List<Target> targets = new ArrayList<>();
+            for (String part : value.split(",")) {
+                String address = part.trim();
+                int colon = address.lastIndexOf(':');
+                try {
+                    int port = Integer.parseInt(address.substring(colon + 1));
+                    if (colon <= 0 || port < 1 || port > 65535) {
+                        throw new NumberFormatException();
+                    }
+                    targets.add(new Target(address.substring(0, colon), port));
+                } catch (NumberFormatException | StringIndexOutOfBoundsException e) {
+                    errors.add("'target.hosts' entries must be host:port: " + address);
+                }
+            }
+            return targets.isEmpty() ? List.of(new Target(defaultHost, defaultPort)) : List.copyOf(targets);
+        }
+
+        Optional<Windowed> windowed(int targetCount, List<Long> boundaries) {
+            String file = optionalText("schedule.file", "");
+            if (file.isEmpty()) {
+                for (String key : List.of("window.requests", "prefill", "metrics.port", "refill.on.miss")) {
+                    if (properties.getProperty(key) != null) {
+                        errors.add("'" + key + "' is only used with schedule.file");
+                    }
+                }
+                return Optional.empty();
+            }
+            if (!boundaries.isEmpty()) {
+                errors.add("'routing.boundaries' and 'schedule.file' cannot be used together");
+            }
+            long windowRequests = longValue("window.requests", 1, Long.MAX_VALUE);
+            String prefill = optionalText("prefill", "true");
+            if (!prefill.equals("true") && !prefill.equals("false")) {
+                errors.add("'prefill' must be true or false: " + prefill);
+            }
+            int metricsPort = (int) optionalLongValue("metrics.port", "9091", 1, 65535);
+            String refill = optionalText("refill.on.miss", "false");
+            if (!refill.equals("true") && !refill.equals("false")) {
+                errors.add("'refill.on.miss' must be true or false: " + refill);
+            }
+            Schedule schedule;
+            try {
+                schedule = Schedule.load(Path.of(file));
+            } catch (ConfigException e) {
+                errors.add(e.getMessage());
+                return Optional.empty();
+            }
+            if (schedule.maxTarget() >= targetCount) {
+                errors.add("schedule uses target " + schedule.maxTarget() + " but target.hosts has " + targetCount);
+            }
+            return Optional.of(new Windowed(schedule, windowRequests, prefill.equals("true"), metricsPort, refill.equals("true")));
+        }
+
+        List<Long> boundaries(int targetCount) {
+            String value = optionalText("routing.boundaries", "");
+            if (value.isEmpty()) {
+                return List.of();
+            }
+            List<Long> boundaries = new ArrayList<>();
+            for (String part : value.split(",")) {
+                try {
+                    long boundary = Long.parseUnsignedLong(part.trim());
+                    if (boundary == 0 || (!boundaries.isEmpty() && Long.compareUnsigned(boundaries.getLast(), boundary) >= 0)) {
+                        errors.add("'routing.boundaries' must be increasing and greater than 0: " + value);
+                        return List.of();
+                    }
+                    boundaries.add(boundary);
+                } catch (NumberFormatException e) {
+                    errors.add("'routing.boundaries' must be unsigned 64-bit integers: " + part.trim());
+                    return List.of();
+                }
+            }
+            if (boundaries.size() + 1 > targetCount) {
+                errors.add("'routing.boundaries' needs " + (boundaries.size() + 1) + " targets but target.hosts has " + targetCount);
+            }
+            return List.copyOf(boundaries);
+        }
+
         <E extends Enum<E>> E enumValue(String key, Class<E> type) {
             String value = text(key);
             if (value.isEmpty()) {
@@ -252,7 +471,7 @@ public record RunnerConfig(
                                 + key
                                 + "' must be one of "
                                 + List.of(type.getEnumConstants())
-                                + " (zipfian is not supported yet): "
+                                + ": "
                                 + value);
                 return type.getEnumConstants()[0];
             }

@@ -1,5 +1,6 @@
 package io.openkache.server.benchmark.pilot;
 
+import io.openkache.core.replication.ionia.IoniaCommands;
 import io.openkache.core.api.Command;
 import io.openkache.runner.benchmark.*;
 import java.io.*;
@@ -43,13 +44,13 @@ public final class DistributedPlan {
     public static void record(MessageDigest digest,LogicalRequest r)throws IOException{
         try(var out=new DataOutputStream(new DigestOutputStream(OutputStream.nullOutputStream(),digest))){
             out.writeLong(r.globalIndex());out.writeInt(r.streamId());out.writeLong(r.clientId());out.writeLong(r.sequence());
-            byte[] value=null;switch(r.command()){case Command.Get ignored->out.writeByte(0);case Command.Set s->{out.writeByte(1);value=s.value().toByteArray();}case Command.Delete ignored->out.writeByte(2);}
-            byte[] key=r.command().key().toByteArray();out.writeInt(key.length);out.write(key);out.writeInt(value==null?-1:value.length);if(value!=null)out.write(value);
+            byte[] value=null;switch(r.command()){case Command.Get ignored->out.writeByte(0);case Command.Set s->{out.writeByte(1);value=s.value().toByteArray();}case Command.Delete ignored->out.writeByte(2);default -> throw new IllegalArgumentException("Unsupported pilot command");}
+            byte[] key=IoniaCommands.key(r.command()).toByteArray();out.writeInt(key.length);out.write(key);out.writeInt(value==null?-1:value.length);if(value!=null)out.write(value);
         }
     }
     public static Partition expected(PilotFiles.Plan p,TracePhase phase,int slot)throws IOException{
         slot(slot);long total=count(p,phase),get=0,set=0,delete=0;var d=digest(phase,slot,total);var generator=new TraceGenerator(p.trace());
-        for(long i=slot;i<total;i+=2){var r=generator.at(phase,i);record(d,r);switch(r.command()){case Command.Get ignored->get++;case Command.Set ignored->set++;case Command.Delete ignored->delete++;}}
+        for(long i=slot;i<total;i+=2){var r=generator.at(phase,i);record(d,r);switch(r.command()){case Command.Get ignored->get++;case Command.Set ignored->set++;case Command.Delete ignored->delete++;default -> throw new IllegalArgumentException("Unsupported pilot command");}}
         return new Partition(get+set+delete,get,set,delete,HexFormat.of().formatHex(d.digest()));
     }
     public static long[] byOperation(Partition p){return new long[]{p.gets(),p.sets(),p.deletes()};}

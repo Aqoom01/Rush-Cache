@@ -173,8 +173,8 @@ public final class IoniaLog {
 
     private static void requireWrite(Command command) {
         Objects.requireNonNull(command, "command");
-        if (command instanceof Command.Get) {
-            throw new IllegalArgumentException("GET must not be added to the write log");
+        if (!IoniaCommands.isWrite(command)) {
+            throw new IllegalArgumentException("Only SET and DELETE can be added to the write log");
         }
     }
 }

@@ -1,5 +1,6 @@
 package io.openkache.runner.benchmark.measurement;
 
+import io.openkache.core.replication.ionia.IoniaCommands;
 import io.openkache.core.api.*;
 import io.openkache.core.model.*;
 import io.openkache.runner.benchmark.*;
@@ -38,8 +39,8 @@ final class JvmFixtures {
         @Override public CompletionStage<ClientOutcome> submit(LogicalRequest r){
             long start=System.nanoTime();var op=ClientOutcome.Operation.of(r.command());ledger.admitted(op);ledger.attempt(op);Result result;
             if(r.command() instanceof Command.Set s){values.put(s.key(),s.value());result=Result.of(ResultStatus.OK,RoutingVersion.ZERO,OwnershipEpoch.ZERO);}
-            else if(r.command() instanceof Command.Delete){result=Result.of(values.remove(r.command().key())==null?ResultStatus.MISS:ResultStatus.OK,RoutingVersion.ZERO,OwnershipEpoch.ZERO);}
-            else{var found=values.get(r.command().key());result=found==null?Result.of(ResultStatus.MISS,RoutingVersion.ZERO,OwnershipEpoch.ZERO):Result.ok(found,1,RoutingVersion.ZERO,OwnershipEpoch.ZERO);}
+            else if(r.command() instanceof Command.Delete){result=Result.of(values.remove(IoniaCommands.key(r.command()))==null?ResultStatus.MISS:ResultStatus.OK,RoutingVersion.ZERO,OwnershipEpoch.ZERO);}
+            else{var found=values.get(IoniaCommands.key(r.command()));result=found==null?Result.of(ResultStatus.MISS,RoutingVersion.ZERO,OwnershipEpoch.ZERO):Result.ok(found,1,RoutingVersion.ZERO,OwnershipEpoch.ZERO);}
             var category=fail?ClientOutcome.Category.NO_RESPONSE:ClientOutcome.Category.SUCCESS;
             ledger.terminal(op,category,1);long end=System.nanoTime();
             return CompletableFuture.completedFuture(new ClientOutcome(r.id("run","slot"),op,category,fail?ClientOutcome.Reason.DEADLINE:ClientOutcome.Reason.SUCCESS,fail?null:result,start,end,end,r.clientId(),r.sequence()+1,1,List.of(new ClientOutcome.Attempt(1,start,end,fail?null:result.status(),null))));

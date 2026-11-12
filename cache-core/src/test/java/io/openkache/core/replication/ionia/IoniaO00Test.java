@@ -326,9 +326,9 @@ class IoniaO00Test {
                 }
                 else if (command instanceof Command.Set set) { values.put(set.key(), set.value()); long version = versions.merge(set.key(), 1L, Long::sum);
                     future.complete(new Result(ResultStatus.OK, Optional.empty(), version, RoutingVersion.ZERO, OwnershipEpoch.ZERO, Optional.empty())); }
-                else { boolean existed = values.remove(command.key()) != null; versions.remove(command.key()); future.complete(plain(existed ? ResultStatus.OK : ResultStatus.MISS)); }
+                else { boolean existed = values.remove(IoniaCommands.key(command)) != null; versions.remove(IoniaCommands.key(command)); future.complete(plain(existed ? ResultStatus.OK : ResultStatus.MISS)); }
             };
-            if (!(command instanceof Command.Get) && held.contains(command.key())) blocked.add(apply); else tasks.add(apply);
+            if (!(command instanceof Command.Get) && held.contains(IoniaCommands.key(command))) blocked.add(apply); else tasks.add(apply);
             return future;
         }
         void release(Bytes key) { held.remove(key); tasks.addAll(blocked); blocked.clear(); }

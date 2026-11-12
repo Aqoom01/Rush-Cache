@@ -1,5 +1,6 @@
 package io.openkache.runner.benchmark.correctness;
 
+import io.openkache.core.replication.ionia.IoniaCommands;
 import io.openkache.core.api.Command;
 import io.openkache.runner.benchmark.*;
 import io.openkache.runner.benchmark.client.*;
@@ -58,7 +59,7 @@ public final class HistoryRecorder {
             failures.add("HISTORY_CAPACITY_EXCEEDED");throw new IllegalStateException("history capacity");
         }
         if(entry==null){
-            long bytes=request.command().key().size()+(request.command() instanceof Command.Set set?(long)set.value().size():0L);
+            long bytes=IoniaCommands.key(request.command()).size()+(request.command() instanceof Command.Set set?(long)set.value().size():0L);
             retain(bytes);entry=new Entry(request);entries.put(id,entry);
         }
         var call=new MutableCall(++submissions,now);entry.calls.add(call);calls.put(call.submission,call);return new Ticket(id,call.submission);

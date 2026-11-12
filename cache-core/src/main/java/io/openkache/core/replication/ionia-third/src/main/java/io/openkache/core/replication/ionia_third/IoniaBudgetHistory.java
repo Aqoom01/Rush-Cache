@@ -1,5 +1,6 @@
 package io.openkache.core.replication.ionia_third;
 
+import io.openkache.core.replication.ionia.IoniaCommands;
 import io.openkache.core.model.Bytes;
 import io.openkache.core.model.NodeId;
 import io.openkache.core.replication.ionia.IoniaMessage;
@@ -68,7 +69,7 @@ public final class IoniaBudgetHistory {
     public void rebuild(List<IoniaMessage.LogEntry> entries) {
         modified.clear(); followers.clear();
         lti = entries.isEmpty() ? 0 : entries.getFirst().index();
-        entries.forEach(entry -> modified(entry.command().key(), entry.index()));
+        entries.forEach(entry -> modified(IoniaCommands.key(entry.command()), entry.index()));
         calls = removedEntries = 0; lastDecision = null;
     }
     public Snapshot snapshot() {

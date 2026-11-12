@@ -1,5 +1,6 @@
 package io.openkache.runner.benchmark;
 
+import io.openkache.core.replication.ionia.IoniaCommands;
 import static org.junit.jupiter.api.Assertions.*;
 
 import io.openkache.core.api.Command;
@@ -116,12 +117,13 @@ class TraceGeneratorTest {
         int total = 100_000;
         for (int i = 0; i < total; i++) {
             var request = generator.at(TracePhase.MEASURE, i);
-            long key = KeyValueCodec.keyIndex(request.command().key());
+            long key = KeyValueCodec.keyIndex(IoniaCommands.key(request.command()));
             assertTrue(key >= 0 && key < 257);
             switch (request.command()) {
                 case Command.Get ignored -> counts[0]++;
                 case Command.Set value -> { counts[1]++; KeyValueCodec.inspect(value.value()); }
                 case Command.Delete ignored -> counts[2]++;
+                default -> throw new IllegalArgumentException("Unsupported benchmark command");
             }
         }
         int[] percentages = {get, set, delete};
@@ -142,8 +144,8 @@ class TraceGeneratorTest {
         int hotCount = 0;
         int total = 100_000;
         for (int i = 0; i < total; i++) {
-            counts[(int) KeyValueCodec.keyIndex(uniform.at(TracePhase.MEASURE, i).command().key())]++;
-            if (KeyValueCodec.keyIndex(hot.at(TracePhase.MEASURE, i).command().key()) == 0) { hotCount++; }
+            counts[(int) KeyValueCodec.keyIndex(IoniaCommands.key(uniform.at(TracePhase.MEASURE, i).command()))]++;
+            if (KeyValueCodec.keyIndex(IoniaCommands.key(hot.at(TracePhase.MEASURE, i).command())) == 0) { hotCount++; }
         }
         for (int count : counts) { assertTrue(Math.abs(count - total / 32.0) < 400); }
         double expected = 0.9 + 0.1 / 32;
@@ -156,7 +158,7 @@ class TraceGeneratorTest {
             TraceGenerator generator = new TraceGenerator(new TraceConfig(101, 1, 16, 44,
                     100, 0, 0, 1, TraceConfig.Distribution.FIXED_HOT, p));
             for (int i = 0; i < 100; i++) {
-                assertEquals(0, KeyValueCodec.keyIndex(generator.at(TracePhase.MEASURE, i).command().key()));
+                assertEquals(0, KeyValueCodec.keyIndex(IoniaCommands.key(generator.at(TracePhase.MEASURE, i).command())));
             }
         }
     }
@@ -169,7 +171,7 @@ class TraceGeneratorTest {
         var request = generator.at(TracePhase.MEASURE, Long.MAX_VALUE);
         assertTrue(request.clientId() > Integer.MAX_VALUE);
         assertEquals(Long.MAX_VALUE / Integer.MAX_VALUE, request.sequence());
-        assertTrue(KeyValueCodec.keyIndex(request.command().key()) >= 0);
+        assertTrue(KeyValueCodec.keyIndex(IoniaCommands.key(request.command())) >= 0);
         assertTrue(generator.stream(TracePhase.MEASURE, Long.MAX_VALUE, Integer.MAX_VALUE - 1).hasNext());
         assertThrows(IllegalArgumentException.class, () -> generator.at(TracePhase.MEASURE, -1));
     }

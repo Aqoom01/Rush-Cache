@@ -1,5 +1,6 @@
 package io.openkache.runner.benchmark.measurement;
 
+import io.openkache.core.replication.ionia.IoniaCommands;
 import io.openkache.core.api.*;
 import io.openkache.core.model.Bytes;
 import io.openkache.runner.benchmark.*;
@@ -73,7 +74,7 @@ public final class CorrectnessRunWriter {
     }
     private static Map<String,Object> entry(AckLedger.Entry e){return map("id",e.id(),"key",bytes(e.key()),"expected_value",bytes(e.expectedValue()),"acknowledged_ns",e.acknowledgedNanos(),"deletion",e.deletion());}
     private static Map<String,Object> request(LogicalRequest r){return map("phase",r.phase(),"global_index",r.globalIndex(),"stream_id",r.streamId(),"client_id",r.clientId(),"sequence",r.sequence(),
-            "operation",ClientOutcome.Operation.of(r.command()),"key",bytes(r.command().key()),"input_value",r.command() instanceof Command.Set s?bytes(s.value()):null);}
+            "operation",ClientOutcome.Operation.of(r.command()),"key",bytes(IoniaCommands.key(r.command())),"input_value",r.command() instanceof Command.Set s?bytes(s.value()):null);}
     private static Map<String,Object> outcome(ClientOutcome o){return o==null?null:map("id",o.id(),"operation",o.operation(),"category",o.category(),"reason",o.reason(),
             "invoked_ns",o.invokedNanos(),"decided_ns",o.decidedNanos(),"terminal_ns",o.terminalNanos(),"wire_client_id",o.wireClientId(),"wire_operation_id",o.wireOperationId(),
             "rounds",o.rounds(),"attempts",o.attempts(),"result",o.result()==null?null:map("status",o.result().status(),"value",o.result().value().map(CorrectnessRunWriter::bytes).orElse(null),

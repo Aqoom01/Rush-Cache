@@ -2,6 +2,7 @@ package io.openkache.runner;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
 import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 
@@ -10,14 +11,15 @@ import java.util.concurrent.TimeUnit;
  * {@link Optional#empty()}를 반환한다(실험 자체는 git 정보 없이도 계속된다).
  *
  * @param commit {@code git rev-parse HEAD}
- * @param workingTreeDirty {@code git status --porcelain}의 출력이 비어 있지 않으면 {@code true}
  */
-record GitInfo(Optional<String> commit, Optional<Boolean> workingTreeDirty) {
+record GitInfo(Optional<String> commit) {
 
     static GitInfo capture() {
-        Optional<String> commit = run("git", "rev-parse", "HEAD").map(String::trim);
-        Optional<Boolean> dirty = run("git", "status", "--porcelain").map(output -> !output.isBlank());
-        return new GitInfo(commit, dirty);
+        return capture(Path.of("."));
+    }
+
+    static GitInfo capture(Path repository) {
+        return new GitInfo(run("git", "-C", repository.toString(), "rev-parse", "HEAD").map(String::trim));
     }
 
     private static Optional<String> run(String... command) {

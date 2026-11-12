@@ -1,0 +1,24 @@
+{
+  "runCount": 12,
+  "timeDomain": "wall-clock",
+  "normalSuccesses": 12000,
+  "acknowledgedWritesPreserved": 12000,
+  "preCrashCopies": 24000,
+  "postCrashCopies": 24024,
+  "distributionSha256": "c497d4f16bc9e18c02479f1aeb687d4ecfabbe54624e60cfe7234a31243877e7",
+  "rawSha256": {
+    "v64-t1000-r1.json": "86c179d2f53331b58c04bb79e28b25deea12bb563e60ef48ca2f9d922a2f7fe0",
+    "v64-t1000-r2.json": "0246676d6e4c90cd333998cffd60baa74aa2beed8ad85251d33d7daabb437119",
+    "v64-t1000-r3.json": "392a1d8800e6cc62e7b7907b3128afee4da25704518e1807ab8c51abf09ea0ff",
+    "v64-t500-r1.json": "c3c674b73dfe3d9c55e8635a497cd0a0eadb10f8b97fce60bcaa6e649e31407e",
+    "v64-t500-r2.json": "3d532205d762a6e3b5167612bf70a0ff1955dbe3f9d2ad4d037291a64d2f81c0",
+    "v64-t500-r3.json": "0defc86a1c7c78f5002fd12c56a745779969df75899258bc2ab1959d817f08dd",
+    "v8192-t1000-r1.json": "be9db62ac086d05d260ae615351d2c7857998189fab5cd32dba696735fea1cf4",
+    "v8192-t1000-r2.json": "606ebf3bcd4c2adf5f9e14c38a5a7ebe4aa0f82521ea2fdcb74344472636af6a",
+    "v8192-t1000-r3.json": "b76964c6556c3164af68764ab0382bd98fa7611c4c94c3759168882627f60d74",
+    "v8192-t500-r1.json": "8d5e2c50d8c8cd652e717762959350301fc8913e95a2b175ddecd4d830228fda",
+    "v8192-t500-r2.json": "00c42ec6ce945afb9bddadb729cc0e989c298831a64884058674058f4fd88544",
+    "v8192-t500-r3.json": "a5c0f0c2e94f9a85463ac77074c60b894fe4ee17d559f0d71f1e81af127db2d7"
+  },
+  "rawLocation": "local ignored run directory; not a public object storage URL"
+}

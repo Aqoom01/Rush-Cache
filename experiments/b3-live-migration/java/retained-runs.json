@@ -1,0 +1,41 @@
+{
+  "status": "VERIFIED_PRIOR_REVISION_RETAINED",
+  "sourceHash": "3b848270f14c17b4247406da7e974a1562d2b0c36b68a4677d490f3e42926883",
+  "backendHash": "f85607d74b68e0d574c5cd84e655866bbbb7bde806c373e892db699ff812faa9",
+  "totalVirtualCases": 2868.0,
+  "reason": "Copy, safety and fixed-plan movement code/results unchanged by count-only correction",
+  "runs": [
+    {
+      "cases": 870,
+      "folder": "experiments/b3-live-migration/execution-safety-comparison/runs/run-2026-11-04T14-54-57.666215300Z-2bdc9f56",
+      "manifestSha256": "994bf24e6a5fb39d834769e22dd783baaa81f519db9566f5236d79c2212273bf",
+      "profile": "full",
+      "repeats": 2,
+      "suite": "safety"
+    },
+    {
+      "cases": 480,
+      "folder": "experiments/b3-live-migration/java/comparison-quick/runs/run-2026-11-04T14-55-06.926518900Z-557730f9",
+      "manifestSha256": "4a26b05c88ffdad669dc3d0cde33dc9efbd10111a6aa3ebfe838cee9d67dff62",
+      "profile": "quick",
+      "repeats": 2,
+      "suite": "comparison"
+    },
+    {
+      "cases": 1350,
+      "folder": "experiments/b3-live-migration/java/sensitivity-quick/runs/run-2026-11-04T14-55-12.989821300Z-e66014f7",
+      "manifestSha256": "93e68087c04a3903e02bcdf59fad12a1f72ff0dc79530c8370ec2e1bc78b4bba",
+      "profile": "sensitivity-quick",
+      "repeats": 2,
+      "suite": "sensitivity"
+    },
+    {
+      "cases": 168,
+      "folder": "experiments/b3-live-migration/java/movement-quick/runs/run-2026-11-04T14-55-22.792700700Z-2040a744",
+      "manifestSha256": "fccd7061d87b02eb0d83550c7207d4032ad3e63ed51cddaf1dc74fff9edc3e9e",
+      "profile": "quick",
+      "repeats": 2,
+      "suite": "movement"
+    }
+  ]
+}

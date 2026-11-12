@@ -1,5 +1,6 @@
 package io.openkache.runner.benchmark;
 
+import io.openkache.core.replication.ionia.IoniaCommands;
 import static org.junit.jupiter.api.Assertions.*;
 
 import io.openkache.core.api.Command;
@@ -60,7 +61,7 @@ class TraceWriterTest {
             int operation = in.readUnsignedByte();
             counts[operation]++;
             assertEquals(24, in.readInt());
-            assertArrayEquals(request.command().key().toByteArray(), in.readNBytes(24));
+            assertArrayEquals(IoniaCommands.key(request.command()).toByteArray(), in.readNBytes(24));
             int valueSize = in.readInt();
             if (request.command() instanceof Command.Set set) {
                 assertEquals(1, operation);

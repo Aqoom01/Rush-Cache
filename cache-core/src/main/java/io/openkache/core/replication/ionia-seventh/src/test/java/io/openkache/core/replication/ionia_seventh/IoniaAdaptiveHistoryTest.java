@@ -114,11 +114,11 @@ class IoniaAdaptiveHistoryTest {
             boolean eligible = true;
             for (int j = 0; j < h.size(); j++) if ((used & (1 << j)) == 0 && h.get(j).end() != 0 && h.get(j).end() < op.start()) eligible = false;
             if (!eligible) continue;
-            Map<Bytes, Bytes> next = new HashMap<>(state); Bytes old = next.get(op.command().key()); boolean valid;
+            Map<Bytes, Bytes> next = new HashMap<>(state); Bytes old = next.get(IoniaCommands.key(op.command())); boolean valid;
             if (op.command() instanceof Command.Get) valid = op.result() == null || (old == null ? op.result().status() == ResultStatus.MISS
                     : op.result().status() == ResultStatus.OK && op.result().value().equals(Optional.of(old)));
             else if (op.command() instanceof Command.Set set) { valid = op.result() == null || op.result().status() == ResultStatus.OK; next.put(set.key(), set.value()); }
-            else { valid = op.result() == null || op.result().status() == (old == null ? ResultStatus.MISS : ResultStatus.OK); next.remove(op.command().key()); }
+            else { valid = op.result() == null || op.result().status() == (old == null ? ResultStatus.MISS : ResultStatus.OK); next.remove(IoniaCommands.key(op.command())); }
             if (valid && search(h, used | (1 << i), next, visited)) return true;
         }
         return false;

@@ -38,6 +38,7 @@ public record ClientOutcome(LogicalRequest.RequestId id, Operation operation, Ca
                 case Command.Get ignored -> GET;
                 case Command.Set ignored -> SET;
                 case Command.Delete ignored -> DELETE;
+                default -> throw new IllegalArgumentException("Unsupported benchmark command");
             };
         }
     }

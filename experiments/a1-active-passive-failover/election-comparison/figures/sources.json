@@ -1,0 +1,10 @@
+{
+  "csv": "runs\\run-2026-10-29T00-25-33.998339700Z-530f1fcd\\repeat-001\\summary.csv",
+  "sha256": "4A74AECFE620442B7CFC088B41F1DDA52AF994E5A81852790C582EB79A6F2E3E",
+  "conditions": 216,
+  "timeDomain": "virtual",
+  "plots": [
+    "crash-delay.png",
+    "scenario-summary.png"
+  ]
+}

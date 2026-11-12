@@ -39,6 +39,6 @@ public final class IoniaHistory {
         modified.clear();
         followers.clear();
         lti = entries.isEmpty() ? 0 : entries.getFirst().index();
-        entries.forEach(entry -> modified(entry.command().key(), entry.index()));
+        entries.forEach(entry -> modified(IoniaCommands.key(entry.command()), entry.index()));
     }
 }

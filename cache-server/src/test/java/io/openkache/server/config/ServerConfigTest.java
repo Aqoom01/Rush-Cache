@@ -4,6 +4,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.openkache.core.kv.KvStorage;
+import java.nio.file.Path;
 import java.time.Duration;
 import java.util.Properties;
 import org.junit.jupiter.api.Test;
@@ -97,5 +99,61 @@ class ServerConfigTest {
         String message = errorOf(p);
         assertTrue(message.contains("'cluster.id' is required"));
         assertTrue(message.contains("unknown key 'worker'"));
+    }
+
+    @Test
+    void storageDefaultsToMemory() {
+        assertEquals(KvStorage.memory(), ServerConfig.from(valid()).storage());
+    }
+
+    @Test
+    void parsesNvmeStorageWithDefaults() {
+        Properties p = valid();
+        p.setProperty("storage.engine", "nvme");
+        p.setProperty("storage.path", "/data");
+        p.setProperty("storage.capacity.bytes", "1073741824");
+
+        KvStorage.Nvme nvme = (KvStorage.Nvme) ServerConfig.from(p).storage();
+        assertEquals(Path.of("/data"), nvme.path());
+        assertEquals(1L << 30, nvme.capacityBytes());
+        assertEquals(64L * 1024 * 1024, nvme.segmentBytes());
+        assertEquals(64 * 1024, nvme.writeBufferBytes());
+        assertTrue(nvme.directIo());
+    }
+
+    @Test
+    void rejectsNvmeWithoutPathAndCapacity() {
+        Properties p = valid();
+        p.setProperty("storage.engine", "nvme");
+
+        String message = errorOf(p);
+        assertTrue(message.contains("'storage.path' is required"));
+        assertTrue(message.contains("'storage.capacity.bytes' is required"));
+    }
+
+    @Test
+    void rejectsCapacityBelowTwoSegmentsPerWorker() {
+        Properties p = valid();
+        p.setProperty("storage.engine", "nvme");
+        p.setProperty("storage.path", "/data");
+        p.setProperty("storage.capacity.bytes", String.valueOf(3L * 64 * 1024 * 1024));
+
+        assertTrue(errorOf(p).contains("at least 2 segments"));
+    }
+
+    @Test
+    void rejectsStorageSettingsWithMemoryEngine() {
+        Properties p = valid();
+        p.setProperty("storage.path", "/data");
+
+        assertTrue(errorOf(p).contains("only used with storage.engine=nvme"));
+    }
+
+    @Test
+    void rejectsUnknownStorageEngine() {
+        Properties p = valid();
+        p.setProperty("storage.engine", "rocksdb");
+
+        assertTrue(errorOf(p).contains("must be memory or nvme"));
     }
 }

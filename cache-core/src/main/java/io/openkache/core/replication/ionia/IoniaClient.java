@@ -81,6 +81,7 @@ public final class IoniaClient implements AutoCloseable {
                 else follower(get, context, target, options.readReplica(), data);
                 finishCertifiedRead(data, context, target, result);
             }
+            default -> result.complete(resultOf(ResultStatus.BAD_REQUEST));
         }
         return result;
     }

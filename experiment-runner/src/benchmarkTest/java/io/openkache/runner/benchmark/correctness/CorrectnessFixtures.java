@@ -1,5 +1,6 @@
 package io.openkache.runner.benchmark.correctness;
 
+import io.openkache.core.replication.ionia.IoniaCommands;
 import io.openkache.core.api.*;
 import io.openkache.core.model.*;
 import io.openkache.runner.benchmark.*;
@@ -39,9 +40,9 @@ public final class CorrectnessFixtures {
         }
         public void release(){var op=ClientOutcome.Operation.of(heldRequest.command());ledger.terminal(op,ClientOutcome.Category.SUCCESS,1);held.complete(outcome(heldRequest,ClientOutcome.Category.SUCCESS,apply(heldRequest.command()),heldStart,clock.incrementAndGet()));}
         private Result apply(Command command){
-            if(command instanceof Command.Get){var found=values.get(command.key());return found==null?plain(ResultStatus.MISS):value(found);}
+            if(command instanceof Command.Get){var found=values.get(IoniaCommands.key(command));return found==null?plain(ResultStatus.MISS):value(found);}
             if(command instanceof Command.Set set){values.put(set.key(),set.value());return plain(ResultStatus.OK);}
-            return plain(values.remove(command.key())==null?ResultStatus.MISS:ResultStatus.OK);
+            return plain(values.remove(IoniaCommands.key(command))==null?ResultStatus.MISS:ResultStatus.OK);
         }
         @Override public boolean cancel(LogicalRequest.RequestId id){cancels++;return false;}
         @Override public ClientAccounting.Snapshot snapshot(){return ledger.snapshot();}

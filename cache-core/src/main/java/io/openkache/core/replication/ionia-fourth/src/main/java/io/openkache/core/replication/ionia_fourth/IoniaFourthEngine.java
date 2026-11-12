@@ -193,8 +193,8 @@ public final class IoniaFourthEngine implements CacheEngine {
         LogEntry entry = log.order(context.clientId(), context.operationId(), command);
         batches.ordered(entry.index(), time.monotonicNanos());
         if (urgent) batches.urgent(entry.index());
-        keyLast.merge(command.key(), entry.index(), Math::max);
-        history.modified(command.key(), entry.index());
+        keyLast.merge(IoniaCommands.key(command), entry.index(), Math::max);
+        history.modified(IoniaCommands.key(command), entry.index());
         matched.put(config.nodeId(), log.lastLogIndex());
         if (!flushQueued) {
             flushQueued = true;
@@ -298,7 +298,7 @@ public final class IoniaFourthEngine implements CacheEngine {
                         if (isLeader() || !from.equals(leader)) return;
                         try { log.accept(prepare); }
                         catch (IllegalArgumentException invalid) { return; }
-                        for (LogEntry entry : prepare.entries()) keyLast.merge(entry.command().key(), entry.index(), Math::max);
+                        for (LogEntry entry : prepare.entries()) keyLast.merge(IoniaCommands.key(entry.command()), entry.index(), Math::max);
                         lastLeaderContact = time.monotonicNanos();
                         log.commitThrough(Math.min(announcedCommit, log.lastLogIndex()));
                         send(leader, new IoniaMessage.PrepareAck(view, log.lastLogIndex())); scheduleApplies();
@@ -362,7 +362,7 @@ public final class IoniaFourthEngine implements CacheEngine {
     private void scheduleApplies() {
         while (scheduledIndex < log.commitIndex()) {
             LogEntry entry = log.entry(++scheduledIndex).orElseThrow();
-            ArrayDeque<LogEntry> queue = queues.computeIfAbsent(entry.command().key(), ignored -> new ArrayDeque<>());
+            ArrayDeque<LogEntry> queue = queues.computeIfAbsent(IoniaCommands.key(entry.command()), ignored -> new ArrayDeque<>());
             queue.add(entry);
             if (queue.size() == 1) apply(entry);
         }
@@ -386,14 +386,14 @@ public final class IoniaFourthEngine implements CacheEngine {
                     }
                     completed.add(entry.index());
                     while (completed.remove(log.appliedIndex() + 1)) log.markApplied(log.appliedIndex() + 1);
-                    keyApplied.put(entry.command().key(), entry.index());
+                    keyApplied.put(IoniaCommands.key(entry.command()), entry.index());
                     RequestId id = new RequestId(entry.clientId(), entry.operationId());
                     appliedResults.put(id, result);
                     List<Waiting> waiters = writes.remove(id);
                     if (waiters != null) waiters.forEach(waiting -> finish(waiting, result, view));
-                    ArrayDeque<LogEntry> queue = queues.get(entry.command().key());
+                    ArrayDeque<LogEntry> queue = queues.get(IoniaCommands.key(entry.command()));
                     queue.removeFirst();
-                    if (queue.isEmpty()) queues.remove(entry.command().key()); else apply(queue.getFirst());
+                    if (queue.isEmpty()) queues.remove(IoniaCommands.key(entry.command())); else apply(queue.getFirst());
                     drainReads(); reportApplied(); finishInstall();
                 });
             });
@@ -508,7 +508,7 @@ public final class IoniaFourthEngine implements CacheEngine {
             log.commitThrough(state.commitIndex()); announcedCommit = state.commitIndex();
             scheduledIndex = 0; inFlight.clear(); queues.clear(); completed.clear(); appliedResults.clear();
             keyLast.clear(); keyApplied.clear();
-            state.consensus().forEach(entry -> keyLast.put(entry.command().key(), entry.index()));
+            state.consensus().forEach(entry -> keyLast.put(IoniaCommands.key(entry.command()), entry.index()));
             history.rebuild(state.consensus()); followerContact.clear();
             config.replicas().forEach(node -> matched.put(node, node.equals(config.nodeId()) ? log.lastLogIndex() : 0L));
             batches.installed(log, time.monotonicNanos());

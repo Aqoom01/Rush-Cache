@@ -2,7 +2,9 @@ package io.openkache.runner;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.util.List;
 import java.util.Properties;
 import org.junit.jupiter.api.Test;
 
@@ -44,6 +46,10 @@ class RunnerConfigTest {
         assertEquals(42, config.seed());
         assertEquals(Distribution.UNIFORM, config.distribution());
         assertEquals(4, config.concurrency());
+        assertEquals(1, config.repeatCount());
+        assertEquals(600_000, config.runTimeoutMs());
+        assertEquals(3_600_000, config.executionTimeoutMs());
+        assertEquals("baseline", config.configSnapshot().get("study"));
         assertEquals(-1, config.serverWorkerCountHint()); // 적지 않으면 미측정
     }
 
@@ -65,14 +71,16 @@ class RunnerConfigTest {
     }
 
     @Test
-    void rejectsZipfianAsUnsupportedDistribution() {
+    void rejectsUnknownDistributionNameButAcceptsZipf() {
         Properties p = valid();
         p.setProperty("distribution", "zipfian");
 
         assertEquals(
-                "invalid config: 'distribution' must be one of [UNIFORM, FIXED_HOT_KEY] (zipfian is not"
-                        + " supported yet): zipfian",
+                "invalid config: 'distribution' must be one of [UNIFORM, FIXED_HOT_KEY, HOT_RANGE, ZIPF]: zipfian",
                 errorOf(p));
+
+        p.setProperty("distribution", "zipf");
+        assertEquals(Distribution.ZIPF, RunnerConfig.from(p).distribution());
     }
 
     @Test
@@ -91,5 +99,85 @@ class RunnerConfigTest {
         p.setProperty("server.workers.hint", "2");
 
         assertEquals(2, RunnerConfig.from(p).serverWorkerCountHint());
+    }
+
+    @Test
+    void acceptsRepeatCountWhenProvided() {
+        Properties p = valid();
+        p.setProperty("repeat.count", "3");
+
+        assertEquals(3, RunnerConfig.from(p).repeatCount());
+    }
+
+    @Test
+    void acceptsExecutionTimeoutWhenProvided() {
+        Properties p = valid();
+        p.setProperty("execution.timeout.ms", "5000");
+
+        assertEquals(5000, RunnerConfig.from(p).executionTimeoutMs());
+    }
+
+    @Test
+    void acceptsRunTimeoutWhenProvided() {
+        Properties p = valid();
+        p.setProperty("run.timeout.ms", "5000");
+
+        assertEquals(5000, RunnerConfig.from(p).runTimeoutMs());
+    }
+
+    @Test
+    void serverStorageNoteDefaultsToInMemory() {
+        assertEquals(RunnerConfig.DEFAULT_SERVER_STORAGE, RunnerConfig.from(valid()).serverStorageNote());
+
+        Properties p = valid();
+        p.setProperty("server.storage.note", "nvme");
+        assertEquals("nvme", RunnerConfig.from(p).serverStorageNote());
+    }
+
+    @Test
+    void targetHostsAndRoutingBoundariesAreParsed() {
+        Properties p = valid();
+        p.setProperty("target.hosts", "10.0.0.1:7000, 10.0.0.2:7000");
+        p.setProperty("routing.boundaries", "9223372036854775808");
+
+        RunnerConfig config = RunnerConfig.from(p);
+        assertEquals(List.of(new RunnerConfig.Target("10.0.0.1", 7000), new RunnerConfig.Target("10.0.0.2", 7000)), config.targets());
+        assertEquals(2, config.routedTargetCount());
+        assertEquals(0, config.targetIndex(0x7fffffffffffffffL));
+        assertEquals(1, config.targetIndex(0x8000000000000000L));
+        assertEquals(1, config.targetIndex(-1L));
+    }
+
+    @Test
+    void withoutTargetHostsEveryKeyGoesToTargetHost() {
+        RunnerConfig config = RunnerConfig.from(valid());
+        assertEquals(List.of(new RunnerConfig.Target("127.0.0.1", 7000)), config.targets());
+        assertEquals(1, config.routedTargetCount());
+        assertEquals(0, config.targetIndex(-1L));
+    }
+
+    @Test
+    void rejectsMoreRoutingRangesThanTargets() {
+        Properties p = valid();
+        p.setProperty("routing.boundaries", "100");
+        assertTrue(errorOf(p).contains("needs 2 targets"));
+    }
+
+    @Test
+    void rejectsNonIncreasingBoundariesAndBadHosts() {
+        Properties p = valid();
+        p.setProperty("target.hosts", "a:7000,b:7000,c");
+        p.setProperty("routing.boundaries", "200,100");
+        String message = errorOf(p);
+        assertTrue(message.contains("must be host:port: c"));
+        assertTrue(message.contains("must be increasing"));
+    }
+
+    @Test
+    void hotRangeNeedsHotAndColdKeys() {
+        Properties p = valid();
+        p.setProperty("distribution", "HOT_RANGE");
+        p.setProperty("hot.range.key.fraction", "0.0");
+        assertTrue(errorOf(p).contains("hot.range.key.fraction"));
     }
 }

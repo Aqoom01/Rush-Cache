@@ -1,0 +1,1 @@
+- 그래프의 현재 재생성 진입점은 Java ComparisonPlotMain이다. JDK Java2D로 같은 min/max 의미를 유지하며 [Java 안내](../java/README.md)의 명령을 따른다. 기존 순수 Java full CSV의 수치로 다섯 그림을 Java2D로 재생성하고 이전 이미지를 교체했다. 입력 CSV와 새 Java 이미지의 SHA-256은 [figures/sources.json](figures/sources.json)에 기록돼 있다.

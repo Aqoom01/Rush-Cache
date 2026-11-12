@@ -18,7 +18,7 @@ public final class IoniaBatchedMetaTransport implements IoniaClientTransport, Au
         Entry(long token, long started, Request request) { this.token=token; this.started=started; this.request=request; }
         long remaining(long now) { return Math.max(0, request.timeoutNanos() - Math.max(0, now-started)); }
         Request at(long now) { return new Request(request.view(), request.command(), request.clientId(), request.operationId(), request.routingVersion(), request.ownershipEpoch(), remaining(now)); }
-        long bytes() { return 61L + request.command().key().size(); }
+        long bytes() { return 61L + IoniaCommands.key(request.command()).size(); }
     }
     private record Flight(Group group, List<Entry> entries) { }
     public record Diagnostics(boolean closed, long view, int queued, int outstanding, int inFlight,
@@ -46,7 +46,7 @@ public final class IoniaBatchedMetaTransport implements IoniaClientTransport, Au
         synchronized (lock) {
             long now=time.monotonicNanos(); expire(now,actions);
             ResultStatus rejected = closed || r.view()<view || sequence==Long.MAX_VALUE ? ResultStatus.UNAVAILABLE
-                    : !(r.command() instanceof Command.Get) || 65L+r.command().key().size()>settings.maxBytes() ? ResultStatus.BAD_REQUEST
+                    : !(r.command() instanceof Command.Get) || 65L+IoniaCommands.key(r.command()).size()>settings.maxBytes() ? ResultStatus.BAD_REQUEST
                     : r.timeoutNanos()==0 ? ResultStatus.TIMEOUT : outstanding>=settings.pendingLimit() ? ResultStatus.BUSY : null;
             if (rejected!=null) { if(rejected==ResultStatus.BUSY)busy++; result=CompletableFuture.completedFuture(error(to,r,rejected)); }
             else {

@@ -1,5 +1,6 @@
 package io.openkache.server.ionia_sixth;
 
+import io.openkache.core.replication.ionia.IoniaCommands;
 import io.openkache.core.replication.ionia_sixth.IoniaWorkerSettings;
 
 import io.openkache.core.api.*;
@@ -79,9 +80,12 @@ public final class IoniaWorkerFileStorage implements IoniaStorage {
 
     @Override public CompletionStage<Result> execute(Command command, RequestContext context) {
         Objects.requireNonNull(command); Objects.requireNonNull(context);
+        if (!IoniaCommands.supports(command)) {
+            return CompletableFuture.completedFuture(result(ResultStatus.BAD_REQUEST));
+        }
         CompletableFuture<Result> future = track(new CompletableFuture<>());
         if (closed.get()) { future.complete(result(ResultStatus.UNAVAILABLE)); return future; }
-        int shard = Math.floorMod(command.key().hashCode(), files.size());
+        int shard = Math.floorMod(IoniaCommands.key(command).hashCode(), files.size());
         if (!offerTask(shard,() -> {
             if (closed.get()) future.complete(result(ResultStatus.UNAVAILABLE));
             else if (context.deadline().isExpired(time)) future.complete(result(ResultStatus.TIMEOUT));
@@ -101,9 +105,9 @@ public final class IoniaWorkerFileStorage implements IoniaStorage {
             readFully(file, bytes, entry.offset());
             return Result.ok(Bytes.copyOf(bytes.array()), entry.version(), RoutingVersion.ZERO, OwnershipEpoch.ZERO);
         }
-        Entry previous = index.get(command.key());
+        Entry previous = index.get(IoniaCommands.key(command));
         long version = previous == null ? 1 : Math.incrementExact(previous.version());
-        byte[] key = command.key().toByteArray();
+        byte[] key = IoniaCommands.key(command).toByteArray();
         byte[] value = command instanceof Command.Set set ? set.value().toByteArray() : new byte[0];
         long payloadLength = 17L + key.length + value.length;
         if (payloadLength > MAX_RECORD) return result(ResultStatus.CAPACITY_EXCEEDED);
@@ -115,10 +119,10 @@ public final class IoniaWorkerFileStorage implements IoniaStorage {
         while (record.hasRemaining()) file.write(record, start + record.position());
         if (syncKvWrites) file.force(false);
         if (command instanceof Command.Set) {
-            index.put(command.key(), new Entry(start + 21L + key.length, value.length, version));
+            index.put(IoniaCommands.key(command), new Entry(start + 21L + key.length, value.length, version));
             return new Result(ResultStatus.OK, Optional.empty(), version, RoutingVersion.ZERO, OwnershipEpoch.ZERO, Optional.empty());
         }
-        index.remove(command.key());
+        index.remove(IoniaCommands.key(command));
         return result(previous == null ? ResultStatus.MISS : ResultStatus.OK);
     }
 

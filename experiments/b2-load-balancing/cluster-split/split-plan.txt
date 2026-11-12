@@ -1,0 +1,5 @@
+base=experiments/b2-load-balancing/cluster-split/base.properties
+observation: seed=1000045 requests=400000 keys=100000
+no-split: boundary=none
+midpoint-split: decision=Split[at=-9223372036854775808] boundary=9223372036854775808 observed_left_share=0.8749 measured_left_share=0.8749
+split-for-heat: decision=Split[at=2322039895804900467] boundary=2322039895804900467 observed_left_share=0.5000 measured_left_share=0.5019

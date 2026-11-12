@@ -9,8 +9,8 @@ import java.util.Optional;
  *
  * <p>측정하지 않은 값은 생략하지 않고 {@link Optional#empty()}나 명시적인 "측정하지 않음" 문자열로 남긴다(0으로
  * 채우지 않는다). 예: {@code serverWorkerCountHint}가 -1이면 운영자가 적어 넣지 않았다는 뜻이고, SSD IOPS·byte,
- * 분산 failover 시간은 이 Runner가 전혀 다루지 않으므로 필드 자체가 없다(인메모리 단일 노드 실험이라는 점을
- * {@code storageLayer}, {@code nodeCount}에 명시한다).
+ * 분산 failover 시간은 이 Runner가 전혀 다루지 않으므로 필드 자체가 없다. {@code storageLayer}는 운영자가
+ * {@code server.storage.note}로 적은 서버 저장소 종류이고(기본 인메모리), 단일 노드라는 점은 {@code nodeCount}에 명시한다.
  */
 record ExperimentResult(
         String executionId,
@@ -20,6 +20,10 @@ record ExperimentResult(
         String variant,
         String scenario,
         long seed,
+        int runNumber,
+        int repeatCount,
+        Map<String, String> configSnapshot,
+        Optional<RunnerInvocation> invocation,
         int nodeCount,
         int concurrency,
         int serverWorkerCountHint,
@@ -43,4 +47,5 @@ record ExperimentResult(
         Map<Outcome, Long> outcomeCounts,
         String faultScenario,
         Optional<String> gitCommit,
-        Optional<Boolean> workingTreeDirty) {}
+        List<TargetResult> targets,
+        List<WindowResult> windows) {}

@@ -56,13 +56,13 @@ class IoniaLinearizabilityTest {
             for (int j = 0; j < history.size(); j++) if ((used & (1 << j)) == 0 && history.get(j).end() < operation.start()) eligible = false;
             if (!eligible) continue;
             Map<Bytes, Bytes> next = new HashMap<>(state);
-            Bytes old = next.get(operation.command().key());
+            Bytes old = next.get(IoniaCommands.key(operation.command()));
             boolean valid;
             if (operation.command() instanceof Command.Get) valid = old == null
                     ? operation.result().status() == ResultStatus.MISS
                     : operation.result().status() == ResultStatus.OK && operation.result().value().equals(Optional.of(old));
             else if (operation.command() instanceof Command.Set set) { valid = operation.result().status() == ResultStatus.OK; next.put(set.key(), set.value()); }
-            else { valid = operation.result().status() == (old == null ? ResultStatus.MISS : ResultStatus.OK); next.remove(operation.command().key()); }
+            else { valid = operation.result().status() == (old == null ? ResultStatus.MISS : ResultStatus.OK); next.remove(IoniaCommands.key(operation.command())); }
             if (valid && check(history, used | (1 << i), next, visited)) return true;
         }
         return false;

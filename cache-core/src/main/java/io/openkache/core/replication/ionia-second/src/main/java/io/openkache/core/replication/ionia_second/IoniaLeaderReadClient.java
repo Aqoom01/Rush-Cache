@@ -82,6 +82,7 @@ public final class IoniaLeaderReadClient implements AutoCloseable {
                 atLeader(get, context, target, data);
                 finishCertifiedRead(data, context, target, result);
             }
+            default -> result.complete(resultOf(ResultStatus.BAD_REQUEST));
         }
         return result;
     }
