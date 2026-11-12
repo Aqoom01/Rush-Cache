@@ -37,7 +37,7 @@ experiment-runner  ──►──────┘
 | `spi` | `Transport`, `PeerMessage`, `PeerEnvelope`, `MetricsSink`(+NoOp), `TimeSource`(+system), `EpochStore` | 계약 정의 |
 | `runtime` | `Mailbox`, `OwnerWorker`, `TimerEvent`, 실행 원칙 | 구현 |
 | `kv` | 로컬 KV | `KvEngine`(단일 노드 인메모리 GET/SET/DELETE) 구현. TTL·eviction·영속화는 미구현 |
-| `replication` | A1 Active-Passive, A2 Active-Active | 미구현 |
+| `replication` | A1 Active-Passive, A2 Active-Active | `ionia`에 O00 구현. 다른 연구는 별도 디렉터리 |
 | `failure` | A3 FailureDetector, membership | 미구현 |
 | `tablet` | B1 routing, ownership | fixed-slot·hash-range-tablet·ring-vnode·hash-tag-tablet·resizable-slot·key-order-tablet·표 전파·소유권 판정(in-process) 구현, wire 인코딩 미구현 |
 | `balance` | B2 배치 계획, split/merge | 미구현 |

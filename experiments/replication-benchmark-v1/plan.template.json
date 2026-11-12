@@ -1,0 +1,120 @@
+{
+  "schema_version": "replication-run-v1",
+  "plan_id": "draft-PERF-03-O00-n3-s101",
+  "readiness": "draft",
+  "execution_enabled": false,
+  "unresolved": [
+    "EC2 access and diagnostics deferred by user",
+    "instance/storage/clock/resource inventory unknown",
+    "distributed driver and metric collectors not implemented",
+    "pilot must qualify key count, duration, concurrency, deadline and disk budget",
+    "history checker and instrumentation overhead qualification required"
+  ],
+  "scenario_id": "PERF-03",
+  "variant_id": "O00",
+  "node_count": 3,
+  "seed": 101,
+  "repeat_index": 1,
+  "source": {
+    "commit": null,
+    "dirty": null,
+    "source_hash": null,
+    "adapter_id": null,
+    "capability_evidence": null
+  },
+  "environment": {
+    "inventory_id": null,
+    "replica_hosts": [],
+    "load_hosts": [],
+    "control_host": null,
+    "java": "Java 21; exact vendor/build pending",
+    "transport": "existing TCP; exact adapter/config pending",
+    "storage_engine": "IoniaFileStorage candidate; actual binding pending",
+    "config_hash": null,
+    "resource_budget_hash": null
+  },
+  "dataset": {
+    "profile": "candidate-1m-100B",
+    "initial_keys": 1000000,
+    "key_bytes": 24,
+    "value_bytes": 100,
+    "cache_regime": "unknown",
+    "memory_budget_bytes": null,
+    "load_trace_sha256": null,
+    "run_trace_sha256": null,
+    "value_encoding": "seed+client+sequence+checksum; format to implement"
+  },
+  "workload": {
+    "mix": {
+      "get": 95,
+      "set": 5,
+      "delete": 0
+    },
+    "set_mode": "overwrite",
+    "distribution": "uniform",
+    "zipf_theta": null,
+    "hot_probability": null,
+    "load_mode": "closed_loop",
+    "concurrency_total": null,
+    "offered_ops_per_second": null,
+    "max_inflight": null,
+    "retry_policy": "same_id_bounded",
+    "variant_parameters": {}
+  },
+  "timing": {
+    "termination": "fixed_requests",
+    "measured_requests": 10000000,
+    "measure_seconds": null,
+    "minimum_measure_seconds": 300,
+    "warmup_minimum_seconds": 120,
+    "request_deadline_ms": null,
+    "drain_limit_seconds": null,
+    "run_hard_limit_seconds": null,
+    "window_ms": 1000,
+    "slo_p99_ms": null,
+    "slo_failure_fraction": null
+  },
+  "persistence": {
+    "replica_log": "replicated_ram",
+    "kv_force": null,
+    "stable_view_force": null,
+    "failure_model": "unqualified"
+  },
+  "fault": null,
+  "qualification": {
+    "pilot_qualified": false,
+    "history_checker_qualified": false,
+    "instrumentation_qualified": false,
+    "driver_capabilities": []
+  },
+  "required_metrics": [
+    "M01",
+    "M02",
+    "M03",
+    "M05",
+    "M07",
+    "M10",
+    "M11",
+    "M12",
+    "M13",
+    "M14",
+    "M15",
+    "M16",
+    "M17",
+    "M18",
+    "M19",
+    "M20",
+    "M21",
+    "M22",
+    "M23",
+    "M24",
+    "M35",
+    "M36"
+  ],
+  "metric_policy": {
+    "latency_histogram": "integer_geometric_upper_1pct_v1",
+    "tail_eligibility_count": 100000,
+    "missing_value": "null_with_reason",
+    "clock_method": "unqualified"
+  }
+}

@@ -1,0 +1,424 @@
+{
+  "date": "2026-11-02",
+  "status": "passed",
+  "normal_bundles": 34,
+  "declared_invalid_controls": 2,
+  "tamper_controls": 6,
+  "checks": [
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\experiment-runner\\build\\jvm-model-fixtures\\closed-1b9c5c2c-f15d-4129-ba2f-313e63cd29b7",
+      "declared_validity": "valid",
+      "verified_storage": true,
+      "qualified_observation": true,
+      "samples": 9,
+      "request_windows": 6,
+      "outcomes": 19,
+      "processes": 1
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\experiment-runner\\build\\jvm-model-fixtures\\open-b1582ce9-0e73-48cb-a9d4-e66e46aa1f9c",
+      "declared_validity": "valid",
+      "verified_storage": true,
+      "qualified_observation": true,
+      "samples": 9,
+      "request_windows": 6,
+      "outcomes": 19,
+      "processes": 1
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\cache-server\\build\\jvm-tcp-fixtures\\jvm-O00-n3-closed-11f2d6c1-092c-4553-9266-79f961cdd7aa",
+      "declared_validity": "valid",
+      "verified_storage": true,
+      "qualified_observation": true,
+      "samples": 9,
+      "request_windows": 6,
+      "outcomes": 19,
+      "processes": 1
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\cache-server\\build\\jvm-tcp-fixtures\\jvm-O00-n3-open-f3da45cd-255f-40fe-9386-5265fd07e992",
+      "declared_validity": "valid",
+      "verified_storage": true,
+      "qualified_observation": true,
+      "samples": 11,
+      "request_windows": 10,
+      "outcomes": 19,
+      "processes": 1
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\cache-server\\build\\jvm-tcp-fixtures\\jvm-O00-n5-closed-b31a5961-1d92-42a9-8e20-60e7d88ca036",
+      "declared_validity": "valid",
+      "verified_storage": true,
+      "qualified_observation": true,
+      "samples": 9,
+      "request_windows": 6,
+      "outcomes": 19,
+      "processes": 1
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\cache-server\\build\\jvm-tcp-fixtures\\jvm-O00-n5-open-8291da15-7191-429f-af7b-d943529f2392",
+      "declared_validity": "valid",
+      "verified_storage": true,
+      "qualified_observation": true,
+      "samples": 11,
+      "request_windows": 10,
+      "outcomes": 19,
+      "processes": 1
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\cache-server\\build\\jvm-tcp-fixtures\\jvm-V01-n3-closed-2fcd625e-1aa0-4d15-898e-c2e647421e39",
+      "declared_validity": "valid",
+      "verified_storage": true,
+      "qualified_observation": true,
+      "samples": 9,
+      "request_windows": 6,
+      "outcomes": 19,
+      "processes": 1
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\cache-server\\build\\jvm-tcp-fixtures\\jvm-V01-n3-open-d0613d2e-72f3-43ee-b8ad-a69ea953e017",
+      "declared_validity": "valid",
+      "verified_storage": true,
+      "qualified_observation": true,
+      "samples": 11,
+      "request_windows": 10,
+      "outcomes": 19,
+      "processes": 1
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\cache-server\\build\\jvm-tcp-fixtures\\jvm-V01-n5-closed-da4bda95-6b3d-429a-b3ed-2f9769aedaea",
+      "declared_validity": "valid",
+      "verified_storage": true,
+      "qualified_observation": true,
+      "samples": 9,
+      "request_windows": 6,
+      "outcomes": 19,
+      "processes": 1
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\cache-server\\build\\jvm-tcp-fixtures\\jvm-V01-n5-open-a9287446-b210-4603-ab8a-81638353885a",
+      "declared_validity": "valid",
+      "verified_storage": true,
+      "qualified_observation": true,
+      "samples": 11,
+      "request_windows": 10,
+      "outcomes": 19,
+      "processes": 1
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\cache-server\\build\\jvm-tcp-fixtures\\jvm-V02-n3-closed-ed4faf4e-032d-4202-ae0a-d625b80c574e",
+      "declared_validity": "valid",
+      "verified_storage": true,
+      "qualified_observation": true,
+      "samples": 9,
+      "request_windows": 6,
+      "outcomes": 19,
+      "processes": 1
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\cache-server\\build\\jvm-tcp-fixtures\\jvm-V02-n3-open-9f9ddfe8-b7bc-4f0d-965a-e1642650ccff",
+      "declared_validity": "valid",
+      "verified_storage": true,
+      "qualified_observation": true,
+      "samples": 11,
+      "request_windows": 10,
+      "outcomes": 19,
+      "processes": 1
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\cache-server\\build\\jvm-tcp-fixtures\\jvm-V02-n5-closed-353a9cd5-3637-40bb-9f97-7dfa00dd3982",
+      "declared_validity": "valid",
+      "verified_storage": true,
+      "qualified_observation": true,
+      "samples": 9,
+      "request_windows": 6,
+      "outcomes": 19,
+      "processes": 1
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\cache-server\\build\\jvm-tcp-fixtures\\jvm-V02-n5-open-f7973620-877f-4d51-88a4-6c8366f2bd93",
+      "declared_validity": "valid",
+      "verified_storage": true,
+      "qualified_observation": true,
+      "samples": 11,
+      "request_windows": 10,
+      "outcomes": 19,
+      "processes": 1
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\cache-server\\build\\jvm-tcp-fixtures\\jvm-V03-n3-closed-e99e2a26-076f-49ef-a70d-165fd1f9a20e",
+      "declared_validity": "valid",
+      "verified_storage": true,
+      "qualified_observation": true,
+      "samples": 9,
+      "request_windows": 6,
+      "outcomes": 19,
+      "processes": 1
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\cache-server\\build\\jvm-tcp-fixtures\\jvm-V03-n3-open-0956d0ba-7d9d-4e36-9d37-58cd1664c13f",
+      "declared_validity": "valid",
+      "verified_storage": true,
+      "qualified_observation": true,
+      "samples": 11,
+      "request_windows": 10,
+      "outcomes": 19,
+      "processes": 1
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\cache-server\\build\\jvm-tcp-fixtures\\jvm-V03-n5-closed-c8b5faa8-1cf6-443f-80c6-7706a4e7d706",
+      "declared_validity": "valid",
+      "verified_storage": true,
+      "qualified_observation": true,
+      "samples": 9,
+      "request_windows": 6,
+      "outcomes": 19,
+      "processes": 1
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\cache-server\\build\\jvm-tcp-fixtures\\jvm-V03-n5-open-f4e8d152-e846-4169-b524-b0135d4ebe00",
+      "declared_validity": "valid",
+      "verified_storage": true,
+      "qualified_observation": true,
+      "samples": 11,
+      "request_windows": 10,
+      "outcomes": 19,
+      "processes": 1
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\cache-server\\build\\jvm-tcp-fixtures\\jvm-V04-n3-closed-2d9d9944-127d-4927-88a0-62c3a8f899f7",
+      "declared_validity": "valid",
+      "verified_storage": true,
+      "qualified_observation": true,
+      "samples": 9,
+      "request_windows": 6,
+      "outcomes": 19,
+      "processes": 1
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\cache-server\\build\\jvm-tcp-fixtures\\jvm-V04-n3-open-77342c66-b1e6-4fb3-be3e-69b122fc2537",
+      "declared_validity": "valid",
+      "verified_storage": true,
+      "qualified_observation": true,
+      "samples": 11,
+      "request_windows": 10,
+      "outcomes": 19,
+      "processes": 1
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\cache-server\\build\\jvm-tcp-fixtures\\jvm-V04-n5-closed-f678f9d7-a053-4012-8278-b9271ea75f6a",
+      "declared_validity": "valid",
+      "verified_storage": true,
+      "qualified_observation": true,
+      "samples": 9,
+      "request_windows": 6,
+      "outcomes": 19,
+      "processes": 1
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\cache-server\\build\\jvm-tcp-fixtures\\jvm-V04-n5-open-e203cfd7-98a7-4f15-b3d6-36d4ddda0d58",
+      "declared_validity": "valid",
+      "verified_storage": true,
+      "qualified_observation": true,
+      "samples": 11,
+      "request_windows": 10,
+      "outcomes": 19,
+      "processes": 1
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\cache-server\\build\\jvm-tcp-fixtures\\jvm-V05-n3-closed-047758ed-e149-491d-abc4-e3e05481bd2b",
+      "declared_validity": "valid",
+      "verified_storage": true,
+      "qualified_observation": true,
+      "samples": 9,
+      "request_windows": 6,
+      "outcomes": 19,
+      "processes": 1
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\cache-server\\build\\jvm-tcp-fixtures\\jvm-V05-n3-open-74bca050-f899-4f38-9687-b59bde70faa6",
+      "declared_validity": "valid",
+      "verified_storage": true,
+      "qualified_observation": true,
+      "samples": 11,
+      "request_windows": 10,
+      "outcomes": 19,
+      "processes": 1
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\cache-server\\build\\jvm-tcp-fixtures\\jvm-V05-n5-closed-9bc43c69-019e-4653-aa21-1e99b667fe9f",
+      "declared_validity": "valid",
+      "verified_storage": true,
+      "qualified_observation": true,
+      "samples": 9,
+      "request_windows": 6,
+      "outcomes": 19,
+      "processes": 1
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\cache-server\\build\\jvm-tcp-fixtures\\jvm-V05-n5-open-7b2ff0dc-67a8-4661-8009-bfb7770985bb",
+      "declared_validity": "valid",
+      "verified_storage": true,
+      "qualified_observation": true,
+      "samples": 11,
+      "request_windows": 10,
+      "outcomes": 19,
+      "processes": 1
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\cache-server\\build\\jvm-tcp-fixtures\\jvm-V06-n3-closed-977bf9e1-ebfd-4028-9fc0-cc457f1fb395",
+      "declared_validity": "valid",
+      "verified_storage": true,
+      "qualified_observation": true,
+      "samples": 9,
+      "request_windows": 6,
+      "outcomes": 19,
+      "processes": 1
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\cache-server\\build\\jvm-tcp-fixtures\\jvm-V06-n3-open-d197810c-169c-417c-afd1-801525981674",
+      "declared_validity": "valid",
+      "verified_storage": true,
+      "qualified_observation": true,
+      "samples": 11,
+      "request_windows": 10,
+      "outcomes": 19,
+      "processes": 1
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\cache-server\\build\\jvm-tcp-fixtures\\jvm-V06-n5-closed-6f42b68b-9821-461d-bdf3-2b7cd316034f",
+      "declared_validity": "valid",
+      "verified_storage": true,
+      "qualified_observation": true,
+      "samples": 9,
+      "request_windows": 6,
+      "outcomes": 19,
+      "processes": 1
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\cache-server\\build\\jvm-tcp-fixtures\\jvm-V06-n5-open-8c7514e9-917a-458a-818a-a495276c11a9",
+      "declared_validity": "valid",
+      "verified_storage": true,
+      "qualified_observation": true,
+      "samples": 11,
+      "request_windows": 10,
+      "outcomes": 19,
+      "processes": 1
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\cache-server\\build\\jvm-tcp-fixtures\\jvm-V07-n3-closed-1a6813f9-0ddd-403f-88f0-fa890b0d4205",
+      "declared_validity": "valid",
+      "verified_storage": true,
+      "qualified_observation": true,
+      "samples": 9,
+      "request_windows": 6,
+      "outcomes": 19,
+      "processes": 1
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\cache-server\\build\\jvm-tcp-fixtures\\jvm-V07-n3-open-69654bfc-791a-47c2-a1fe-03de76316852",
+      "declared_validity": "valid",
+      "verified_storage": true,
+      "qualified_observation": true,
+      "samples": 11,
+      "request_windows": 10,
+      "outcomes": 19,
+      "processes": 1
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\cache-server\\build\\jvm-tcp-fixtures\\jvm-V07-n5-closed-d254f6b4-e5e5-442f-8e28-9bbe93b17433",
+      "declared_validity": "valid",
+      "verified_storage": true,
+      "qualified_observation": true,
+      "samples": 9,
+      "request_windows": 6,
+      "outcomes": 19,
+      "processes": 1
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\cache-server\\build\\jvm-tcp-fixtures\\jvm-V07-n5-open-5276134e-e065-42b4-b6b1-01f11a2a17de",
+      "declared_validity": "valid",
+      "verified_storage": true,
+      "qualified_observation": true,
+      "samples": 11,
+      "request_windows": 10,
+      "outcomes": 19,
+      "processes": 1
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\experiment-runner\\build\\jvm-model-controls\\source-failure-f975d930-f39a-4da4-bd01-6c539062c086",
+      "declared_validity": "invalid",
+      "verified_storage": true,
+      "qualified_observation": false,
+      "issues": [
+        "COHORT_WINDOW_MISMATCH:LOAD:DELETE",
+        "COHORT_WINDOW_MISMATCH:LOAD:GET",
+        "COHORT_WINDOW_MISMATCH:LOAD:SET",
+        "COHORT_WINDOW_MISMATCH:MEASURE:DELETE",
+        "COHORT_WINDOW_MISMATCH:MEASURE:GET",
+        "COHORT_WINDOW_MISMATCH:MEASURE:SET",
+        "COHORT_WINDOW_MISMATCH:WARMUP:DELETE",
+        "COHORT_WINDOW_MISMATCH:WARMUP:GET",
+        "COHORT_WINDOW_MISMATCH:WARMUP:SET",
+        "EXECUTION_NOT_PASSED",
+        "FINAL_SAMPLE_FAILED:IllegalStateException",
+        "NO_RESOURCE_OBSERVATIONS",
+        "SOURCE_EXCEPTION:IllegalStateException"
+      ]
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\experiment-runner\\build\\jvm-model-controls\\missing-observer-2ac4bb46-954a-4bc2-9ac8-a0794e65589a",
+      "declared_validity": "invalid",
+      "verified_storage": true,
+      "qualified_observation": false,
+      "issues": [
+        "COHORT_WINDOW_MISMATCH:LOAD:SET",
+        "COHORT_WINDOW_MISMATCH:MEASURE:DELETE",
+        "COHORT_WINDOW_MISMATCH:MEASURE:GET",
+        "COHORT_WINDOW_MISMATCH:MEASURE:SET",
+        "COHORT_WINDOW_MISMATCH:WARMUP:DELETE",
+        "COHORT_WINDOW_MISMATCH:WARMUP:SET",
+        "FINAL_WINDOW_ACCOUNTING"
+      ]
+    }
+  ],
+  "negative_controls": [
+    {
+      "name": "missing-complete",
+      "rejected": true,
+      "reason": "incomplete bundle",
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\build\\ionia-validation\\20261102-103748-0268adb9\\p02-negative-controls\\missing-complete"
+    },
+    {
+      "name": "byte-tamper",
+      "rejected": true,
+      "reason": "file digest: samples.jsonl",
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\build\\ionia-validation\\20261102-103748-0268adb9\\p02-negative-controls\\byte-tamper"
+    },
+    {
+      "name": "rehashed-cpu-delta",
+      "rejected": true,
+      "reason": "resource delta: process_cpu_ns",
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\build\\ionia-validation\\20261102-103748-0268adb9\\p02-negative-controls\\rehashed-cpu-delta"
+    },
+    {
+      "name": "rehashed-request-count",
+      "rejected": true,
+      "reason": "cohort outcome reconciliation",
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\build\\ionia-validation\\20261102-103748-0268adb9\\p02-negative-controls\\rehashed-request-count"
+    },
+    {
+      "name": "rehashed-process-duplication",
+      "rejected": true,
+      "reason": "process deduplication/role",
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\build\\ionia-validation\\20261102-103748-0268adb9\\p02-negative-controls\\rehashed-process-duplication"
+    },
+    {
+      "name": "invalid-upgraded-valid",
+      "rejected": true,
+      "reason": "execution not passed",
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\build\\ionia-validation\\20261102-103748-0268adb9\\p02-negative-controls\\invalid-upgraded-valid"
+    }
+  ],
+  "distinction": "42 artifact checks are separate from 899 JUnit tests; hashes are not signatures; no performance qualification"
+}

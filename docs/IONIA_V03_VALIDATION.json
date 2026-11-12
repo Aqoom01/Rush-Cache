@@ -1,0 +1,108 @@
+{
+  "variant": "V03 Prepare batching functional control",
+  "date": "2026-10-28",
+  "base_revision": "36920e82fcb55e69e418723a97bee1d381e83267",
+  "command": ".\\gradlew.bat build :cache-server:installDist --rerun-tasks --console=plain",
+  "java": "Microsoft OpenJDK 21.0.11",
+  "build_exit_code": 0,
+  "modules": {
+    "cache-core": {
+      "tests": 261,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "cache-server": {
+      "tests": 52,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "experiment-runner": {
+      "tests": 16,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    }
+  },
+  "total_tests": 329,
+  "v03_tests": 72,
+  "ported_protocol_regression_cases": 32,
+  "v03_suites": [
+    {
+      "suite": "io.openkache.core.replication.ionia_fourth.IoniaBatchPlannerTest",
+      "tests": 11
+    },
+    {
+      "suite": "io.openkache.core.replication.ionia_fourth.IoniaFourthBatchIntegrationTest",
+      "tests": 15
+    },
+    {
+      "suite": "io.openkache.core.replication.ionia_fourth.IoniaFourthHistoryTest",
+      "tests": 7
+    },
+    {
+      "suite": "io.openkache.core.replication.ionia_fourth.IoniaFourthRegressionTest",
+      "tests": 32
+    },
+    {
+      "suite": "io.openkache.core.replication.ionia_fourth.IoniaFourthWorkerIntegrationTest",
+      "tests": 1
+    },
+    {
+      "suite": "io.openkache.server.ionia_fourth.IoniaFourthProcessTest",
+      "tests": 1
+    },
+    {
+      "suite": "io.openkache.server.ionia_fourth.IoniaFourthProfileTest",
+      "tests": 3
+    },
+    {
+      "suite": "io.openkache.server.ionia_fourth.IoniaFourthTcpConcurrencyTest",
+      "tests": 1
+    },
+    {
+      "suite": "io.openkache.server.ionia_fourth.IoniaPrepareSizerWireTest",
+      "tests": 1
+    }
+  ],
+  "fixture_output": [
+    "V03: E=1/2/3/128, positive delay and bytes cap, 64 seeds each, 10 completed CRUD/history, batching+Follower/Meta path; bounded only",
+    "V03 process fixture: JVMs=3, forced leader crash, new-view=1, majority fallback, disk replay/rejoin, DELETE OK/MISS verified; loopback host only"
+  ],
+  "wire_encoder_cases": 320,
+  "bounded_histories": {
+    "profiles": 4,
+    "seeds_per_profile": 64,
+    "operations_per_history": 10,
+    "full_protocol_proof": false
+  },
+  "protected_existing_files_unchanged": 168,
+  "jar_checks": {
+    "cache-core": {
+      "file": "cache-core/build/libs/cache-core-0.1.0-SNAPSHOT.jar",
+      "sha256": "894863989cd6e87d1357de16b4a58beeeb81581d01a218dc7344f8b817dc252f",
+      "new_production_classes_present": true,
+      "test_classes_absent": true
+    },
+    "cache-server": {
+      "file": "cache-server/build/libs/cache-server-0.1.0-SNAPSHOT.jar",
+      "sha256": "d25aefb73feb35fa947915b52304e79fef948c75a20df81e54d283afed8568f4",
+      "new_production_classes_present": true,
+      "test_classes_absent": true
+    }
+  },
+  "performance_measured": false,
+  "ssd_performance_claimed": false,
+  "power_loss_tested": false,
+  "per_request_durable_wal_fsync_implemented": false,
+  "commit_push_merge_performed": false,
+  "limits": [
+    "Wf=1 is logical flight control, not global consensus WND or physical socket bound",
+    "20ms tick/retry and example settings are functional fixtures, not optimal settings",
+    "wire/state transfer 64MiB and file KV 32MiB payload limits remain",
+    "new engine is a separate O00 fork; future baseline fixes require manual comparison",
+    "all-RAM-log loss fails closed; independent replicas are on one loopback host in process tests",
+    "2013 TCS final full-text analysis remains incomplete"
+  ]
+}

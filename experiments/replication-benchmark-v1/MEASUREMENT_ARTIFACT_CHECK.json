@@ -1,0 +1,133 @@
+{
+  "status": "passed",
+  "fixture_count": 13,
+  "fixtures": [
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\cache-server\\build\\benchmark-b5-fixtures\\tcp-n3-closed-99528aab-ef89-4da4-b368-2c0d083f4476",
+      "schema": "passed",
+      "powershell_verifier": "passed",
+      "validity": "valid",
+      "histogram_populations": 18,
+      "seed": 101
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\cache-server\\build\\benchmark-b5-fixtures\\tcp-n3-open-a35bbd3f-3ed9-4025-b9f8-26393543506a",
+      "schema": "passed",
+      "powershell_verifier": "passed",
+      "validity": "valid",
+      "histogram_populations": 18,
+      "seed": 101
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\cache-server\\build\\benchmark-b5-fixtures\\tcp-n5-closed-4351bef6-6162-4e4f-80dc-a25a4a1520eb",
+      "schema": "passed",
+      "powershell_verifier": "passed",
+      "validity": "valid",
+      "histogram_populations": 18,
+      "seed": 101
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\cache-server\\build\\benchmark-b5-fixtures\\tcp-n5-open-9de1f1b7-be1e-4f89-9032-619a3e16bb7c",
+      "schema": "passed",
+      "powershell_verifier": "passed",
+      "validity": "valid",
+      "histogram_populations": 18,
+      "seed": 101
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\experiment-runner\\build\\benchmark-b5-fixtures\\closed-healthy-3822ce9d-2098-48b4-95ac-6c97dfd8e07e",
+      "schema": "passed",
+      "powershell_verifier": "passed",
+      "validity": "valid",
+      "histogram_populations": 9,
+      "seed": 101
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\experiment-runner\\build\\benchmark-b5-fixtures\\ERROR_RESPONSE-5b496fd7-9059-483d-85e9-d184ecd26f43",
+      "schema": "passed",
+      "powershell_verifier": "passed",
+      "validity": "valid",
+      "histogram_populations": 9,
+      "seed": 101
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\experiment-runner\\build\\benchmark-b5-fixtures\\metadata-mismatch-ab902563-3f25-400b-a2b5-d9dc855e67c8",
+      "schema": "passed",
+      "powershell_verifier": "passed",
+      "validity": "invalid",
+      "histogram_populations": 9,
+      "seed": 101
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\experiment-runner\\build\\benchmark-b5-fixtures\\missing-observer-9db3a3b7-8e3f-41e7-ae3e-b7e922375b26",
+      "schema": "passed",
+      "powershell_verifier": "passed",
+      "validity": "invalid",
+      "histogram_populations": 0,
+      "seed": 101
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\experiment-runner\\build\\benchmark-b5-fixtures\\NO_RESPONSE-d704e4ba-2795-43e1-a8c2-790cb2e22273",
+      "schema": "passed",
+      "powershell_verifier": "passed",
+      "validity": "valid",
+      "histogram_populations": 9,
+      "seed": 101
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\experiment-runner\\build\\benchmark-b5-fixtures\\open-healthy-ab2bd5ab-a1f5-4972-9311-635e67181e70",
+      "schema": "passed",
+      "powershell_verifier": "passed",
+      "validity": "valid",
+      "histogram_populations": 9,
+      "seed": 101
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\experiment-runner\\build\\benchmark-b5-fixtures\\preflight-failed-f3feeef4-d542-4e1b-9752-582968eed2a5",
+      "schema": "passed",
+      "powershell_verifier": "passed",
+      "validity": "invalid",
+      "histogram_populations": 0,
+      "seed": 101
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\experiment-runner\\build\\benchmark-b5-fixtures\\rejections-75c8b774-f4d8-4494-9c95-271efa068207",
+      "schema": "passed",
+      "powershell_verifier": "passed",
+      "validity": "valid",
+      "histogram_populations": 9,
+      "seed": 101
+    },
+    {
+      "directory": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\experiment-runner\\build\\benchmark-b5-fixtures\\required-unsupported-bbba265d-7fef-4072-8ca3-2a3a6070b9ec",
+      "schema": "passed",
+      "powershell_verifier": "passed",
+      "validity": "invalid",
+      "histogram_populations": 9,
+      "seed": 101
+    }
+  ],
+  "negative_controls": [
+    {
+      "control": "hash-corruption",
+      "rejected": true,
+      "directory": "C:\\Users\\SSAFY\\.codex\\.chatgpt-projects\\g-p-6ac58d22cee48191ba9860f9176cf956\\benchmark-b5-negative-controls\\7b3b7c5e-5362-4f86-aecb-eae8d5b78a01\\hash-corruption"
+    },
+    {
+      "control": "missing-completion",
+      "rejected": true,
+      "directory": "C:\\Users\\SSAFY\\.codex\\.chatgpt-projects\\g-p-6ac58d22cee48191ba9860f9176cf956\\benchmark-b5-negative-controls\\7b3b7c5e-5362-4f86-aecb-eae8d5b78a01\\missing-completion"
+    },
+    {
+      "control": "rehashed-wrong-population",
+      "rejected": true,
+      "directory": "C:\\Users\\SSAFY\\.codex\\.chatgpt-projects\\g-p-6ac58d22cee48191ba9860f9176cf956\\benchmark-b5-negative-controls\\7b3b7c5e-5362-4f86-aecb-eae8d5b78a01\\rehashed-wrong-population"
+    },
+    {
+      "control": "rehashed-wrong-percentile",
+      "rejected": true,
+      "directory": "C:\\Users\\SSAFY\\.codex\\.chatgpt-projects\\g-p-6ac58d22cee48191ba9860f9176cf956\\benchmark-b5-negative-controls\\7b3b7c5e-5362-4f86-aecb-eae8d5b78a01\\rehashed-wrong-percentile"
+    }
+  ],
+  "scope": "local functional artifacts only; no performance comparison"
+}

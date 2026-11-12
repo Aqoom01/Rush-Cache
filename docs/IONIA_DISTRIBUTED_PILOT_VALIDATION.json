@@ -1,0 +1,258 @@
+{
+  "schema": "distributed-pilot-validation-v1",
+  "scope": "local_functional_only",
+  "required_local_checks_passed": true,
+  "unit_tests": [
+    {
+      "name": "io.openkache.server.benchmark.pilot.DistributedPlanTest",
+      "tests": "5",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0"
+    },
+    {
+      "name": "io.openkache.server.benchmark.pilot.DistributedReportsTest",
+      "tests": "6",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0"
+    },
+    {
+      "name": "io.openkache.server.benchmark.pilot.DistributedWireTest",
+      "tests": "4",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0"
+    },
+    {
+      "name": "io.openkache.server.benchmark.pilot.PilotInputsTest",
+      "tests": "6",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0"
+    },
+    {
+      "name": "io.openkache.server.benchmark.pilot.RemoteO00DrainProbeTest",
+      "tests": "5",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0"
+    }
+  ],
+  "new_unit_count": 15,
+  "total_selected_unit_count": 26,
+  "separate_jvm_cases": [
+    {
+      "case": "final-three-smoke",
+      "passed": true,
+      "requests": 72,
+      "replicas": 3,
+      "loads": 2,
+      "controllers": 1,
+      "writes": 31,
+      "audit_requests": 8,
+      "replica_value_checks": 9,
+      "local_stopped_checked": true
+    },
+    {
+      "case": "final-five-smoke",
+      "passed": true,
+      "requests": 72,
+      "replicas": 5,
+      "loads": 2,
+      "controllers": 1,
+      "writes": 31,
+      "audit_requests": 8,
+      "replica_value_checks": 15,
+      "local_stopped_checked": true
+    },
+    {
+      "case": "guarded-three-smoke",
+      "passed": true,
+      "requests": 72,
+      "replicas": 3,
+      "loads": 2,
+      "controllers": 1,
+      "writes": 31,
+      "audit_requests": 8,
+      "replica_value_checks": 9,
+      "local_stopped_checked": true
+    }
+  ],
+  "legacy_single_load_compatibility": {
+    "passed": true,
+    "requests": 72,
+    "workload_writes": 31,
+    "audit_requests": 8,
+    "replica_value_checks": 9,
+    "input_files": 11,
+    "bundle_libraries": 24,
+    "local_stopped_checked": true
+  },
+  "peer_failures": [
+    {
+      "case": "peer-abort",
+      "rejected": true,
+      "global_complete_absent": true,
+      "remaining_load_aborted": true,
+      "nodes_closed": true
+    },
+    {
+      "case": "missing-load",
+      "rejected": true,
+      "global_complete_absent": true,
+      "remaining_load_aborted": true,
+      "nodes_closed": true
+    }
+  ],
+  "artifact_negative_controls": [
+    {
+      "case": "changed_file",
+      "rejected": true,
+      "reason": "hash mismatch/duplicate: collected-load-0.json"
+    },
+    {
+      "case": "duplicate_slot",
+      "rejected": true,
+      "reason": "load identities"
+    },
+    {
+      "case": "false_p99_rehashed",
+      "rejected": true,
+      "reason": "histogram quantile"
+    },
+    {
+      "case": "doubled_requests_rehashed",
+      "rejected": true,
+      "reason": "phase request count/order"
+    },
+    {
+      "case": "bad_partition_rehashed",
+      "rejected": true,
+      "reason": "partition digest/count"
+    },
+    {
+      "case": "missing_load_payload",
+      "rejected": true,
+      "reason": "[Errno 2] No such file or directory: 'C:\\\\Users\\\\SSAFY\\\\.codex\\\\.chatgpt-projects\\\\g-p-6ac58d22cee48191ba9860f9176cf956\\\\distributed-evidence-20261103-101029\\\\artifact-negative-controls\\\\missing_load_payload\\\\collected-load-1.json'"
+    }
+  ],
+  "cli_negative_controls": [
+    {
+      "case": "legacy_rejects_distributed",
+      "rejected": true
+    },
+    {
+      "case": "duplicate_load",
+      "rejected": true
+    },
+    {
+      "case": "duplicate_controller",
+      "rejected": true
+    }
+  ],
+  "dataset": {
+    "requests": 3200,
+    "per_load_requests": [
+      1600,
+      1600
+    ],
+    "partition_evidence": [
+      {
+        "phase": "LOAD",
+        "total": 1000,
+        "loads": [
+          {
+            "requests": 500,
+            "gets": 0,
+            "sets": 500,
+            "deletes": 0,
+            "sha256": "f41982da68bf1e31308485a9e448f958fb02168189c8ca8d66d9b9b151c34214"
+          },
+          {
+            "requests": 500,
+            "gets": 0,
+            "sets": 500,
+            "deletes": 0,
+            "sha256": "edd9ae60751af0c4c8ca0f7c057f5ff8f8f00349bfc7b7c26c1c64eaa0d18f79"
+          }
+        ]
+      },
+      {
+        "phase": "WARMUP",
+        "total": 200,
+        "loads": [
+          {
+            "requests": 100,
+            "gets": 78,
+            "sets": 13,
+            "deletes": 9,
+            "sha256": "7814d9fc3ed6c1e4dffb7fce7304f84d6a265846bbccf1eb96a796e0afca0b0a"
+          },
+          {
+            "requests": 100,
+            "gets": 77,
+            "sets": 16,
+            "deletes": 7,
+            "sha256": "df84c55fcb2f345fa575f53f02c138a0a3e7d2b54ec5039648406cdfccb4adf2"
+          }
+        ]
+      },
+      {
+        "phase": "MEASURE",
+        "total": 2000,
+        "loads": [
+          {
+            "requests": 1000,
+            "gets": 806,
+            "sets": 146,
+            "deletes": 48,
+            "sha256": "b6fc30c2af8ec222e7cda308463b8f6268e4104468ca484c04bf3c75ba0ce374"
+          },
+          {
+            "requests": 1000,
+            "gets": 813,
+            "sets": 135,
+            "deletes": 52,
+            "sha256": "b3945a2f785e120e96fabe4788fdff82bb316bb705cd07ff16f1f6b174baa410"
+          }
+        ]
+      }
+    ],
+    "manifest_sha256": "13b6e833938c50e5e8716bdad3cf42bb2a04df00d98ae8a892c7473e9006d882",
+    "canonical_files_preserved": 8,
+    "full_tcp_execution_passed": false
+  },
+  "full_dataset_tcp_attempt": {
+    "status": "FAILED_ENVIRONMENT",
+    "latest_confirmed_error": "Windows BindException Address already in use",
+    "normal_view0_observed_on_all_replicas": true,
+    "system_settings_changed": false,
+    "automatic_success_retry": false,
+    "initial_runs_not_individually_root_caused": true,
+    "retained_directories": [
+      "five-node-pilot",
+      "five-node-diagnostic",
+      "five-node-rpc-diagnostic"
+    ]
+  },
+  "source_preservation": {
+    "baseline_source_files": 321,
+    "unchanged_source_files": 320,
+    "changed_source_file": "benchmark/pilot/PilotMain.java (helper visibility and distributed-mode guard only)",
+    "new_java_files": 8,
+    "algorithm_core_generator_wire_changes": 0,
+    "production_jar_excludes_benchmark": true
+  },
+  "zip_sha256": "5c9b699f7cc414b2705ab4026b531031aa371236dbbb4c51ee47b062c3639995",
+  "bundle_sha256": "c0bd17dde4d90198927808b690776f3b98c1004cf4a30b798dddf9e0bd6e1895",
+  "not_run": [
+    "949_test_full_regression",
+    "EC2_SSH",
+    "Linux_execution",
+    "qualified_performance",
+    "variants_distributed_pilot",
+    "power_loss_recovery"
+  ],
+  "next": "EC2 inventory and small Linux functional pilot, then evaluate the unchanged 3200-request dataset and connection budget"
+}

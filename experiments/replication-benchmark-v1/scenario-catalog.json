@@ -1,0 +1,686 @@
+{
+  "schema_version": "replication-scenarios-v1",
+  "date": "2026-10-30",
+  "status": "specification_only",
+  "remote_diagnostics": "deferred_by_user",
+  "scenarios": [
+    {
+      "id": "ENV-01",
+      "category": "gate",
+      "title": "환경·동일조건 검증",
+      "preconditions": "EC2 8대 중 replica 3/5·load 2·control 1 배치와 storage/CPU/clock/권한/독점 사용 확인",
+      "procedure": "EC2 접속·수집은 사용자 요청으로 보류. inventory_id와 role mapping을 미확정으로 둔다.",
+      "acceptance": "환경 식별값 누락이면 NOT_READY. 원격 조작·비용 변경 없음.",
+      "metrics": [
+        "M36"
+      ],
+      "applies_to": "all",
+      "node_counts": [
+        3,
+        5
+      ],
+      "execution_status": "not_run"
+    },
+    {
+      "id": "FUN-01",
+      "category": "correctness",
+      "title": "순차 CRUD 의미",
+      "preconditions": "독립 저장 경로·빈 keyspace·고정 값·삭제 존재 여부 계약",
+      "procedure": "GET 없는키→MISS; SET A→OK; GET→A; SET B→OK; GET→B; DELETE→OK; GET→MISS; DELETE→MISS; SET C→OK; GET→C",
+      "acceptance": "정확히 기대한 상태/값. DELETE는 실행결과 반환 경로. 인증된 client 응답만 판정.",
+      "metrics": [
+        "M01",
+        "M02",
+        "M03",
+        "M05",
+        "M07",
+        "M28"
+      ],
+      "applies_to": "all",
+      "node_counts": [
+        3,
+        5
+      ],
+      "execution_status": "not_run"
+    },
+    {
+      "id": "COR-01",
+      "category": "correctness",
+      "title": "동시 history 선형성",
+      "preconditions": "1–8키·2–4client·64 seed, 검사기 부정 대조군",
+      "procedure": "짧은 20–30 logical operation 이력을 반복. SET값에 client/sequence 넣기. 단일 client 단조시간으로 invocation/response 기록, 노드간 순서는 causal barrier로 보강.",
+      "acceptance": "VIOLATION=0, checker positive/negative controls 통과. checker timeout/미확정은 INCONCLUSIVE. 동시 GET은 단일 최종값 oracle로 검사하지 않음.",
+      "metrics": [
+        "M01",
+        "M02",
+        "M03",
+        "M07",
+        "M28",
+        "M29"
+      ],
+      "applies_to": "all",
+      "node_counts": [
+        3,
+        5
+      ],
+      "execution_status": "not_run"
+    },
+    {
+      "id": "COR-02",
+      "category": "correctness",
+      "title": "stale follower·History trim",
+      "preconditions": "제어 가능한 지연 fixture, IONIA adapter",
+      "procedure": "SET ACK 뒤 follower apply를 지연시키고 GET. leader pending DATA 및 History trim/LTI 경계 각각 실행.",
+      "acceptance": "오래된 값/MISS를 최종 정상응답으로 반환하지 않음. fallback·rejection은 별도 계수.",
+      "metrics": [
+        "M13",
+        "M14",
+        "M25",
+        "M28"
+      ],
+      "applies_to": "ionia",
+      "node_counts": [
+        3,
+        5
+      ],
+      "execution_status": "not_run"
+    },
+    {
+      "id": "COR-03",
+      "category": "correctness",
+      "title": "재시도·중복·늦은 응답",
+      "preconditions": "동일 logical ID와 deadline, 중복 주입 fixture",
+      "procedure": "응답 지연·유실·동일요청 중복·view 전환 중 재시도. clientId는 전체 load host에서 유일하게 생성.",
+      "acceptance": "논리적 완료 1회. 서로 다른 값으로 같은 ID 재사용 금지. timeout 이후 실제 반영 가능성은 이력의 pending completion으로 처리.",
+      "metrics": [
+        "M01",
+        "M02",
+        "M04",
+        "M07",
+        "M08",
+        "M09",
+        "M28",
+        "M29"
+      ],
+      "applies_to": "all",
+      "node_counts": [
+        3,
+        5
+      ],
+      "execution_status": "not_run"
+    },
+    {
+      "id": "COR-04",
+      "category": "correctness",
+      "title": "ACK 직후 미적용 쓰기 보존",
+      "preconditions": "별도 ACK ledger, apply/consensus 지연 fixture",
+      "procedure": "SET ACK 이후 apply 전에 leader/follower를 종료하고 허용 장애 수 내에서 복구. overwrite 없는 audit keys 사용.",
+      "acceptance": "ACK된 각 audit value/삭제가 후속 합법 update가 없을 때 보존. 최종 map 같음만으로 충분하지 않음.",
+      "metrics": [
+        "M13",
+        "M14",
+        "M28",
+        "M29",
+        "M30"
+      ],
+      "applies_to": "all",
+      "node_counts": [
+        3,
+        5
+      ],
+      "execution_status": "not_run"
+    },
+    {
+      "id": "COR-05",
+      "category": "correctness",
+      "title": "복구 중 노드·old view fencing",
+      "preconditions": "복구 중 replica 및 partition fixture",
+      "procedure": "재시작/상태이전 중 read와 격리된 old leader 접근, 늦은 이전 view 응답을 주입.",
+      "acceptance": "복구 완료 전 stale 정상응답 없음·이전 view 증명 수락 없음·중복 로그 효과 없음.",
+      "metrics": [
+        "M25",
+        "M27",
+        "M28",
+        "M30"
+      ],
+      "applies_to": "all",
+      "node_counts": [
+        3,
+        5
+      ],
+      "execution_status": "not_run"
+    },
+    {
+      "id": "PERF-01",
+      "category": "performance",
+      "title": "GET 100%",
+      "preconditions": "초기 적재된 고정 existing keys·apply drain·동일 trace",
+      "procedure": "GET100, uniform 기본. 3/5 replica와 concurrency 1/8/32/128을 pilot로 검증 후 고정.",
+      "acceptance": "정상 오류율 0을 인수 기준으로 사용. throughput 우위는 합격 기준으로 강제하지 않음. 미포화·부하기 병목은 표시.",
+      "metrics": [
+        "M01",
+        "M02",
+        "M03",
+        "M05",
+        "M07",
+        "M10",
+        "M11",
+        "M12",
+        "M15",
+        "M16",
+        "M17",
+        "M18",
+        "M19",
+        "M20",
+        "M21",
+        "M22",
+        "M23",
+        "M24"
+      ],
+      "applies_to": "all",
+      "node_counts": [
+        3,
+        5
+      ],
+      "execution_status": "not_run"
+    },
+    {
+      "id": "PERF-02",
+      "category": "performance",
+      "title": "SET 100% 덮어쓰기",
+      "preconditions": "동일 preloaded keyspace, 신규 적재 시험과 분리",
+      "procedure": "SET100 overwrite, 측정 중 apply/backlog 및 종료 뒤 drain 관찰. 100B/1024B 값을 별도 실행.",
+      "acceptance": "완료·오류·late 처리 집계 보존. backlog 발산/미해소를 숨기지 않음. 빠른 ACK만으로 지속 성능 합격 처리하지 않음.",
+      "metrics": [
+        "M01",
+        "M02",
+        "M03",
+        "M05",
+        "M07",
+        "M10",
+        "M11",
+        "M12",
+        "M13",
+        "M14",
+        "M15",
+        "M16",
+        "M17",
+        "M18",
+        "M19",
+        "M20",
+        "M21",
+        "M22",
+        "M23",
+        "M24"
+      ],
+      "applies_to": "all",
+      "node_counts": [
+        3,
+        5
+      ],
+      "execution_status": "not_run"
+    },
+    {
+      "id": "PERF-03",
+      "category": "performance",
+      "title": "GET95/SET5",
+      "preconditions": "동일 existing keyspace·uniform 기본",
+      "procedure": "GET95 SET5 overwrite; paired seeds 및 입력 sequence 공통. GET/SET histogram 분리.",
+      "acceptance": "PERF-01/02 공통 기준. 혼합 percentile로 읽기/쓰기 지연을 대체하지 않음.",
+      "metrics": [
+        "M01",
+        "M02",
+        "M03",
+        "M05",
+        "M07",
+        "M10",
+        "M11",
+        "M12",
+        "M13",
+        "M14",
+        "M15",
+        "M16",
+        "M17",
+        "M18",
+        "M19",
+        "M20",
+        "M21",
+        "M22",
+        "M23",
+        "M24"
+      ],
+      "applies_to": "all",
+      "node_counts": [
+        3,
+        5
+      ],
+      "execution_status": "not_run"
+    },
+    {
+      "id": "PERF-04",
+      "category": "performance",
+      "title": "GET50/SET50",
+      "preconditions": "동일 existing keyspace·uniform 기본",
+      "procedure": "GET50 SET50 overwrite; 노드별 역할과 read/meta/apply 부하를 관찰.",
+      "acceptance": "공통 정상 기준과 backlog 판정. primary bottleneck과 storage 병목을 구분.",
+      "metrics": [
+        "M01",
+        "M02",
+        "M03",
+        "M05",
+        "M07",
+        "M10",
+        "M11",
+        "M12",
+        "M13",
+        "M14",
+        "M15",
+        "M16",
+        "M17",
+        "M18",
+        "M19",
+        "M20",
+        "M21",
+        "M22",
+        "M23",
+        "M24"
+      ],
+      "applies_to": "all",
+      "node_counts": [
+        3,
+        5
+      ],
+      "execution_status": "not_run"
+    },
+    {
+      "id": "PERF-05",
+      "category": "performance",
+      "title": "GET80/SET15/DELETE5",
+      "preconditions": "회전 keyspace·초기 occupancy·membership-changing operation trace 고정",
+      "procedure": "GET80 SET15 DELETE5. 순차/단일 owner trace에서 expected-hit case를 만들고 일반 동시 경합에서는 actual HIT/MISS 비율을 기록.",
+      "acceptance": "MISS를 시스템 오류로 세지 않음. 존재 여부 의미는 FUN-01/COR-01에서 검사. live key 수 변화 및 append 파일 증가 기록.",
+      "metrics": [
+        "M01",
+        "M02",
+        "M03",
+        "M05",
+        "M07",
+        "M10",
+        "M11",
+        "M12",
+        "M14",
+        "M18",
+        "M19",
+        "M20",
+        "M23",
+        "M24",
+        "M28"
+      ],
+      "applies_to": "all",
+      "node_counts": [
+        3,
+        5
+      ],
+      "execution_status": "not_run"
+    },
+    {
+      "id": "PERF-06",
+      "category": "performance",
+      "title": "공통 도착률–지연/과부하 곡선",
+      "preconditions": "open-loop scheduler·bounded queue·pilot peak·client 능력 검증",
+      "procedure": "최저 pilot peak의 10/30/50/70/90% 공통 offered rate, 110%는 overload 별도. client queue·drop·거절 포함.",
+      "acceptance": "예정 발행 누락을 제외하지 않음. 드롭은 성공 throughput 아님. SLO 임계치는 manifest 값 없으면 SLO 비교 불가.",
+      "metrics": [
+        "M01",
+        "M02",
+        "M03",
+        "M04",
+        "M05",
+        "M06",
+        "M07",
+        "M08",
+        "M09",
+        "M10",
+        "M11",
+        "M12"
+      ],
+      "applies_to": "all",
+      "node_counts": [
+        3,
+        5
+      ],
+      "execution_status": "not_run"
+    },
+    {
+      "id": "SENS-01",
+      "category": "sensitivity",
+      "title": "데이터/캐시와 value 크기",
+      "preconditions": "memory_budget_bytes 및 실제 storage 확인 필요",
+      "procedure": "small/large working-set, 100B/1024B values. 초기1M/10M키는 후보; large는 cache 밖이라는 증거 필요.",
+      "acceptance": "캐시 상주/SSD-bound 미확인은 UNKNOWN, 크기만으로 SSD 접근을 주장하지 않음.",
+      "metrics": [
+        "M10",
+        "M14",
+        "M18",
+        "M19",
+        "M20",
+        "M21",
+        "M22",
+        "M23",
+        "M24"
+      ],
+      "applies_to": "all",
+      "node_counts": [
+        3,
+        5
+      ],
+      "execution_status": "not_run"
+    },
+    {
+      "id": "SENS-02",
+      "category": "sensitivity",
+      "title": "키 쏠림·동적 hotspot",
+      "preconditions": "Zipf generator 검증·명시적 mapping 및 hash",
+      "procedure": "uniform 대조, Zipf theta0.75/0.99, hot-key 확률0.9·중간 hotspot 이동. 분포별 개별 trace.",
+      "acceptance": "관측 분포/충돌률 보존. Zipf와 fixed-hot을 같은 분포로 표기하지 않음.",
+      "metrics": [
+        "M05",
+        "M10",
+        "M11",
+        "M12",
+        "M14",
+        "M25",
+        "M26"
+      ],
+      "applies_to": "all",
+      "node_counts": [
+        3,
+        5
+      ],
+      "execution_status": "not_run"
+    },
+    {
+      "id": "FAULT-01",
+      "category": "fault",
+      "title": "follower 1대 process crash",
+      "preconditions": "허용된 대상 process만 종료·persistent data 보존·control timestamp",
+      "procedure": "측정180초 후 follower1 crash, 120초 관찰 후 재시작·재합류. 상세 시각은 pilot 후 manifest 고정.",
+      "acceptance": "3노드 qFast부족과5노드 qFast4 유지 차이를 계측. 성공 ACK 안전성 검사. fallback/membership 지연을 분리.",
+      "metrics": [
+        "M01",
+        "M03",
+        "M05",
+        "M07",
+        "M10",
+        "M14",
+        "M27",
+        "M28",
+        "M29",
+        "M30"
+      ],
+      "applies_to": "all",
+      "node_counts": [
+        3,
+        5
+      ],
+      "execution_status": "not_run"
+    },
+    {
+      "id": "FAULT-02",
+      "category": "fault",
+      "title": "leader/coordinator process crash",
+      "preconditions": "현재 leader/명시한 coordinator의 ID를 event에 기록",
+      "procedure": "같은 시각 프로파일로 leader 또는 Hermes coordinator crash, 신규 view·재시작·audit read.",
+      "acceptance": "어떤 역할이 중단됐는지 명시. 고정 recovery ms 보장 없이 실제 중단·복귀 측정 및 safety 판정.",
+      "metrics": [
+        "M05",
+        "M07",
+        "M10",
+        "M14",
+        "M26",
+        "M27",
+        "M28",
+        "M29",
+        "M30"
+      ],
+      "applies_to": "all",
+      "node_counts": [
+        3,
+        5
+      ],
+      "execution_status": "not_run"
+    },
+    {
+      "id": "FAULT-03",
+      "category": "fault",
+      "title": "느린 replica",
+      "preconditions": "delay target과 request 방향·duration 고정, 별도 fault driver 필요",
+      "procedure": "replica 한 대에 20/80ms 지연을 제어 주입(설계 값). 정상·delay·해제 구간 분리.",
+      "acceptance": "지연과 crash를 구분. 주입 실패는 INVALID_RUN. membership 제외에 따른 RF 변화를 보고.",
+      "metrics": [
+        "M05",
+        "M07",
+        "M10",
+        "M11",
+        "M12",
+        "M14",
+        "M25",
+        "M26",
+        "M27"
+      ],
+      "applies_to": "all",
+      "node_counts": [
+        3,
+        5
+      ],
+      "execution_status": "not_run"
+    },
+    {
+      "id": "FAULT-04",
+      "category": "fault",
+      "title": "partition/정족수 부족",
+      "preconditions": "대상 주소·방향·heal 계획이 manifest에 명시돼야 실행 가능",
+      "procedure": "3노드2+1·5노드3+2, 별도 no-majority 분할. 격리된 old leader 읽기·heal·재합류.",
+      "acceptance": "불안전한 정상응답 0. liveness는 해당 quorum/membership 가정이 회복된 구간에서만 검사.",
+      "metrics": [
+        "M05",
+        "M07",
+        "M10",
+        "M14",
+        "M25",
+        "M26",
+        "M27",
+        "M28",
+        "M29",
+        "M30"
+      ],
+      "applies_to": "all",
+      "node_counts": [
+        3,
+        5
+      ],
+      "execution_status": "not_run"
+    },
+    {
+      "id": "LONG-01",
+      "category": "longrun",
+      "title": "30분 지속/회복",
+      "preconditions": "고정 trace seed·append 저장량과 disk budget·hard stop",
+      "procedure": "30분 동안 혼합부하, burst/hotspot change 후 원상복귀. phase별1초 창·종료 후drain.",
+      "acceptance": "메모리/backlog/공간 증가율·정상화 여부 보고. 현재 append-only file adapter에서 LSM compaction을 측정했다고 하지 않음.",
+      "metrics": [
+        "M05",
+        "M07",
+        "M10",
+        "M11",
+        "M12",
+        "M14",
+        "M18",
+        "M19",
+        "M20",
+        "M21",
+        "M22",
+        "M23",
+        "M24"
+      ],
+      "applies_to": "all",
+      "node_counts": [
+        3,
+        5
+      ],
+      "execution_status": "not_run"
+    },
+    {
+      "id": "VAR-01",
+      "category": "variant",
+      "title": "V01 leader-only reads",
+      "preconditions": "V01과O00, 동일 read placement 이외 설정",
+      "procedure": "PERF-01/03/04 paired 비교, 동일 node/CPU/storage.",
+      "acceptance": "leader CPU/I/O·read 분포와 처리량 차이를 함께 설명.",
+      "metrics": [
+        "M05",
+        "M10",
+        "M17",
+        "M18",
+        "M25"
+      ],
+      "applies_to": "V01",
+      "node_counts": [
+        3,
+        5
+      ],
+      "execution_status": "not_run"
+    },
+    {
+      "id": "VAR-02",
+      "category": "variant",
+      "title": "V02 History soft budget",
+      "preconditions": "history budget 후보·동일 bounded workload",
+      "procedure": "budget2개 이상 + O00 대조, trim 경계 포함.",
+      "acceptance": "실제 history/초과량·fallback·정확성. soft budget을 hard cap으로 판정하지 않음.",
+      "metrics": [
+        "M10",
+        "M23",
+        "M25",
+        "M28"
+      ],
+      "applies_to": "V02",
+      "node_counts": [
+        3,
+        5
+      ],
+      "execution_status": "not_run"
+    },
+    {
+      "id": "VAR-03",
+      "category": "variant",
+      "title": "V03 Prepare batch",
+      "preconditions": "count/byte/delay 후보와 long-lived client",
+      "procedure": "batch1/기본/확대, 저·중·고부하. parameter 한 축씩.",
+      "acceptance": "실효batch·대기·in-flight·CPU/bytes·write지연. input count와실제batch분리.",
+      "metrics": [
+        "M05",
+        "M10",
+        "M14",
+        "M15",
+        "M16",
+        "M31"
+      ],
+      "applies_to": "V03",
+      "node_counts": [
+        3,
+        5
+      ],
+      "execution_status": "not_run"
+    },
+    {
+      "id": "VAR-04",
+      "category": "variant",
+      "title": "V04 applying-key K",
+      "preconditions": "실행 worker·stripe 수 고정",
+      "procedure": "K1/2/4 후보·uniform/hotkeys. 기존 source와 분리.",
+      "acceptance": "실제 applying keys/동일키 순서·backlog. 속도이득 강제 없음.",
+      "metrics": [
+        "M05",
+        "M10",
+        "M14",
+        "M24",
+        "M28",
+        "M32"
+      ],
+      "applies_to": "V04",
+      "node_counts": [
+        3,
+        5
+      ],
+      "execution_status": "not_run"
+    },
+    {
+      "id": "VAR-05",
+      "category": "variant",
+      "title": "V05 actual I/O workers W",
+      "preconditions": "stripe S 고정·W만변화",
+      "procedure": "W1/2/4 후보(cores/valid config 범위), 동일 S·key/trace.",
+      "acceptance": "worker busy·queue·CPU/disk QD·동일키순서. S 변화 효과와 분리.",
+      "metrics": [
+        "M05",
+        "M10",
+        "M18",
+        "M19",
+        "M24",
+        "M28",
+        "M32"
+      ],
+      "applies_to": "V05",
+      "node_counts": [
+        3,
+        5
+      ],
+      "execution_status": "not_run"
+    },
+    {
+      "id": "VAR-06",
+      "category": "variant",
+      "title": "V06 replica selection",
+      "preconditions": "동일 RTT·outstanding 기준·탐색 설정 보존",
+      "procedure": "고정 선택/현재 selector, 느린 노드·hotspot·delay 변화.",
+      "acceptance": "선택분포·관측치 age·적응시간·tail·fallback. C3/Tars 전체재현 아님.",
+      "metrics": [
+        "M05",
+        "M10",
+        "M11",
+        "M25",
+        "M33"
+      ],
+      "applies_to": "V06",
+      "node_counts": [
+        3,
+        5
+      ],
+      "execution_status": "not_run"
+    },
+    {
+      "id": "VAR-07",
+      "category": "variant",
+      "title": "V07 MetaQuery batching",
+      "preconditions": "count/byte/delay/pending/inflight 명시",
+      "procedure": "batch1/기본/확대, 한frame 지연·개별deadline혼합·저부하.",
+      "acceptance": "메타batch occupancy·frame HOL/공동실패·연결비용. READ/probe/write batching으로표기금지.",
+      "metrics": [
+        "M05",
+        "M10",
+        "M15",
+        "M16",
+        "M25",
+        "M31",
+        "M34"
+      ],
+      "applies_to": "V07",
+      "node_counts": [
+        3,
+        5
+      ],
+      "execution_status": "not_run"
+    }
+  ]
+}

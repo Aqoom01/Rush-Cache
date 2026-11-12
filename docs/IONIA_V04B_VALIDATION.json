@@ -1,0 +1,820 @@
+{
+  "variant": "V04b",
+  "date": "2026-10-28",
+  "start_revision": "3998af206d7b2363f9d130b0c185b5f99b0c4d3e",
+  "start_worktree_clean": true,
+  "implementation": {
+    "core": "replication/ionia-sixth",
+    "package": "ionia_sixth",
+    "engine": "unchanged O00 IoniaEngine",
+    "shards": "S=storage.shards, 1..256",
+    "workers": "W=storage.io.workers, 1..256",
+    "key_routing": "floorMod(key.hashCode(), S)",
+    "shard_owner": "shard % W",
+    "production_mailbox_capacity": 65536,
+    "node_sync_kv_writes": false
+  },
+  "java": "Microsoft OpenJDK 21.0.11",
+  "final_build_command": ".\\gradlew.bat build :cache-server:installDist --rerun-tasks --no-parallel --max-workers=1 --console=plain",
+  "final_build_exit_code": 0,
+  "observed_prior_failure": {
+    "command": ".\\gradlew.bat build :cache-server:installDist --rerun-tasks --console=plain",
+    "class": "io.openkache.server.ionia_third.IoniaThirdTcpConcurrencyTest",
+    "line": 39,
+    "assertion": "expected valueVersion 32 but was 0",
+    "isolated_rerun_exit_code": 0,
+    "note": "기존 V02a 소스 변경 없이 분리 재실행 통과. 원인 확정 안 됨. 최종 전체 직렬 회귀 결과와 구분."
+  },
+  "test_results": {
+    "cache-core": {
+      "tests": 321,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "suites": [
+        {
+          "class": "io.openkache.core.api.DeadlineTest",
+          "tests": 3,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "class": "io.openkache.core.api.ResultTest",
+          "tests": 5,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "class": "io.openkache.core.kv.KvEngineTest",
+          "tests": 6,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "class": "io.openkache.core.model.BytesTest",
+          "tests": 7,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "class": "io.openkache.core.model.IdentifierTest",
+          "tests": 4,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "class": "io.openkache.core.replication.ionia.IoniaClientTest",
+          "tests": 6,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "class": "io.openkache.core.replication.ionia.IoniaConfigTest",
+          "tests": 9,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "class": "io.openkache.core.replication.ionia.IoniaLinearizabilityTest",
+          "tests": 2,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "class": "io.openkache.core.replication.ionia.IoniaLogTest",
+          "tests": 7,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "class": "io.openkache.core.replication.ionia.IoniaMessageTest",
+          "tests": 10,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "class": "io.openkache.core.replication.ionia.IoniaO00Test",
+          "tests": 33,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "class": "io.openkache.core.replication.ionia.IoniaStateMachineTest",
+          "tests": 17,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "class": "io.openkache.core.replication.ionia.IoniaWorkerIntegrationTest",
+          "tests": 1,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "class": "io.openkache.core.replication.ionia_fifth.IoniaApplyGateTest",
+          "tests": 6,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "class": "io.openkache.core.replication.ionia_fifth.IoniaFifthApplyTest",
+          "tests": 11,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "class": "io.openkache.core.replication.ionia_fifth.IoniaFifthHistoryTest",
+          "tests": 7,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "class": "io.openkache.core.replication.ionia_fifth.IoniaFifthRegressionTest",
+          "tests": 32,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "class": "io.openkache.core.replication.ionia_fifth.IoniaFifthWorkerIntegrationTest",
+          "tests": 1,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "class": "io.openkache.core.replication.ionia_fourth.IoniaBatchPlannerTest",
+          "tests": 11,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "class": "io.openkache.core.replication.ionia_fourth.IoniaFourthBatchIntegrationTest",
+          "tests": 15,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "class": "io.openkache.core.replication.ionia_fourth.IoniaFourthHistoryTest",
+          "tests": 7,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "class": "io.openkache.core.replication.ionia_fourth.IoniaFourthRegressionTest",
+          "tests": 32,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "class": "io.openkache.core.replication.ionia_fourth.IoniaFourthWorkerIntegrationTest",
+          "tests": 1,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "class": "io.openkache.core.replication.ionia_second.IoniaLeaderReadClientTest",
+          "tests": 14,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "class": "io.openkache.core.replication.ionia_second.IoniaLeaderReadHistoryTest",
+          "tests": 2,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "class": "io.openkache.core.replication.ionia_second.IoniaLeaderReadIntegrationTest",
+          "tests": 8,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "class": "io.openkache.core.replication.ionia_sixth.IoniaWorkerSettingsTest",
+          "tests": 3,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "class": "io.openkache.core.replication.ionia_third.IoniaBudgetHistoryTest",
+          "tests": 10,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "class": "io.openkache.core.replication.ionia_third.IoniaHistorySettingsTest",
+          "tests": 2,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "class": "io.openkache.core.replication.ionia_third.IoniaThirdHistoryTest",
+          "tests": 7,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "class": "io.openkache.core.replication.ionia_third.IoniaThirdIntegrationTest",
+          "tests": 6,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "class": "io.openkache.core.replication.ionia_third.IoniaThirdRegressionTest",
+          "tests": 32,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "class": "io.openkache.core.runtime.OwnerWorkerTest",
+          "tests": 4,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        }
+      ]
+    },
+    "cache-server": {
+      "tests": 76,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "suites": [
+        {
+          "class": "io.openkache.server.config.ServerConfigTest",
+          "tests": 8,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "class": "io.openkache.server.ionia.IoniaProcessTest",
+          "tests": 1,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "class": "io.openkache.server.ionia.IoniaStorageWireTest",
+          "tests": 7,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "class": "io.openkache.server.ionia.IoniaTcpConcurrencyTest",
+          "tests": 1,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "class": "io.openkache.server.ionia_fifth.IoniaFifthProcessTest",
+          "tests": 1,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "class": "io.openkache.server.ionia_fifth.IoniaFifthProfileTest",
+          "tests": 4,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "class": "io.openkache.server.ionia_fifth.IoniaFifthTcpConcurrencyTest",
+          "tests": 1,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "class": "io.openkache.server.ionia_fourth.IoniaFourthProcessTest",
+          "tests": 1,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "class": "io.openkache.server.ionia_fourth.IoniaFourthProfileTest",
+          "tests": 3,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "class": "io.openkache.server.ionia_fourth.IoniaFourthTcpConcurrencyTest",
+          "tests": 1,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "class": "io.openkache.server.ionia_fourth.IoniaPrepareSizerWireTest",
+          "tests": 1,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "class": "io.openkache.server.ionia_second.IoniaLeaderReadProcessTest",
+          "tests": 1,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "class": "io.openkache.server.ionia_second.IoniaLeaderReadTcpConcurrencyTest",
+          "tests": 1,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "class": "io.openkache.server.ionia_sixth.IoniaSixthProcessTest",
+          "tests": 1,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "class": "io.openkache.server.ionia_sixth.IoniaSixthProfileTest",
+          "tests": 4,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "class": "io.openkache.server.ionia_sixth.IoniaSixthTcpConcurrencyTest",
+          "tests": 1,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "class": "io.openkache.server.ionia_sixth.IoniaWorkerModelTest",
+          "tests": 1,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "class": "io.openkache.server.ionia_sixth.IoniaWorkerRecoveryTest",
+          "tests": 1,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "class": "io.openkache.server.ionia_sixth.IoniaWorkerStorageTest",
+          "tests": 10,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "class": "io.openkache.server.ionia_third.IoniaThirdProcessTest",
+          "tests": 1,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "class": "io.openkache.server.ionia_third.IoniaThirdProfileTest",
+          "tests": 3,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "class": "io.openkache.server.ionia_third.IoniaThirdTcpConcurrencyTest",
+          "tests": 1,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "class": "io.openkache.server.lifecycle.ServerApplicationTest",
+          "tests": 11,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "class": "io.openkache.server.netty.FrameCodecTest",
+          "tests": 11,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        }
+      ]
+    },
+    "experiment-runner": {
+      "tests": 16,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "suites": [
+        {
+          "class": "io.openkache.runner.ExperimentRunnerIntegrationTest",
+          "tests": 2,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "class": "io.openkache.runner.LatencyReservoirTest",
+          "tests": 4,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "class": "io.openkache.runner.RunnerConfigTest",
+          "tests": 6,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "class": "io.openkache.runner.WorkloadGeneratorTest",
+          "tests": 4,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        }
+      ]
+    }
+  },
+  "total_tests": 413,
+  "v04b_tests": {
+    "io.openkache.core.replication.ionia_sixth.IoniaWorkerSettingsTest": {
+      "class": "io.openkache.core.replication.ionia_sixth.IoniaWorkerSettingsTest",
+      "tests": 3,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "io.openkache.server.ionia_sixth.IoniaSixthProcessTest": {
+      "class": "io.openkache.server.ionia_sixth.IoniaSixthProcessTest",
+      "tests": 1,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "io.openkache.server.ionia_sixth.IoniaSixthProfileTest": {
+      "class": "io.openkache.server.ionia_sixth.IoniaSixthProfileTest",
+      "tests": 4,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "io.openkache.server.ionia_sixth.IoniaSixthTcpConcurrencyTest": {
+      "class": "io.openkache.server.ionia_sixth.IoniaSixthTcpConcurrencyTest",
+      "tests": 1,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "io.openkache.server.ionia_sixth.IoniaWorkerModelTest": {
+      "class": "io.openkache.server.ionia_sixth.IoniaWorkerModelTest",
+      "tests": 1,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "io.openkache.server.ionia_sixth.IoniaWorkerRecoveryTest": {
+      "class": "io.openkache.server.ionia_sixth.IoniaWorkerRecoveryTest",
+      "tests": 1,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "io.openkache.server.ionia_sixth.IoniaWorkerStorageTest": {
+      "class": "io.openkache.server.ionia_sixth.IoniaWorkerStorageTest",
+      "tests": 10,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    }
+  },
+  "v04b_test_count": 21,
+  "acceptance_evidence": {
+    "V04B-01": "S/W 필수 정수 범위 1..256, 두 차원을 구별하는 SHA-256 configuration profile",
+    "V04B-02": "고정 shard%W 매핑, S1/4/7/256 × W1/2/4/8/256, Main 입력 거절",
+    "V04B-03": "S4/W1,2,4,8의 실제 전용 thread ID·동시 작업 상한·동일 4개 파일",
+    "V04B-04": "동일 shard Aa/BB FIFO, caller cancel 뒤 실제 작업 유지, 다른 worker 진행",
+    "V04B-05": "W1/S4 전체 파일 FIFO reset; original engine View 설치가 old apply를 drain한 뒤 S4 reset/replay",
+    "V04B-06": "실제 OwnerWorker mailbox(capacity=2 시험 전용) BUSY, I/O hook IOException, close/reopen, 오류를 성공으로 변환하지 않음",
+    "V04B-07": "단독 어댑터의 같은 S에서 W 변경 재열기, 원본 KV 포맷 호환 읽기; Node는 별도 profile 변경 금지",
+    "V04B-08": "S/W directory 및 wire 혼용 거절, legacy/corrupt layout/extra shard, lock·trailing repair",
+    "V04B-09": "S4/W1,2,4,8 ×16 seeds ×64 CRUD =4096 실제 파일 요청, 단일 제출 순서의 참조 상태와 비교",
+    "TCP": "W1/W4 각각 32 hot-key 동시 쓰기·원본 Follower+Meta 읽기·모든 replica의 appliedIndex/valueVersion 및 고정 S4 파일 매핑",
+    "JVM": "독립 JVM 3개 S4/W2, leader crash·View 변경·restart/rejoin·CLI set/get/delete"
+  },
+  "preservation": {
+    "protected_count": 213,
+    "unchanged_sha256": {
+      "cache-core/src/main/java/io/openkache/core/api/CacheEngine.java": "d2da2321e63ce6d31299b3dd318f7b4eb32fa96a9b867eda705b4c3339edff4f",
+      "cache-core/src/main/java/io/openkache/core/api/Command.java": "64dd16dcff7020d13d7ed9a5071c4696cd815f4e92bb292fa02f75ad74a31b0f",
+      "cache-core/src/main/java/io/openkache/core/api/Deadline.java": "1172575557bdf42315503c158850d0f4390dcc34092d2bcf94a5d969e625fa9e",
+      "cache-core/src/main/java/io/openkache/core/api/EngineSnapshot.java": "bbbc8ce5d3da1e8edbbcbc403bfc31b8c12e6ec43a5a5bbe513efb69f8f4c59b",
+      "cache-core/src/main/java/io/openkache/core/api/package-info.java": "093960f35c1ca4a1ccf312aa95c590413585c729c4508175d1a9123ed9378ab8",
+      "cache-core/src/main/java/io/openkache/core/api/Redirect.java": "bbf44dad6dade58a492bd2558c4ee5e0e8238e540233b51f609c5248ea9702a7",
+      "cache-core/src/main/java/io/openkache/core/api/RequestContext.java": "bba38513a6ef290f39b97ecf13a12110e3976f837aaf22ae9bcdf2f44f4c76d4",
+      "cache-core/src/main/java/io/openkache/core/api/Result.java": "70825e45c2ae0dd450e6f8e23370699acf04ad6a9eb56bbe09b22b4e72253a78",
+      "cache-core/src/main/java/io/openkache/core/api/ResultStatus.java": "2c83e08e3a22a8f2e34eede9e08ebd8b8d6188a4d507cdaad46d7faab67a3b4e",
+      "cache-core/src/main/java/io/openkache/core/balance/package-info.java": "e8317923dc10a602d99b2157bff9e6795c85794aad82cf0e73159a61a34d47cc",
+      "cache-core/src/main/java/io/openkache/core/failure/package-info.java": "6ee0c60496eb70a20c18c77314aaf8efeb303a7dd6baa1b1ce6e14f373889d3c",
+      "cache-core/src/main/java/io/openkache/core/kv/KvEngine.java": "3c33a1d8ddf934e06108834de326e25db73ff92600e4a579ffab9d8d56e1d1f3",
+      "cache-core/src/main/java/io/openkache/core/kv/KvStore.java": "1d5d245747776c5c87fdbe1568b9c5de754b0f356542e6b478daf57c743f5cf7",
+      "cache-core/src/main/java/io/openkache/core/kv/package-info.java": "8e3cd759cfc85144c62549091e1774a234f4d1f7b34c64b2321d4dfe4e3359ba",
+      "cache-core/src/main/java/io/openkache/core/migration/package-info.java": "1fd4e5d2b15a2cd3b106ae35ccdf67c35b27693f0f4f08219f0e3dc52648d478",
+      "cache-core/src/main/java/io/openkache/core/model/Bytes.java": "29c9141da5375efa43f2e36115ec2bb5d8a753be88b4d24d38000ed2bb0d5d6e",
+      "cache-core/src/main/java/io/openkache/core/model/ClientId.java": "c3d0fa845816824e910741a45408be8afd5049b9fcde8099605df6ee95f9b4df",
+      "cache-core/src/main/java/io/openkache/core/model/Ids.java": "d85d5d1091398593e13191ac6ca823324190636c9e3850af255e68a6f4f36a62",
+      "cache-core/src/main/java/io/openkache/core/model/NodeId.java": "5ddcb4a18a62c0b6ed78139d18a41e0408d6e05abf9c55130662dc546afdc08e",
+      "cache-core/src/main/java/io/openkache/core/model/OperationId.java": "b26b9a450ea6d1046a7dce2e6dfc86daa7f120af667ba54c17e1fdb47d7eba32",
+      "cache-core/src/main/java/io/openkache/core/model/OwnershipEpoch.java": "49b79e20ec34a79741a134343b8623e00a24ea9e18010de7cd25bc503976e295",
+      "cache-core/src/main/java/io/openkache/core/model/package-info.java": "28a289448482111da02244d714bc607f70b4d0012ccaaa7d685d62ee98ddab2a",
+      "cache-core/src/main/java/io/openkache/core/model/RoutingVersion.java": "ffd97ce4e2e01cdc3dec35092fe078642a1ebf0efa7a1f7e5771a5e21154c977",
+      "cache-core/src/main/java/io/openkache/core/model/TabletId.java": "158a1da1e028d5900d1ffa87a1ab12145ea3b6612718165a990eede10fa1952b",
+      "cache-core/src/main/java/io/openkache/core/model/WorkerId.java": "f3f409ea96fce562dfa76e1e1ec3c823301497cd341659ead59612bff5276865",
+      "cache-core/src/main/java/io/openkache/core/replication/package-info.java": "0644875a470ef6297ade1bd9a3271166690e9a4526b6be9b778c33fa7af71c4f",
+      "cache-core/src/main/java/io/openkache/core/runtime/Mailbox.java": "4514c513028d9bc481db4e9326d1c2cc1e4a24c4aef483e18624a4aa9bb69b6d",
+      "cache-core/src/main/java/io/openkache/core/runtime/OwnerWorker.java": "5764a54dd0b7459bef5ee0ca94a9a41d078243a031a656b67745626477725b11",
+      "cache-core/src/main/java/io/openkache/core/runtime/package-info.java": "00ee7725d1c91003ad39d9e3f67ed4218795df48a41c2478bbd69709c09e1341",
+      "cache-core/src/main/java/io/openkache/core/runtime/TimerEvent.java": "9d66641cedf326d5b5eedcd43e36db0ca809354190d891b34ff0412cb594a833",
+      "cache-core/src/main/java/io/openkache/core/spi/EpochRecord.java": "13d0816d847a6f0d963a74558cae1ef206d73830a28a1201873f032808dc8c4d",
+      "cache-core/src/main/java/io/openkache/core/spi/EpochStore.java": "83fba9b685d0127f4b8017b8969d6d09e9879491649e8b352f5a923e010f9f34",
+      "cache-core/src/main/java/io/openkache/core/spi/MetricsSink.java": "58ec25499f5fbe9df08410548689b71730637eb0643906b08d1e9e6d136d05a5",
+      "cache-core/src/main/java/io/openkache/core/spi/NoOpMetricsSink.java": "69a51ae93c64b0dd37e43d507d09d36135a3109625209ec413ab89b04bcc9da0",
+      "cache-core/src/main/java/io/openkache/core/spi/package-info.java": "1ca91aecb4f2ce53ee36fd37752bff870e9dd0b9f657d799338d4301b468ec45",
+      "cache-core/src/main/java/io/openkache/core/spi/PeerEnvelope.java": "3af44930c9ce58529a430ec7b9c39d7aff3ea9e7e893802a931c8a52d0d96afe",
+      "cache-core/src/main/java/io/openkache/core/spi/PeerMessage.java": "2e1999a6476e94efa4ecd89b8de203d0284c033a55eeca458b343e13fdc8707d",
+      "cache-core/src/main/java/io/openkache/core/spi/SystemTimeSource.java": "103eec70318c695f375fefb53f62eaf9f50d31d6f8a18b55943c452b6e7b71d4",
+      "cache-core/src/main/java/io/openkache/core/spi/TimeSource.java": "a66ed07fe82afd43faa21f2fcb6c2c63090835c69dde152167c04cab9fc104a2",
+      "cache-core/src/main/java/io/openkache/core/spi/Transport.java": "5d49810dd0a77b15a44033ea049d9bd6fa714c21dac67949f85875ce7d5ef3e6",
+      "cache-core/src/main/java/io/openkache/core/tablet/package-info.java": "4e115c5c86a5ef6d454ecda487c13787aea5795fdf265026207bd6d9453adacc",
+      "cache-core/src/main/java/io/openkache/core/replication/ionia/IoniaClient.java": "aa1e50a44ec75bf83b00b58a41e85df35a95b36c145524a1d36260ded9304f0a",
+      "cache-core/src/main/java/io/openkache/core/replication/ionia/IoniaClientTransport.java": "2eff58e5ccafbb63fb4c0e95a8c1eb24cfb21dcf79da35ac098563a46d7f93f5",
+      "cache-core/src/main/java/io/openkache/core/replication/ionia/IoniaConfig.java": "93bea1d89e82f1eb90302cfef8ae597448697417568c7485982a02f832cedd5d",
+      "cache-core/src/main/java/io/openkache/core/replication/ionia/IoniaEngine.java": "735996e1ee06f1a4a17a2a4a67ef2adc78e7df0b5956d5b2ecd9fffff3b863f5",
+      "cache-core/src/main/java/io/openkache/core/replication/ionia/IoniaHistory.java": "35bfdbce5c894f90e2e4e5cd0dfd163f698952666ff8aca0757ce18bb1c56eab",
+      "cache-core/src/main/java/io/openkache/core/replication/ionia/IoniaLog.java": "59e7d96f0c483cc01764cc14fd1369e1ee5c676b3d36eed95830b0912ae66a40",
+      "cache-core/src/main/java/io/openkache/core/replication/ionia/IoniaMessage.java": "91fa04a4edecf90983026cc058013af7b60e8ccb1f231813b6a89efabddddd60",
+      "cache-core/src/main/java/io/openkache/core/replication/ionia/IoniaRecovery.java": "fba902624a411479e0554e032c4c6abc2218ebbd1194b115defd63aa24cd7e10",
+      "cache-core/src/main/java/io/openkache/core/replication/ionia/IoniaStorage.java": "adcf21254b681278488da928132f455916029fca02532d78083671bb6fbda80c",
+      "cache-core/src/main/java/io/openkache/core/replication/ionia/IoniaViewStore.java": "edfb77364fed71f039b42f0e5cdfdeebbb03815f2363a4fb2e110003236492b2",
+      "cache-core/src/main/java/io/openkache/core/replication/ionia/package-info.java": "0fc9bf3ccb7fff6b6344f0981ec5f9934b4d5d427721073a71628cb83d109098",
+      "cache-core/src/main/java/io/openkache/core/replication/ionia-second/README.md": "82d4f837c58eb616810997755553a294dfd7c6d6d9db63183906af2f6ec23413",
+      "cache-core/src/main/java/io/openkache/core/replication/ionia-fifth/src/main/java/io/openkache/core/replication/ionia_fifth/IoniaApplyGate.java": "5bb45b4be63e1e12da97e920e8b70ed12985e5365c2c8ab68b3f6de43495b9c5",
+      "cache-core/src/main/java/io/openkache/core/replication/ionia-fifth/src/main/java/io/openkache/core/replication/ionia_fifth/IoniaApplySettings.java": "354ee0e934a28195f5fea04e3e3ba375432a0df28fb51ba97742b9d46737914b",
+      "cache-core/src/main/java/io/openkache/core/replication/ionia-fifth/src/main/java/io/openkache/core/replication/ionia_fifth/IoniaFifthEngine.java": "bf24fc87422589915a7f8f394c8c6d2fdd0931e2af66ec2fb7fef88ffc3675db",
+      "cache-core/src/main/java/io/openkache/core/replication/ionia-fifth/src/test/java/io/openkache/core/replication/ionia_fifth/IoniaApplyGateTest.java": "5f89ade56da5372a277ddf5dc868ec8249865d7d4aeafcb4c3e4f731ffe2e977",
+      "cache-core/src/main/java/io/openkache/core/replication/ionia-fifth/src/test/java/io/openkache/core/replication/ionia_fifth/IoniaFifthApplyTest.java": "6767e4e985ea06df54041c64e1b4cbb81c17d2febe25ba29c1fec0098e48a556",
+      "cache-core/src/main/java/io/openkache/core/replication/ionia-fifth/src/test/java/io/openkache/core/replication/ionia_fifth/IoniaFifthHistoryTest.java": "7cb54a334fc5982e641e8e3a66bba0db9202f606e54b1c1fa064f969013751bb",
+      "cache-core/src/main/java/io/openkache/core/replication/ionia-fifth/src/test/java/io/openkache/core/replication/ionia_fifth/IoniaFifthRegressionTest.java": "1f80f69c8a3220d37624421fddb4a7a060f31c3993cc91e357bd739ecfa87788",
+      "cache-core/src/main/java/io/openkache/core/replication/ionia-fifth/src/test/java/io/openkache/core/replication/ionia_fifth/IoniaFifthWorkerIntegrationTest.java": "558537b8bd5e375fdfaaa87113eb26f4550dc2071134db27ca85098d4a09295e",
+      "cache-core/src/main/java/io/openkache/core/replication/ionia-fourth/src/main/java/io/openkache/core/replication/ionia_fourth/IoniaBatchPlanner.java": "0232b9c67e9ef49277247c8970c95b7cd54452d066efbe57c5b91994656bdc6b",
+      "cache-core/src/main/java/io/openkache/core/replication/ionia-fourth/src/main/java/io/openkache/core/replication/ionia_fourth/IoniaBatchSettings.java": "31932d5d46f0eba0739818612c5c00b09acec7835aad9a1dec54b43717fbd1c8",
+      "cache-core/src/main/java/io/openkache/core/replication/ionia-fourth/src/main/java/io/openkache/core/replication/ionia_fourth/IoniaFourthEngine.java": "926041fd7e977b9eaeaecd7cda4d5eedc5022cdd28ab3f7c530340399e6c03e0",
+      "cache-core/src/main/java/io/openkache/core/replication/ionia-fourth/src/main/java/io/openkache/core/replication/ionia_fourth/IoniaPrepareSizer.java": "76d05788962bb4390fd583afd611029adaa10dd051ea769012b50b8d6a26113d",
+      "cache-core/src/main/java/io/openkache/core/replication/ionia-fourth/src/test/java/io/openkache/core/replication/ionia_fourth/IoniaBatchPlannerTest.java": "3f49ec7387717b16905d62b94e329c0025ba3718f76549f12ed504e411012453",
+      "cache-core/src/main/java/io/openkache/core/replication/ionia-fourth/src/test/java/io/openkache/core/replication/ionia_fourth/IoniaFourthBatchIntegrationTest.java": "88fdf0b6a8eb8710f74e65644523e2febb63ef54d5d35f231d3db8705cc202a6",
+      "cache-core/src/main/java/io/openkache/core/replication/ionia-fourth/src/test/java/io/openkache/core/replication/ionia_fourth/IoniaFourthHistoryTest.java": "154ddfc5e510df7f30a10460bff69285fa54daf1bd8debd0b84ed2db0e89b6f4",
+      "cache-core/src/main/java/io/openkache/core/replication/ionia-fourth/src/test/java/io/openkache/core/replication/ionia_fourth/IoniaFourthRegressionTest.java": "656fa5785de40c7d45d4a524038ebb42cd3bceceb6ef69527819dac3d83e1b2c",
+      "cache-core/src/main/java/io/openkache/core/replication/ionia-fourth/src/test/java/io/openkache/core/replication/ionia_fourth/IoniaFourthWorkerIntegrationTest.java": "6386def07e0d0d6b47a8786adb29817abe9f2e626efcb341ec08dfec8515c444",
+      "cache-core/src/main/java/io/openkache/core/replication/ionia-second/src/main/java/io/openkache/core/replication/ionia_second/IoniaLeaderReadClient.java": "fedccd1c158bd7c99df5500920b06e91ce4bb0114e72c30ecb338b911bfded7f",
+      "cache-core/src/main/java/io/openkache/core/replication/ionia-second/src/test/java/io/openkache/core/replication/ionia_second/IoniaLeaderReadClientTest.java": "fc72d56a4b85f56bc6129d90ee6f8a5f57b0d4f901ed9ae0cac06220040ffb93",
+      "cache-core/src/main/java/io/openkache/core/replication/ionia-second/src/test/java/io/openkache/core/replication/ionia_second/IoniaLeaderReadHistoryTest.java": "44a356d10c50a555dcadccabb03b634137b8cdabf5877385ba24fafd484ed2d9",
+      "cache-core/src/main/java/io/openkache/core/replication/ionia-second/src/test/java/io/openkache/core/replication/ionia_second/IoniaLeaderReadIntegrationTest.java": "ce031b6920b8d6b096426b10d9a5f379ec9eaae39978255de03c6e7d7cd6a48e",
+      "cache-core/src/main/java/io/openkache/core/replication/ionia-second/src/test/java/io/openkache/core/replication/ionia_second/LeaderReadFixture.java": "94e2a451d71f1d9f41b57d84b15ba20072ba6d8dd66488d200fc7be901438ddf",
+      "cache-core/src/main/java/io/openkache/core/replication/ionia-third/src/main/java/io/openkache/core/replication/ionia_third/IoniaBudgetHistory.java": "434e28a850fa4be50a0383961d5eb30d372309eba9ff498e0a9500c19fc20f09",
+      "cache-core/src/main/java/io/openkache/core/replication/ionia-third/src/main/java/io/openkache/core/replication/ionia_third/IoniaHistorySettings.java": "9d0cf57e4cb1d67be7af0d3252bcc7cc1b197aee8077861129d37b028467e61f",
+      "cache-core/src/main/java/io/openkache/core/replication/ionia-third/src/main/java/io/openkache/core/replication/ionia_third/IoniaThirdEngine.java": "4d95b289711039e254754975edff3c538c39a9204a2d3a1f04802098c800c723",
+      "cache-core/src/main/java/io/openkache/core/replication/ionia-third/src/test/java/io/openkache/core/replication/ionia_third/IoniaBudgetHistoryTest.java": "2bbce3f55e3bff41c445eda77ad5e7c1e6f3dcb6e7f2b2a9fecd340be5790222",
+      "cache-core/src/main/java/io/openkache/core/replication/ionia-third/src/test/java/io/openkache/core/replication/ionia_third/IoniaHistorySettingsTest.java": "5830c9db967bec968db31e3682c6546b81edf427a8fc215a28241f07a89e85e9",
+      "cache-core/src/main/java/io/openkache/core/replication/ionia-third/src/test/java/io/openkache/core/replication/ionia_third/IoniaThirdHistoryTest.java": "c7643c1ed6ecfb42ae952562d72286871160df4011ce490ecba60fdb5776f7f2",
+      "cache-core/src/main/java/io/openkache/core/replication/ionia-third/src/test/java/io/openkache/core/replication/ionia_third/IoniaThirdIntegrationTest.java": "1a6b6b3e57d82d23fa2cdd82403c3f0f70b651b0912a02931c28121fb5ed88d5",
+      "cache-core/src/main/java/io/openkache/core/replication/ionia-third/src/test/java/io/openkache/core/replication/ionia_third/IoniaThirdRegressionTest.java": "3856210775a505219245f3c89d077e55690960ac9d747bd8c7a4504ea79f52e5",
+      "cache-core/src/test/resources/junit-platform.properties": "bcc14fca7b61c4db29c203295258e63a297e91b0e5464b8ea29f733b38e0ac73",
+      "cache-core/src/test/java/io/openkache/core/api/DeadlineTest.java": "386a59e1cdffe74579f4dc77224c1d30e990a1c63d327d01b65bf5c656f23236",
+      "cache-core/src/test/java/io/openkache/core/api/ResultTest.java": "14cd51baffc3f73dd4a843761cc79dbc6fc78ccb44d04ada63a1c7fe205ad8ba",
+      "cache-core/src/test/java/io/openkache/core/kv/KvEngineTest.java": "6efc3fc2f7910f5e9dee0749bfcecfd45437134c7d52d5b4b33f8aebe2866df3",
+      "cache-core/src/test/java/io/openkache/core/model/BytesTest.java": "dc9001b30e77e8a0b28c2c214e81aa4bbf1b2a32bcee979f3c3e56e84079ca44",
+      "cache-core/src/test/java/io/openkache/core/model/IdentifierTest.java": "2e766ef6c4f248c60fd2908bebb7d814e7916f08b243a7c174ea12a3bb5ded64",
+      "cache-core/src/test/java/io/openkache/core/runtime/OwnerWorkerTest.java": "b7d284429df5b5d371cf0683f00d3d59927dcd8ba5436686ab3eb2ffb718c2a6",
+      "cache-core/src/test/java/io/openkache/core/replication/ionia/IoniaClientTest.java": "4212a88b3ae40189ec924a33d32fce167c1b2609e0053f28e686e4c7c3b2f38a",
+      "cache-core/src/test/java/io/openkache/core/replication/ionia/IoniaConfigTest.java": "42c5a744af6d44270b2e079a08cad45a9dc29b7ec7bc4780eaa942fd7904f5af",
+      "cache-core/src/test/java/io/openkache/core/replication/ionia/IoniaLinearizabilityTest.java": "be258285d37a0bea6f1bce142e3163b4847726964f85a89ef500a994ebdc403f",
+      "cache-core/src/test/java/io/openkache/core/replication/ionia/IoniaLogTest.java": "56eca1fa6028c98ebb29e24bc31adf8df5cc8628b4f4fc911f2896656de51623",
+      "cache-core/src/test/java/io/openkache/core/replication/ionia/IoniaMessageTest.java": "568cd44761d6a5ccb71c04ce4a3260871ea22fd0b3b0a1862366121d64f380fc",
+      "cache-core/src/test/java/io/openkache/core/replication/ionia/IoniaO00Test.java": "fa70f5232bb414288d83f37269611d21e36a4b0776beed58c4601fc875c1fa66",
+      "cache-core/src/test/java/io/openkache/core/replication/ionia/IoniaStateMachineTest.java": "fb62c5ee1019714d1668a39d0047e786b99a954fa3240e3dfcb2f0541f0ccf35",
+      "cache-core/src/test/java/io/openkache/core/replication/ionia/IoniaWorkerIntegrationTest.java": "4114508e59c1ed7a784e9ea6a6300bab0d63ef9433c34d6ee00c4f085811a493",
+      "cache-server/src/main/resources/application.properties": "f053e515981906248f0dd061690a5645d9ce1873835719e23e51afe68a8a3ead",
+      "cache-server/src/main/resources/logback.xml": "a8d9768b5340d4b0c027c3cc89748832dead16cda3a6488c6e7d044478165181",
+      "cache-server/src/main/java/io/openkache/server/Main.java": "abb5e7ebf59f27aa84bfae370cafaf75f76b59c903e49a357db0c5737742f1b6",
+      "cache-server/src/main/java/io/openkache/server/config/ConfigException.java": "686446fc823b67082906d8da3a7294e16e34b704fb1f0c7cc178fb498dc60648",
+      "cache-server/src/main/java/io/openkache/server/config/package-info.java": "794a95393dea38e654dbc430e3977faa6a53e444d682fa225a1247b4b7347549",
+      "cache-server/src/main/java/io/openkache/server/config/ServerConfig.java": "57e84bef4f61e40f79a65ce1edc248cf7279c5aeefd59636ea2425f64e3aa7c0",
+      "cache-server/src/main/java/io/openkache/server/ionia/IoniaClientMain.java": "849246f9de33e0ad49a84891fb52945cca61d2eabccc289ee9ce1115efce81b4",
+      "cache-server/src/main/java/io/openkache/server/ionia/IoniaFileStorage.java": "fc8b5937b96f855b25fd483ef03d21dbb06f806bef42e05194b68d1e9a7f500d",
+      "cache-server/src/main/java/io/openkache/server/ionia/IoniaFileViewStore.java": "8d21a0723c008b0e55da8adc9fd3f0547880d6407ff0f3b17cd2fbd980378c54",
+      "cache-server/src/main/java/io/openkache/server/ionia/IoniaMain.java": "35beb0093ceb5554b3ec92b3541e3082f4558d14ff43835aaf5c695e9b99e268",
+      "cache-server/src/main/java/io/openkache/server/ionia/IoniaNode.java": "aa551d94b7f192e4e1030b991dfc19752c1266c864a74887d38c0230cae983f1",
+      "cache-server/src/main/java/io/openkache/server/ionia/IoniaTcpTransport.java": "c084d695186c1698e9964cf06186d655bd6a0bb2dbd4c16c46dc893bb0cdf801",
+      "cache-server/src/main/java/io/openkache/server/ionia/IoniaWire.java": "11abe325b6a313e30c0b7471f98a7b3943eddcf02583651b656c0fd547502f85",
+      "cache-server/src/main/java/io/openkache/server/ionia_fifth/IoniaFifthClientMain.java": "e64e03cd39b9208cf18a4bb1b74f66df667335645d0cd96274fea64ef22e9e50",
+      "cache-server/src/main/java/io/openkache/server/ionia_fifth/IoniaFifthMain.java": "097d022e9a30ce8aa36684e6b9351f439120322a1bc44e5720ffee4ec9076285",
+      "cache-server/src/main/java/io/openkache/server/ionia_fifth/IoniaFifthNode.java": "bcce1d49e8eb2d3b0eb2b36982a58eab35dfd7c03e499d821f6aa549bef9ce42",
+      "cache-server/src/main/java/io/openkache/server/ionia_fourth/IoniaFourthClientMain.java": "bec4403a113c42c70f76d77b7e881223a03cb9b4c28d9a6933905dc3c0da6aea",
+      "cache-server/src/main/java/io/openkache/server/ionia_fourth/IoniaFourthMain.java": "64088936f3aabdc54a1839b6895cb64d2373f6b571234eb6a0f5e4f981883ec4",
+      "cache-server/src/main/java/io/openkache/server/ionia_fourth/IoniaFourthNode.java": "87ed59ba81095f8a25dbeda41f0dcef34835534c6c3c2c3ca7f953dffe64a88e",
+      "cache-server/src/main/java/io/openkache/server/ionia_second/IoniaClientMain.java": "a01df3845eb59a6274b7c68f3ca169be7c6e05f7572f1a1ef90fffeb47ab9608",
+      "cache-server/src/main/java/io/openkache/server/ionia_third/IoniaThirdClientMain.java": "059108d68eaa5bd072e0d6c3fc10904f14b625b73a9f7a0060ec739e63c7f7d8",
+      "cache-server/src/main/java/io/openkache/server/ionia_third/IoniaThirdMain.java": "47128951fc4344f5733be6dce551a553cb706eb9acb7505dd94ec7921dcbb8ee",
+      "cache-server/src/main/java/io/openkache/server/ionia_third/IoniaThirdNode.java": "4569d91e356f93fdd5fde979f4a6f96cbbaedc33f2b3bdf0d0c12a2c77ca37e1",
+      "cache-server/src/main/java/io/openkache/server/lifecycle/package-info.java": "10463a89f8ed831fb963c7be60fd9ac5988a89a01487b34c3ff07e201a3844b5",
+      "cache-server/src/main/java/io/openkache/server/lifecycle/ServerApplication.java": "b34302dfb45337db393006737c313f2ca454a76edc26e2fdaa602626041e1448",
+      "cache-server/src/main/java/io/openkache/server/metrics/package-info.java": "0ea8e5f3974847eb76cdb5ee76f6505589bcd4440afc73c52b74ec997d9419c2",
+      "cache-server/src/main/java/io/openkache/server/metrics/ServerMetrics.java": "95c05ec06f87bd5f88ab42af1681d3f4d4763573d6be69dad79685b050c9918d",
+      "cache-server/src/main/java/io/openkache/server/netty/AbstractFrameHandler.java": "0f501b47fb0d4f98df5b3fc2465dcea6f78013e8330fe2ada957fa3020f37df7",
+      "cache-server/src/main/java/io/openkache/server/netty/ClientRequestHandler.java": "c5d9f13ed8c3fcdde6a9336f9084a35a5804a73508a28dc208241dde33001481",
+      "cache-server/src/main/java/io/openkache/server/netty/CommandCodec.java": "073d76142ea814a8b9f7da27ede9b440cc4586740b815694cc375f72a0fdc145",
+      "cache-server/src/main/java/io/openkache/server/netty/Frame.java": "087f60365789aefca851b9b4d16ba92a23f1bd691985f6da20ff21583604dd76",
+      "cache-server/src/main/java/io/openkache/server/netty/FrameDecoder.java": "0f1adb8262ab60c2fdeb81ef67ba2af42392b66589a23e1ad98b5e8c59ef1e2c",
+      "cache-server/src/main/java/io/openkache/server/netty/FrameEncoder.java": "c82658a78d1efc31053aa0345da2338a387b93b9e142ffbd60358b6b3dbda3d1",
+      "cache-server/src/main/java/io/openkache/server/netty/package-info.java": "b2c4a32275543b1cc3a9d82adc0fe8c54b90e270b5f510763cef2100be24551c",
+      "cache-server/src/main/java/io/openkache/server/netty/PeerMessageHandler.java": "af29a817f9ad64bb99d8ae362a4914edf0ea85f2b8673670c67d8c3e8b98a415",
+      "cache-server/src/main/java/io/openkache/server/netty/Protocol.java": "e8128a0487352428e0dc6acbe75ecabfe62d6d49adb77cf6a72574a36efa2c60",
+      "cache-server/src/main/java/io/openkache/server/netty/ProtocolException.java": "dbde75cb769b1a4d98dd9a35090653288bc7ce2c07a1276c237cec1a599a61b8",
+      "cache-server/src/test/java/io/openkache/server/config/ServerConfigTest.java": "7e6ed688614ce884c239944670b204c5ebed5cb60a8a04b636c61ff733ff28d8",
+      "cache-server/src/test/java/io/openkache/server/ionia/IoniaProcessTest.java": "a21efd119e1555c9fd43be711504244515e092d57f02ebfc275ccc12a6c9a3da",
+      "cache-server/src/test/java/io/openkache/server/ionia/IoniaStorageWireTest.java": "c7c1916f872518f3733fa2c1194d692faf81bed80076f16a5193a8efd98e3097",
+      "cache-server/src/test/java/io/openkache/server/ionia/IoniaTcpConcurrencyTest.java": "7a9a1fdd6266774aad3bbf147847718e744c6a87cb186415904805dd8604d65f",
+      "cache-server/src/test/java/io/openkache/server/ionia_fifth/IoniaFifthProcessTest.java": "b2b325cb03c11e01a49de1ee67d95f18bcf6f2d21e301721797e771d8b077ed1",
+      "cache-server/src/test/java/io/openkache/server/ionia_fifth/IoniaFifthProfileTest.java": "776acf73737dc6720c0f35a15cd7f3948b1fe25d04db60ce3b1b020dda68b05f",
+      "cache-server/src/test/java/io/openkache/server/ionia_fifth/IoniaFifthTcpConcurrencyTest.java": "61f51ec67f3c5aa49dcdb2a412a0d3dd6f1cb6d6e76b4efcf451f7ce7854da5e",
+      "cache-server/src/test/java/io/openkache/server/ionia_fourth/IoniaFourthProcessTest.java": "0d2d5db64cd0e3a28dc963afcaf9434759f76c8f519870b55349cabe1048ce60",
+      "cache-server/src/test/java/io/openkache/server/ionia_fourth/IoniaFourthProfileTest.java": "fb9b4800045cdd35f237081c0057fe8e2f4552fc09556bf7c1b783a145a3e099",
+      "cache-server/src/test/java/io/openkache/server/ionia_fourth/IoniaFourthTcpConcurrencyTest.java": "a1477f96a9937cfe34777f62cca01a3719f0b9c9e477580be8525de866fa7e84",
+      "cache-server/src/test/java/io/openkache/server/ionia_fourth/IoniaPrepareSizerWireTest.java": "f4f4c31d613ad097a1bae6b96cb0d54e96f0cfa6956695d5a7e37873f84c2ba2",
+      "cache-server/src/test/java/io/openkache/server/ionia_second/IoniaLeaderReadProcessTest.java": "3f12e995bc7b89aeaf62297b87508c622d4c4eaf4ca0440291279742f1e47e39",
+      "cache-server/src/test/java/io/openkache/server/ionia_second/IoniaLeaderReadTcpConcurrencyTest.java": "91de5a1e60521e73a5e89594af33751950aae7f171235daeff27a51207c434d2",
+      "cache-server/src/test/java/io/openkache/server/ionia_third/IoniaThirdProcessTest.java": "e257dc4fc24e9f68a378db0f997fc92e2431d6817ffe77ad09bca519b3b34211",
+      "cache-server/src/test/java/io/openkache/server/ionia_third/IoniaThirdProfileTest.java": "cf44e4229ce447b322a428a5cb986b5d59292b48c8d55fda70232fefae91997f",
+      "cache-server/src/test/java/io/openkache/server/ionia_third/IoniaThirdTcpConcurrencyTest.java": "a55f7c69e94f0233482dff35d83d5cbbde0b51e011e30b8db775c652737a4af9",
+      "cache-server/src/test/java/io/openkache/server/lifecycle/ServerApplicationTest.java": "df0a64979a46355064bce8feb825fdb15843510ffed454732e485c50df6d1279",
+      "cache-server/src/test/java/io/openkache/server/netty/FrameCodecTest.java": "5ead62c67661198efab8e75e244431fdd845be4065c41f6f5cfafcc358554050",
+      "experiment-runner/src/main/java/io/openkache/runner/ConfigException.java": "37b445a0458b6160359038bc7e9ac41957be5de93ead04f0e3c307a32a244693",
+      "experiment-runner/src/main/java/io/openkache/runner/Distribution.java": "dc0a5c68dfa84e9332bcaa15a0c22a6cb212a07b853a253b1c02fac840c9a761",
+      "experiment-runner/src/main/java/io/openkache/runner/ExperimentResult.java": "cc0599285f55e27d19e69d64c6d8b51452f8c6993c0869f2dcaa8ee1ffd81035",
+      "experiment-runner/src/main/java/io/openkache/runner/ExperimentRunner.java": "a8beec24a39103f6d7eb9717f8e9acc5235968594f71fd6fb96040172a16fbe2",
+      "experiment-runner/src/main/java/io/openkache/runner/GitInfo.java": "91bcf8bc11ae99723276cee2a6b8125429970341c499af69b05be1c3ac401014",
+      "experiment-runner/src/main/java/io/openkache/runner/LatencyReservoir.java": "259e2aebd03d273012ffdf0a79e70c2e0549ffb781718719fa3fd15f1789fc10",
+      "experiment-runner/src/main/java/io/openkache/runner/Main.java": "f695c29736979a2397aa9212be5903ee18390cdaac3f7104ed6ef28f1b48136f",
+      "experiment-runner/src/main/java/io/openkache/runner/Outcome.java": "753218546345a8f284d0e21d8df238b0f47154593c0809137b510bfd85d8ecbd",
+      "experiment-runner/src/main/java/io/openkache/runner/ResultAccumulator.java": "04e297a1126d1b03bd18ac1bd574ef5e507a0bf5f6b5452bb8e64b7e01dbca77",
+      "experiment-runner/src/main/java/io/openkache/runner/ResultWriter.java": "a85d72aebcffbe6639ccf0e1235a10fce0d4f8a7d9def79ec09e6404f01a8203",
+      "experiment-runner/src/main/java/io/openkache/runner/RunnerConfig.java": "c14a2021093a72cf61546766a4fde8b044a04c5a19cd2d83c0c4fdeb4951844d",
+      "experiment-runner/src/main/java/io/openkache/runner/WireClient.java": "d8fdb31fd56d6f93cf51bc676ac3057b3f15891579ce77e2daf10bd529760282",
+      "experiment-runner/src/main/java/io/openkache/runner/WireProtocol.java": "f44eaaf464d8fc74186a27928c4b9d0aa1d6c2bf0f511ed43bcee0c9f04c76a0",
+      "experiment-runner/src/main/java/io/openkache/runner/WorkloadGenerator.java": "142f5fe3cc57793bc48cdac656adf8554c4ea69364ac1cadc99a4cf367b50228",
+      "experiment-runner/src/test/java/io/openkache/runner/ExperimentRunnerIntegrationTest.java": "4f5ccc13b703cd455727096214eeeaad9055e8c8a9938a5089ff0695a3d9f5cb",
+      "experiment-runner/src/test/java/io/openkache/runner/LatencyReservoirTest.java": "de80b4e2ef99e6144b8ceb0d3e5c5136969cc0de16c1ccbdea49dcca2422cb4a",
+      "experiment-runner/src/test/java/io/openkache/runner/RunnerConfigTest.java": "847dbc09a5dac4836ce63550914d90d42c52814b1eaa804fc5e582f42e8e33b6",
+      "experiment-runner/src/test/java/io/openkache/runner/WorkloadGeneratorTest.java": "f62a48cebcf45d5b1aac74239863af477f14a8c2089f796f2eea130ece825e75",
+      "experiments/README.md": "b3d3b74471b54c2710ca1864d2fa84b36fc196c58c8a41165a8f303ad0c7e056",
+      "experiments/baseline-single-node/config.properties": "89676a9b750e02ea17eb0a52804fb8eb929012e44b3ecc4588757ea2f1c4e850",
+      "experiments/ionia-fifth/node-1.properties": "9501e7d34ba41e071e7cb8d060cc65ea3c9c59d0e5a72b305d132630af7981ba",
+      "experiments/ionia-fifth/node-2.properties": "6eb5877a633ce01a94f96f6911f6446f1568d6a494d87c807e685f3cece1ed27",
+      "experiments/ionia-fifth/node-3.properties": "c8323dae2eda4d45c888739528873061663f6c6d8e99a6f796513d07870b8ca7",
+      "experiments/ionia-fourth/node-1.properties": "c3cc0dbb9c9d9890d60c3079465fda7a0eddbfd1de84e26af53c82cef6412dfb",
+      "experiments/ionia-fourth/node-2.properties": "c96e0fec16bd7e4950ec8106b08c7593ed2e62889db181de0079937351ea40da",
+      "experiments/ionia-fourth/node-3.properties": "a1de9490ca7c9a1ab37554757af2d3d67ffd9cfd083ffb7162807f874da21acf",
+      "experiments/ionia-o00/client.ps1": "7cacb1e00480fae84f5296ec4cec3c89f0bf3f48fa328497e65aa73975f03345",
+      "experiments/ionia-o00/node-1.properties": "3343c02fd7e2371e7a17bbdd19cd57a0e97de05741d011f15eccdd831701ca8e",
+      "experiments/ionia-o00/node-2.properties": "43a07e192bd418216270835078b880cb5cb8b5f5ba061b6a7522c27b8c7ce5a3",
+      "experiments/ionia-o00/node-3.properties": "1fdd390e1ce7b036bf1252e7b41784e56a18e975dbbe5cd4107890c93a065177",
+      "experiments/ionia-o00/start-node.ps1": "8eb735cd2383506bac4c551569c7f4247ce1cf5c409267af1f7c7679e9741086",
+      "experiments/ionia-second/client.ps1": "0a96bbafcb2365529014bfbc9e28eedd662d095d4679d99fde75274f9ad97734",
+      "experiments/ionia-second/node-1.properties": "82ebd9adb394c2916ee82289516463c003b48f4661ad4ada27f98441ecf7651f",
+      "experiments/ionia-second/node-2.properties": "d4bfe5855a4cfcc54b48db07aa724d4db056f502753bd427ba815a6c43c4647b",
+      "experiments/ionia-second/node-3.properties": "bcf859606dd65df1f142f6a434a776644ce787985c90c01515b02b1bafb6043f",
+      "experiments/ionia-second/start-node.ps1": "b0a8d7166d98e3e84eb919d8d8f9f0ce72dbce42beb8bf0c31ba6d11f871a5ba",
+      "experiments/ionia-third/client.ps1": "55e3ea46e0ed0ebcb946b1cc7911aa072f2c804c0b6dd586495430acae074726",
+      "experiments/ionia-third/node-1.properties": "7140ff0713ded63e6dbec67309ad20d215bd1f3714f56fa71b7149fca3b1f29e",
+      "experiments/ionia-third/node-2.properties": "2f3f119032b082f683bc53a01025de302f45899f74aa70ccdfd1d95361577d7b",
+      "experiments/ionia-third/node-3.properties": "5d20dbde4959676ca075367c1e87d88d3cbd65822c3edefebf033ea8f50b7d1e",
+      "experiments/ionia-third/start-node.ps1": "3001a87211a1e6b055c1b608914c2ae016ae6345e9721e6264fd942a76e8581d",
+      "docs/architecture.md": "e4626b84ee86b99de60a550f421bcd14f1a75d80e19098241547737e4a44149b",
+      "docs/git-convention.md": "8d25c45f1725b3346ceeafb819fb18aafc2aae5fd929c019bda6020f5b186c80",
+      "docs/IONIA_O00.md": "6effc31e4e0224cdf08637d31aba1fd1286bb2794b7bd88b5043c5d57b525fa7",
+      "docs/IONIA_V01.md": "8511f69fc9272414b18c59d05074f574194f64903d35c0d33a6b4c7aa4f9e6e2",
+      "docs/IONIA_V02A.md": "d86c191f7cbb74074bcdf33f1c6766835d62b580f533c7c6aa0d44b82723af15",
+      "docs/IONIA_V02A_VALIDATION.json": "381fb1a52e024d2351eedff8cd420443a1ae017d9f84a15db347068ab41fb69e",
+      "docs/IONIA_V03.md": "8f2862351115b71d25de2387b8a5880824cfff4e50663a2231efdd7292a3f090",
+      "docs/IONIA_V03_DESIGN.md": "47fb5c339276068d9319dcfe0a857edba708f9dcf9f51809e7186b4c15240ea5",
+      "docs/IONIA_V03_RESEARCH.md": "0acd65b596a1a1b96d403c3cecfadaa7a3087f30a6afdec2c715f5bb3c41d75a",
+      "docs/IONIA_V03_VALIDATION.json": "73dd8f3ee3572d4417cf0876aa5f4e4c73b5b2ac214120d13b37250f4063a2e5",
+      "docs/IONIA_V04A.md": "d4cb9a2e143ac13803c3a2d6ae86cb3d11d6eb8fe33d036709775c52f0b109c5",
+      "docs/IONIA_V04A_VALIDATION.json": "e07f94bb7915da634735dc2f754be6546ee53e5496ea6204a76db6d31fe35925",
+      "docs/module-boundaries.md": "3f8193aea00ccb83bc311d3b9c81b8cbf14c2a213a1113eb9794b2e12c79c456",
+      "docs/mr-convention.md": "2baafc368c52fcaa7c672febe441e11320d0bbde10561a5abd16de23375a4a77",
+      "docs/protocol-v1.md": "32f138cccfeae42d3e67fd7263bdefe7359fb3cea8c6cbb1864ba178e538a151",
+      "build.gradle.kts": "6eab5e171718088a8245dfc066e25c4dba5f3b9106790740334575828e7b1894",
+      "settings.gradle.kts": "1c50f490085f61698f59d8745f8e300537d8a8716a1f980c1cb782362d006143",
+      "cache-server/build.gradle.kts": "03c1e980e7160b9df8174f0fc2019d61cf348470218dd0ea669483d10a6721c9",
+      "experiment-runner/build.gradle.kts": "66e054221dfd1e3b096aa05be7b1df350191454574309e0c77ba13dad8f4800f"
+    },
+    "existing_modified_files": [
+      "cache-core/build.gradle.kts",
+      "docs/DEVELOPMENT_LOG.md"
+    ],
+    "no_common_api_or_dependency_changes": true
+  },
+  "implementation_sha256": {
+    "cache-core/build.gradle.kts": "c1a82b99d24ddb47e25a8e68203298d526a946dc0ba040a257d2029f00b3f725",
+    "cache-core/src/main/java/io/openkache/core/replication/ionia-sixth/src/main/java/io/openkache/core/replication/ionia_sixth/IoniaWorkerSettings.java": "cb6d42d992a74b9262cfd333e50c2e373abeb9f9f171ff7ae88af262b67593be",
+    "cache-core/src/main/java/io/openkache/core/replication/ionia-sixth/src/test/java/io/openkache/core/replication/ionia_sixth/IoniaWorkerSettingsTest.java": "3807d975173f2ce368168d9b106445667cf0d0f1544272892a78844d9e7e6875",
+    "cache-server/src/main/java/io/openkache/server/ionia_sixth/IoniaSixthClientMain.java": "e69a216339ae558f179f9630180aac6860a334d14cddc66a58f638f1d88dda36",
+    "cache-server/src/main/java/io/openkache/server/ionia_sixth/IoniaSixthMain.java": "36948be4156f6f110113f90d955fb8f40fb916b2f82e969c252009319240acbe",
+    "cache-server/src/main/java/io/openkache/server/ionia_sixth/IoniaSixthNode.java": "b32a4dfa864c4cc52d3dabbc61cfd2a3a8238aaed80573f2a24cd5becbf66d33",
+    "cache-server/src/main/java/io/openkache/server/ionia_sixth/IoniaWorkerFileStorage.java": "8e69c77633e3124673a1ff5e051da26b9c72cfb74805f7cb5e2d619b8bee8e4c",
+    "cache-server/src/test/java/io/openkache/server/ionia_sixth/IoniaSixthProcessTest.java": "f2baaa92aa17e4895a77e6b1634f39f811aa64fddb5555c813c92ee80d16fb08",
+    "cache-server/src/test/java/io/openkache/server/ionia_sixth/IoniaSixthProfileTest.java": "44b514f99573523c692c83c92d5788a9665f781457f73e3c37b8149b4deb5fa8",
+    "cache-server/src/test/java/io/openkache/server/ionia_sixth/IoniaSixthTcpConcurrencyTest.java": "1bbcc85360de81f38160d2c583e883478fa5e8744564f39a4db87ca6c3ffff58",
+    "cache-server/src/test/java/io/openkache/server/ionia_sixth/IoniaWorkerModelTest.java": "1e86b9091b333d0d7216a9f99066e126a39040c4b82ec18ba44aa36246b10ddc",
+    "cache-server/src/test/java/io/openkache/server/ionia_sixth/IoniaWorkerRecoveryTest.java": "645189433693faad5fe45f8d43f85a576f5c3b1870d1ebedaf896d73f1b4831e",
+    "cache-server/src/test/java/io/openkache/server/ionia_sixth/IoniaWorkerStorageTest.java": "8d4dc5946dda4ea350f6fa36e9abeee91155f006ee7c89bd333ced559b5644fe",
+    "experiments/ionia-sixth/node-1.properties": "1c42a57cc837f42770d88af964150df72cc2c3405e755df0ca7790fb6afd51b0",
+    "experiments/ionia-sixth/node-2.properties": "821089dce4f98c61ee0f5f09a3721740cf5bfe6a9af0dfadff0576323eb2b190",
+    "experiments/ionia-sixth/node-3.properties": "30fe601259bf8d1df1bf466b12b5306c4f00e35f6e7a78f8d69b34f4305b6138"
+  },
+  "production_jars": {
+    "cache-core/build/libs/cache-core-0.1.0-SNAPSHOT.jar": {
+      "sha256": "3114643d1daac8da15e2107f5cddc0fa9b534c374d0cb28336e466acc277170e",
+      "v04b_classes": [
+        "io/openkache/core/replication/ionia_sixth/IoniaWorkerSettings.class"
+      ]
+    },
+    "cache-server/build/libs/cache-server-0.1.0-SNAPSHOT.jar": {
+      "sha256": "3eb6b335349bb15c9878c700ce27a19f3c188ef5c074325e4aa3f984368c826d",
+      "v04b_classes": [
+        "io/openkache/server/ionia_sixth/IoniaSixthClientMain.class",
+        "io/openkache/server/ionia_sixth/IoniaSixthMain.class",
+        "io/openkache/server/ionia_sixth/IoniaSixthNode.class",
+        "io/openkache/server/ionia_sixth/IoniaWorkerFileStorage$Diagnostics.class",
+        "io/openkache/server/ionia_sixth/IoniaWorkerFileStorage$Entry.class",
+        "io/openkache/server/ionia_sixth/IoniaWorkerFileStorage$IoHook.class",
+        "io/openkache/server/ionia_sixth/IoniaWorkerFileStorage$WorkerSnapshot.class",
+        "io/openkache/server/ionia_sixth/IoniaWorkerFileStorage.class"
+      ]
+    }
+  },
+  "limitations": [
+    "functional fixtures, not a proof for all interleavings",
+    "static mapping may cause cross-shard head-of-line blocking",
+    "W>S yields idle extra workers; no dynamic remapping or work stealing",
+    "diagnostic snapshots are non-atomic task counters; closed worker may discard queued tasks",
+    "no throughput/p95/p99/RSS/SSD/NIC/CPU affinity/multi-host/power-loss results",
+    "replicated RAM durability logs, stable View metadata and optional KV force are distinct",
+    "no per-request stable durability WAL; total RAM log loss remains fail-closed",
+    "64MiB state transfer and 32MiB KV payload bounds retained"
+  ],
+  "git_mutations": []
+}

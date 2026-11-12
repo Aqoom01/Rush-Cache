@@ -1,0 +1,474 @@
+{
+  "schema_version": "replication-metrics-v1",
+  "date": "2026-10-30",
+  "implementation_status": "not_implemented_for_distributed_benchmark",
+  "metrics": [
+    {
+      "id": "M01",
+      "name": "logical_requests",
+      "unit": "count",
+      "definition": "각 logical_request_id를 scheduled/admitted/dispatched/terminal_response/no_response/pending로 구분한 횟수",
+      "source": "client counter",
+      "dimensions": [
+        "op",
+        "phase",
+        "outcome"
+      ],
+      "implementation_status": "PENDING; retry attempt는 새logical op 아님"
+    },
+    {
+      "id": "M02",
+      "name": "transport_attempts",
+      "unit": "count",
+      "definition": "동일 logical ID의 첫 송신+재송신 횟수; protocol 내부 message는 M15",
+      "source": "adapter counter",
+      "dimensions": [
+        "op",
+        "phase",
+        "reason"
+      ],
+      "implementation_status": "PENDING"
+    },
+    {
+      "id": "M03",
+      "name": "semantic_successes",
+      "unit": "count",
+      "definition": "GET HIT/MISS, SET OK, DELETE OK/MISS 중 계약에 맞는 완료 응답 수",
+      "source": "client response classifier",
+      "dimensions": [
+        "op",
+        "phase",
+        "outcome"
+      ],
+      "implementation_status": "PENDING; 성능 success는 정합성 검사 합격을 대신하지 않음"
+    },
+    {
+      "id": "M04",
+      "name": "dispatch_lag",
+      "unit": "ns",
+      "definition": "actual_invocation_ns - planned_invocation_ns, 같은 client clock",
+      "source": "client scheduler",
+      "dimensions": [
+        "op",
+        "phase"
+      ],
+      "implementation_status": "PENDING; closed-loop planned=logical 생성 시각"
+    },
+    {
+      "id": "M05",
+      "name": "goodput",
+      "unit": "logical_ops/s",
+      "definition": "M03 final 응답 시각이 관측창 안에 있는 건수 / 관측창 초",
+      "source": "client counter+monotonic window",
+      "dimensions": [
+        "op",
+        "phase"
+      ],
+      "implementation_status": "PENDING; fixed-N 전체값은 별도 cohort 정의"
+    },
+    {
+      "id": "M06",
+      "name": "completion_throughput",
+      "unit": "logical_ops/s",
+      "definition": "관측창 내 final response 건수(오류 포함)/초",
+      "source": "client counter",
+      "dimensions": [
+        "op",
+        "phase"
+      ],
+      "implementation_status": "PENDING; M05와 혼용 금지"
+    },
+    {
+      "id": "M07",
+      "name": "failure_fraction",
+      "unit": "ratio",
+      "definition": "해당 cohort의 no-response+오류·거절·deadline종료 logical 수 / admitted logical 수",
+      "source": "client terminal ledger",
+      "dimensions": [
+        "op",
+        "phase",
+        "reason"
+      ],
+      "implementation_status": "PENDING; 정상 MISS 제외, 분모0=null"
+    },
+    {
+      "id": "M08",
+      "name": "retry_fraction",
+      "unit": "ratio",
+      "definition": "attempt_count>1인 logical 수/admitted logical 수; retry attempt 총수도 별도",
+      "source": "client terminal ledger",
+      "dimensions": [
+        "op",
+        "phase",
+        "reason"
+      ],
+      "implementation_status": "PENDING"
+    },
+    {
+      "id": "M09",
+      "name": "late_or_unresolved",
+      "unit": "count",
+      "definition": "logical deadline 이후 응답·run 종료 시 불명확 상태를 구분. 늦은 성공은 원래 deadline 성공으로 재분류하지 않음",
+      "source": "client ledger",
+      "dimensions": [
+        "op",
+        "phase",
+        "reason"
+      ],
+      "implementation_status": "PENDING"
+    },
+    {
+      "id": "M10",
+      "name": "latency_service",
+      "unit": "ns",
+      "definition": "최초 logical invocation부터 최종 response/terminal까지. 자동 retry·재발견·대기를 포함; success/failure별 분리",
+      "source": "client monotonic timestamps+histogram",
+      "dimensions": [
+        "op",
+        "phase",
+        "outcome"
+      ],
+      "implementation_status": "PENDING; no-response 경과는 censored outcome"
+    },
+    {
+      "id": "M11",
+      "name": "latency_scheduled",
+      "unit": "ns",
+      "definition": "planned invocation부터 terminal까지; scheduler 지연 포함",
+      "source": "client scheduler+histogram",
+      "dimensions": [
+        "op",
+        "phase",
+        "outcome"
+      ],
+      "implementation_status": "PENDING; client queue 지연 누락 금지"
+    },
+    {
+      "id": "M12",
+      "name": "client_inflight",
+      "unit": "requests",
+      "definition": "admitted - logical terminal, 시각별 gauge; queue/rejected 별도",
+      "source": "client gauge",
+      "dimensions": [
+        "client",
+        "phase"
+      ],
+      "implementation_status": "PENDING; 1초 최대/평균/끝값"
+    },
+    {
+      "id": "M13",
+      "name": "ack_to_apply",
+      "unit": "ns",
+      "definition": "같은 노드에서 logical ACK 관측과 해당 request apply 사이의 시간 또는 coordinator 관측 round-trip 상한, 방법 라벨 필수",
+      "source": "protocol/storage events",
+      "dimensions": [
+        "replica",
+        "op",
+        "phase",
+        "clock_method"
+      ],
+      "implementation_status": "PENDING; cross-host 무보정 timestamp 차이 금지"
+    },
+    {
+      "id": "M14",
+      "name": "apply_backlog",
+      "unit": "requests,bytes,ns",
+      "definition": "accepted/ordered/committed-not-applied 별도 counts/bytes·oldest age·쓰기중단 후 drain latency",
+      "source": "protocol gauges+drain probe",
+      "dimensions": [
+        "replica",
+        "phase",
+        "state"
+      ],
+      "implementation_status": "PENDING; ACK/commit/apply 서로 다른단계"
+    },
+    {
+      "id": "M15",
+      "name": "messages_per_op",
+      "unit": "messages/logical_op",
+      "definition": "동일 phase/time-window의 client/peer/control 메시지 delta / 성공 op수, 송신 기준",
+      "source": "transport counter",
+      "dimensions": [
+        "node",
+        "direction",
+        "flow",
+        "phase"
+      ],
+      "implementation_status": "PENDING; control idle 비용과failure수도 병기"
+    },
+    {
+      "id": "M16",
+      "name": "bytes_per_op",
+      "unit": "bytes/logical_op",
+      "definition": "client/peer wire byte delta/성공 op수, send/receive 분리·계측계층 기록",
+      "source": "transport/OS counter",
+      "dimensions": [
+        "node",
+        "direction",
+        "layer",
+        "phase"
+      ],
+      "implementation_status": "PENDING; 양끝송수신 합을 단방향비용으로 오인금지"
+    },
+    {
+      "id": "M17",
+      "name": "connections",
+      "unit": "count,connections/s",
+      "definition": "open/close/error·active·peak·TIME_WAIT, 지속연결과per-message연결 분리",
+      "source": "transport/OS",
+      "dimensions": [
+        "node",
+        "phase"
+      ],
+      "implementation_status": "PENDING"
+    },
+    {
+      "id": "M18",
+      "name": "cpu_cost",
+      "unit": "cpu_ns/logical_op",
+      "definition": "모든 replica의 process user+system CPU delta / 성공op수; load hosts 별도",
+      "source": "process OS counter",
+      "dimensions": [
+        "node",
+        "role",
+        "phase"
+      ],
+      "implementation_status": "PENDING; CPU 사용률 분모는할당vCPU×wall시간"
+    },
+    {
+      "id": "M19",
+      "name": "storage_io",
+      "unit": "bytes,ops,ns",
+      "definition": "KV/log별 file API·host block·device 계층의 read/write bytes/IOPS/latency/queue depth",
+      "source": "storage hooks+OS block counter",
+      "dimensions": [
+        "node",
+        "device",
+        "layer",
+        "operation",
+        "phase"
+      ],
+      "implementation_status": "PENDING; kernelcache hit read를물리SSD I/O로세지않음"
+    },
+    {
+      "id": "M20",
+      "name": "host_write_amplification",
+      "unit": "ratio",
+      "definition": "같은 phase host block written bytes/logical SET+DELETE payload bytes; KV record logical bytes도 별도",
+      "source": "storage+client counters",
+      "dimensions": [
+        "node",
+        "replica_total",
+        "phase"
+      ],
+      "implementation_status": "PENDING; RF·metadata 포함, NAND WAF와 다름; 분모0=null"
+    },
+    {
+      "id": "M21",
+      "name": "fsync_cost",
+      "unit": "count,ns",
+      "definition": "KV force 호출/소요시간과 stable-view force를 구분",
+      "source": "storage hooks",
+      "dimensions": [
+        "node",
+        "path",
+        "phase"
+      ],
+      "implementation_status": "PENDING; replicated RAM durability log와다름"
+    },
+    {
+      "id": "M22",
+      "name": "cache_behavior",
+      "unit": "count,ratio,bytes",
+      "definition": "engine/OS cache hit·miss·cache size를 계층별 수집",
+      "source": "engine/OS supported observer",
+      "dimensions": [
+        "node",
+        "layer",
+        "phase"
+      ],
+      "implementation_status": "PENDING; 미지원이면unsupported,null"
+    },
+    {
+      "id": "M23",
+      "name": "memory_gc",
+      "unit": "bytes,ns,count",
+      "definition": "heap/RSS/off-heap·allocation·GC pause·history/log 메모리·시간추세",
+      "source": "JVM+process+protocol gauges",
+      "dimensions": [
+        "node",
+        "component",
+        "phase"
+      ],
+      "implementation_status": "PENDING; 메모리 추정과실측표시"
+    },
+    {
+      "id": "M24",
+      "name": "queue_worker",
+      "unit": "requests,ns,ratio",
+      "definition": "owner/I/O worker queue size·wait·busy·active 및 같은키 실행중 수",
+      "source": "worker hooks",
+      "dimensions": [
+        "node",
+        "worker",
+        "phase"
+      ],
+      "implementation_status": "PENDING"
+    },
+    {
+      "id": "M25",
+      "name": "ionia_path",
+      "unit": "count,ns,bytes,ratio",
+      "definition": "Meta INDEX/DATA·view probe·fast/slow/fallback·stale rejection·History size/trim·1RTT-candidate vs measured RTT 경로 분리",
+      "source": "IONIA adapter/hooks",
+      "dimensions": [
+        "node",
+        "path",
+        "phase"
+      ],
+      "implementation_status": "PENDING; 각비율 eligible 분모를 result에기록"
+    },
+    {
+      "id": "M26",
+      "name": "hermes_path",
+      "unit": "count,ns,ratio",
+      "definition": "INV/ACK/VAL·INVALID age·read block·same-key wait·replay·membership epoch",
+      "source": "future Hermes hooks",
+      "dimensions": [
+        "node",
+        "path",
+        "phase"
+      ],
+      "implementation_status": "PENDING; Hermes미구현이면not_applicable,null"
+    },
+    {
+      "id": "M27",
+      "name": "availability",
+      "unit": "ns,ratio",
+      "definition": "fault trigger/detect/view/first success/steady recovery/catch-up 사건,1초창성공률·마지막성공부터다음성공gap",
+      "source": "controller+client+protocol",
+      "dimensions": [
+        "node",
+        "fault_id",
+        "phase",
+        "clock_method"
+      ],
+      "implementation_status": "PENDING; 관측gap과실제blackout구분"
+    },
+    {
+      "id": "M28",
+      "name": "correctness",
+      "unit": "count,status",
+      "definition": "history VIOLATION/PASS/INCONCLUSIVE·bad values·duplicate effects·checker controls",
+      "source": "offline history checker",
+      "dimensions": [
+        "scenario",
+        "seed",
+        "op"
+      ],
+      "implementation_status": "PENDING; 검사기 timeout은PASS아님"
+    },
+    {
+      "id": "M29",
+      "name": "acked_survival",
+      "unit": "count,status",
+      "definition": "overwrite없는audit key의 ACK ledger와recovery후검증 결과,missing/duplicate 분리",
+      "source": "audit ledger+post-recovery reads",
+      "dimensions": [
+        "fault_id",
+        "op"
+      ],
+      "implementation_status": "PENDING; snapshot equality만으로충분하지않음"
+    },
+    {
+      "id": "M30",
+      "name": "recovery_work",
+      "unit": "bytes,count,ns",
+      "definition": "state transfer/log replay bytes·records·복귀중service성능·catch-up target frontier",
+      "source": "recovery hooks+controller",
+      "dimensions": [
+        "node",
+        "fault_id",
+        "phase"
+      ],
+      "implementation_status": "PENDING"
+    },
+    {
+      "id": "M31",
+      "name": "batch_behavior",
+      "unit": "items,bytes,ns,ratio",
+      "definition": "실효batch items/bytes·fill trigger·enqueue→send 대기·inflight·batch실패",
+      "source": "batch hooks",
+      "dimensions": [
+        "variant",
+        "flow",
+        "phase"
+      ],
+      "implementation_status": "PENDING; logical op 수와frame 수분리"
+    },
+    {
+      "id": "M32",
+      "name": "apply_parallelism",
+      "unit": "keys,workers,ratio",
+      "definition": "실제동시applyingkeys K·actual I/Oworkers W·고정stripe S·동일키순서",
+      "source": "variant hooks",
+      "dimensions": [
+        "variant",
+        "node",
+        "phase"
+      ],
+      "implementation_status": "PENDING"
+    },
+    {
+      "id": "M33",
+      "name": "selection_adaptation",
+      "unit": "count,ns,ratio",
+      "definition": "replica별선택/회피/탐색·관측RTT·관측age·outstanding·외부변화후적응시간",
+      "source": "selector hooks",
+      "dimensions": [
+        "variant",
+        "replica",
+        "phase"
+      ],
+      "implementation_status": "PENDING"
+    },
+    {
+      "id": "M34",
+      "name": "batch_coupling",
+      "unit": "requests,ns,count",
+      "definition": "frame하나의 지연/실패로영향받은개별요청수·HOL·cancel후점유",
+      "source": "V07 hooks+fault fixture",
+      "dimensions": [
+        "frame_id",
+        "fault_id",
+        "phase"
+      ],
+      "implementation_status": "PENDING; frame_id는event에만,Prometheus label금지"
+    },
+    {
+      "id": "M35",
+      "name": "repeat_uncertainty",
+      "unit": "ratio,logical_ops/s,ns",
+      "definition": "5개paired run별 통계·mean/sample SD/95%tCI; throughputratio와latencyreduction 분모명시",
+      "source": "offline aggregator",
+      "dimensions": [
+        "variant",
+        "scenario",
+        "seed"
+      ],
+      "implementation_status": "PENDING; percentile 평균은pooled percentile아님"
+    },
+    {
+      "id": "M36",
+      "name": "instrumentation_overhead",
+      "unit": "ratio",
+      "definition": "동일입력에서 observer on/off의 goodput/latency차이·observerCPU/bytes",
+      "source": "pilot paired experiment",
+      "dimensions": [
+        "observer",
+        "scenario"
+      ],
+      "implementation_status": "PENDING; 정확성/필수안전계측off 금지"
+    }
+  ]
+}

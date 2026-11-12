@@ -1,0 +1,112 @@
+{
+  "variant": "V04a fixed-storage-layout key apply concurrency",
+  "date": "2026-10-28",
+  "base_revision": "36920e82fcb55e69e418723a97bee1d381e83267",
+  "working_tree_at_start": "uncommitted V03 preserved",
+  "command": ".\\gradlew.bat build :cache-server:installDist --rerun-tasks --console=plain",
+  "java": "Microsoft OpenJDK 21.0.11",
+  "build_exit_code": 0,
+  "modules": {
+    "cache-core": {
+      "tests": 318,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "cache-server": {
+      "tests": 58,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "experiment-runner": {
+      "tests": 16,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    }
+  },
+  "total_tests": 392,
+  "v04a_tests": 63,
+  "ported_protocol_regression_cases": 32,
+  "variant_suites": [
+    {
+      "suite": "io.openkache.core.replication.ionia_fifth.IoniaApplyGateTest",
+      "tests": 6
+    },
+    {
+      "suite": "io.openkache.core.replication.ionia_fifth.IoniaFifthApplyTest",
+      "tests": 11
+    },
+    {
+      "suite": "io.openkache.core.replication.ionia_fifth.IoniaFifthHistoryTest",
+      "tests": 7
+    },
+    {
+      "suite": "io.openkache.core.replication.ionia_fifth.IoniaFifthRegressionTest",
+      "tests": 32
+    },
+    {
+      "suite": "io.openkache.core.replication.ionia_fifth.IoniaFifthWorkerIntegrationTest",
+      "tests": 1
+    },
+    {
+      "suite": "io.openkache.server.ionia_fifth.IoniaFifthProcessTest",
+      "tests": 1
+    },
+    {
+      "suite": "io.openkache.server.ionia_fifth.IoniaFifthProfileTest",
+      "tests": 4
+    },
+    {
+      "suite": "io.openkache.server.ionia_fifth.IoniaFifthTcpConcurrencyTest",
+      "tests": 1
+    }
+  ],
+  "fixture_output": [
+    "V04a: K=1/2/4/65536, 64 seeds each, 10 completed CRUD/history, apply gate+Follower/Meta path; bounded only",
+    "V04a process fixture: JVMs=3, forced leader crash, new-view=1, majority fallback, disk replay/rejoin, DELETE OK/MISS verified; loopback host only"
+  ],
+  "protected_files_unchanged": 194,
+  "v03_prior_artifacts_unchanged": 22,
+  "jar_checks": {
+    "cache-core": {
+      "sha256": "248979fd51916820f2bf081144ced04491bb170af063a762fd3151466ef58399",
+      "variant_class_present": true,
+      "tests_absent": true
+    },
+    "cache-server": {
+      "sha256": "ba3b608d09c8a2d4db782fd4ba8dabe72b89595b4ab0f940a3154e37cb2308de",
+      "variant_class_present": true,
+      "tests_absent": true
+    }
+  },
+  "bounded_history_profiles": [
+    1,
+    2,
+    4,
+    65536
+  ],
+  "bounded_history_seeds_per_profile": 64,
+  "bounded_history_operations": 10,
+  "tcp_key_limits": [
+    1,
+    4
+  ],
+  "fixed_storage_shards": 2,
+  "tcp_concurrent_hot_key_writes_per_limit": 32,
+  "independent_process_fixture_jvms": 3,
+  "performance_measured": false,
+  "worker_count_control_v04b_implemented": false,
+  "paper_scheduler_reproduced": false,
+  "full_protocol_proof": false,
+  "commit_push_merge_performed": false,
+  "limitations": [
+    "key permits bound outstanding write CompletionStages, not OS threads or actual I/O concurrency",
+    "queued consensus and ready-key backlogs have no new hard memory cap",
+    "all RAM log loss fails closed; no power-loss/fsync durability claim",
+    "existing IoniaFileStorage and full state-transfer limits remain; no new V03 admission/batch policy is merged",
+    "V03 was already uncommitted; core Gradle and development log now include both variants",
+    "V04b and performance comparison require separate work; author draft proofs are not reused as a V04a proof"
+  ]
+}

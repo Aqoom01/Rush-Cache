@@ -1,0 +1,70 @@
+{
+  "status": "passed",
+  "baseline_sources": 310,
+  "unchanged_sources": 307,
+  "modified_sources": [
+    {
+      "path": "cache-server/src/main/java/io/openkache/server/ionia/IoniaTcpTransport.java",
+      "before": "c084d695186c1698e9964cf06186d655bd6a0bb2dbd4c16c46dc893bb0cdf801",
+      "after": "093d8d332a81eaf7ff11d27dfdcb7ae7d6f1b2db2aa2acff6638e3e9620a0f72"
+    },
+    {
+      "path": "cache-server/src/main/java/io/openkache/server/ionia/IoniaWire.java",
+      "before": "11abe325b6a313e30c0b7471f98a7b3943eddcf02583651b656c0fd547502f85",
+      "after": "a877eb56ed9d0b4f2a7cc1beb5c5c37eeb52a3a3472a27d98f3314533b4059a1"
+    },
+    {
+      "path": "cache-server/src/main/java/io/openkache/server/ionia_eighth/IoniaMetaBatchTcpTransport.java",
+      "before": "8c41a08a645f450f4819e90c6056ac7e11bd8aadb8063c79c334d3467dd9d339",
+      "after": "83a96463dead07bbc3abc6bb8035a59a70bf69e497cee94cf30de3daa8d63571"
+    }
+  ],
+  "new_java": [
+    {
+      "path": "cache-server/src/benchmark/java/io/openkache/server/benchmark/network/TrafficRun.java",
+      "sha256": "80e25c51a22b69da3112cf5152f45fe5142c82faa6d77387b4b2bc009d522282"
+    },
+    {
+      "path": "cache-server/src/benchmark/java/io/openkache/server/benchmark/network/TrafficWriter.java",
+      "sha256": "a66bd3ef2c9e4391d5a4eec3beb0bba914c886ce631b2af2952991142abc4717"
+    },
+    {
+      "path": "cache-server/src/benchmarkTest/java/io/openkache/server/benchmark/variants/NetworkBenchmarkTcpTest.java",
+      "sha256": "f411f22181450ae20e4d80b245c43081804c885670cbe1b9d4cea891a884c0e0"
+    },
+    {
+      "path": "cache-server/src/main/java/io/openkache/server/observation/TcpTraffic.java",
+      "sha256": "c0569e27d022bc44a7491b25a24194f1edff1070ce1def2e763c7f16418a6ae6"
+    },
+    {
+      "path": "cache-server/src/test/java/io/openkache/server/observation/TcpTrafficTest.java",
+      "sha256": "6ef991b354257f9c708552415e06fe2a77482523b2691dbd3d6bd11b9bb1a2f7"
+    },
+    {
+      "path": "experiment-runner/src/benchmark/java/io/openkache/runner/benchmark/measurement/ObservationJson.java",
+      "sha256": "f28258423d37f0bac328733c7ed99ee80b45904c4159b99b11d199d0ee41dbff"
+    }
+  ],
+  "final_sources": 316,
+  "final_sources_unchanged_during_full_run": true,
+  "production_jars": [
+    {
+      "path": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\cache-core\\build\\libs\\cache-core-0.1.0-SNAPSHOT.jar",
+      "sha256": "b44ec99ec985d1e865885da3ca5910b24ca8567ec08e0be72e4ce12bb167e578",
+      "benchmark_classes": 0
+    },
+    {
+      "path": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\cache-server\\build\\libs\\cache-server-0.1.0-SNAPSHOT.jar",
+      "sha256": "38488c01bcadf351c4aaff33e7af545a2ebc271b58fd1321778e0aab5d377720",
+      "benchmark_classes": 0
+    },
+    {
+      "path": "C:\\Users\\SSAFY\\Desktop\\park\\openstd\\S15P31D111\\experiment-runner\\build\\libs\\experiment-runner-0.1.0-SNAPSHOT.jar",
+      "sha256": "81ea4fa5e7e589ca3c1e154e3d49c8bc9d2414422fc741ab26a9939b17461d48",
+      "benchmark_classes": 0
+    }
+  ],
+  "production_distribution_benchmark_jars": 0,
+  "gradle_change": "new networkBenchmarkTest only, existing test populations preserved",
+  "scope": "No core/replication algorithm/client/engine/node changes. Three shared server I/O files only gain opt-in observations; constructors, wire bytes and TCP policy preserved."
+}
