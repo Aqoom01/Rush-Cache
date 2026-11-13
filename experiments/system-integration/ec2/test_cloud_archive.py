@@ -64,7 +64,7 @@ class ArchiveGuardTest(unittest.TestCase):
             path=Path(temp);root,binding,aws=self.fixture(path)
             (root/'row-000000/run/collection.json').write_text('{"complete":false}')
             upload(root,binding,path/'snapshot',aws)
-            with self.assertRaisesRegex(ValueError,'uncollected'):guarded_terminate(binding,aws)
+            with self.assertRaisesRegex(ValueError,'uncollected.*incomplete collection.json.*manifest=s3://'):guarded_terminate(binding,aws)
             self.assertEqual([],aws.calls)
 
     def test_wrong_owner_blocks_deletion_after_valid_backup(self):

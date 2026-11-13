@@ -86,9 +86,9 @@
     ]
   },
   "python": {
-    "ec2Tests": 35,
-    "ciControllerTests": 9,
-    "total": 44,
+    "ec2Tests": 36,
+    "ciControllerAndDiagnosticsTests": 12,
+    "total": 48,
     "status": "PASS"
   },
   "terraform": {
@@ -103,13 +103,15 @@
     "protectedWebOnly": true,
     "sharedResourceGroup": "aws-experiment",
     "liveLintRun": false,
-    "livePipelineRun": false
+    "livePipelineRun": false,
+    "shellBlocks": 33
   },
   "cloud": {
     "provisioned": false,
     "uploaded": false,
     "terminated": false,
-    "validation": "Fake AWS objects plus static configuration only"
+    "validation": "Fake AWS objects plus static configuration only",
+    "scope": "Original local build/fixture validation; see recovery-295003-validation.json for the user-reported failed AWS preflight."
   },
   "notes": [
     "Initial parallel root build failed the existing ClusterRunnerIntegrationTest stop-and-copy redirect exhaustion assertion: redirectExhausted=6, consistency violations=0. Original XML and failure summary retained under runs/headless-validation. Full sequential build passed without changing that test or implementation.",

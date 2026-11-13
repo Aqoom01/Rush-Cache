@@ -136,7 +136,8 @@ def upload(root,binding,destination,aws):
     return pointer
 
 
-def verify_archive(path,manifest):
+def read_archive_metadata(path,manifest):
+    """Hash every archived file; return bounded metadata without claiming collection is complete."""
     check(path.stat().st_size==manifest['archive']['size'] and digest(path)==manifest['archive']['sha256'],'archive checksum/size mismatch')
     expected={f['path']:f for f in manifest['files']};check(len(expected)==len(manifest['files']),'duplicate inventory paths')
     check(all(safe_name(p) for p in expected),'unsafe inventory path')
@@ -145,14 +146,22 @@ def verify_archive(path,manifest):
         for member in tar:
             check(member.isfile() and safe_name(member.name) and member.name in expected and member.name not in seen,'unexpected or unsafe archive member')
             entry=expected[member.name];check(member.size==entry['size'],'member size mismatch')
-            h=hashlib.sha256();keep=member.name in ('batch-results.json','binding.json','matrix.csv') or bool(re.fullmatch(r'row-[0-9]{6}/run/(cleanup|collection|manifest|result|gateway-final-controller)\.json',member.name))
+            h=hashlib.sha256();keep=member.name in ('batch-results.json','binding.json','matrix.csv','worker-result.json') or bool(re.fullmatch(r'row-[0-9]{6}/run/(cleanup|collection|manifest|result|gateway-final-controller|RUN_FAILED)\.json',member.name))
+            tail=member.name=='worker-failure.log' or bool(re.fullmatch(r'row-[0-9]{6}/(console|batch-driver)\.log',member.name))
             if keep:check(member.size<=8*1024*1024,'oversized evidence metadata');small[member.name]=bytearray()
+            elif tail:small[member.name]=bytearray()
             with tar.extractfile(member) as stream:
                 for data in iter(lambda:stream.read(1024*1024),b''):
                     h.update(data)
                     if keep:small[member.name].extend(data)
+                    elif tail:small[member.name][:]=(small[member.name]+data)[-6000:]
             check(h.hexdigest()==entry['sha256'],'member checksum mismatch');seen.add(member.name)
     check(seen==set(expected),'missing evidence files')
+    return small
+
+
+def verify_archive(path,manifest):
+    small=read_archive_metadata(path,manifest);seen={f['path'] for f in manifest['files']}
     binding=manifest['binding']
     check({'batch-results.json','binding.json','matrix.csv'}<=seen,'batch metadata missing')
     check(json.loads(small['binding.json'])==binding,'archived binding mismatch')
@@ -185,7 +194,10 @@ def verify(binding,aws):
         aws.get(pointer['manifestKey'],work/'manifest.json',pointer['manifestVersionId'])
         check(digest(work/'manifest.json')==pointer['manifestSha256'],'manifest checksum mismatch')
         manifest=json.loads((work/'manifest.json').read_text())
-        check(manifest['binding']==binding and manifest['collectionComplete'] is True,'uncollected or mismatched evidence')
+        check(manifest['binding']==binding,'uncollected or mismatched evidence: manifest binding differs')
+        check(manifest['collectionComplete'] is True,
+              'uncollected or mismatched evidence: '+str(manifest.get('collectionProblem') or 'collection not complete')
+              +'; manifest=s3://'+BUCKET+'/'+pointer['manifestKey'])
         archive=manifest['archive'];check(archive['key']==pointer['manifestKey'].removesuffix('manifest.json')+'results.tar.gz','archive outside manifest attempt')
         aws.get(archive['key'],work/'results.tar.gz',archive['versionId']);outcomes=verify_archive(work/'results.tar.gz',manifest)
         return dict(verified=True,binding=binding,manifestKey=pointer['manifestKey'],manifestVersionId=pointer['manifestVersionId'],

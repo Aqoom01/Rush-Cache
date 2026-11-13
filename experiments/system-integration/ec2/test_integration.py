@@ -14,6 +14,46 @@ spec.loader.exec_module(integration)
 
 
 class ControllerContractTest(unittest.TestCase):
+    def test_remote_collection_preserves_gateway_and_replica_evidence_separately(self):
+        import shutil
+        import subprocess
+        from pathlib import PurePosixPath
+        for joint in (False, True):
+            with self.subTest(joint=joint), tempfile.TemporaryDirectory() as temp:
+                base=Path(temp);remote=base/'remote'
+                c=object.__new__(integration.Controller)
+                c.remote=True;c.plan={'joint_cache':joint};c.output=base/'output';c.output.mkdir()
+                c.root=PurePosixPath('/runs/test');c.topology={'ssh_user':'test'};c.ssh_options=lambda: []
+                c.roles=[('replica-g0-n0','replica'),('gateway','gateway'),('load','load')]
+                for role,host in c.roles:
+                    root=remote/host
+                    for name in ('logs','state','input'):
+                        (root/name).mkdir(parents=True);(root/name/'evidence').write_text(name)
+                    leaves=('a1-authority/events.jsonl','a1-authority/ready.json','a2-data/events.jsonl','a2-data/ready.json') if joint and role.startswith('replica-') else ('events.jsonl','ready.json')
+                    if role=='load':leaves=('result.json',)
+                    for leaf in leaves:
+                        path=root/('load-result' if role=='load' else role)/leaf
+                        path.parent.mkdir(parents=True,exist_ok=True);path.write_text('{}')
+                def scp(command,**kwargs):
+                    host,path=command[-2].split('@',1)[1].split(':',1)
+                    source=remote/host/str(PurePosixPath(path).relative_to(c.root));target=Path(command[-1])
+                    if not source.exists():return subprocess.CompletedProcess(command,1,'','missing '+str(source))
+                    if source.is_dir():shutil.copytree(source,target/source.name,dirs_exist_ok=True)
+                    else:shutil.copy2(source,target)
+                    return subprocess.CompletedProcess(command,0,'','')
+                with patch.object(integration.subprocess,'run',side_effect=scp):failures=c.collect()
+                self.assertEqual([],failures)
+                self.assertTrue(json.loads((c.output/'collection.json').read_text())['complete'])
+                self.assertTrue((c.output/'collected/gateway/gateway/events.jsonl').is_file())
+                self.assertTrue((c.output/'collected/gateway/gateway/ready.json').is_file())
+                self.assertTrue((c.output/'collected/load/load-result/result.json').is_file())
+                if joint:self.assertTrue((c.output/'collected/replica-g0-n0/a2-data-ready.json').is_file())
+                # A real missing replica file must still block complete collection.
+                missing=remote/'replica/replica-g0-n0'/('a2-data/ready.json' if joint else 'ready.json');missing.unlink()
+                with patch.object(integration.subprocess,'run',side_effect=scp):failures=c.collect()
+                self.assertTrue(failures)
+                self.assertFalse(json.loads((c.output/'collection.json').read_text())['complete'])
+
     def test_resource_samples_preserve_completed_records_incrementally(self):
         with tempfile.TemporaryDirectory() as temp:
             c=object.__new__(integration.Controller)

@@ -1,0 +1,36 @@
+{
+  "dateAsiaSeoul": "2026-11-13",
+  "sourcePipeline": 295003,
+  "sourceJob": 952587,
+  "observedFromUserLog": [
+    "remote-running",
+    "cleanup-blocked: uncollected or mismatched evidence"
+  ],
+  "identifiedDefect": "Gateway collection was incorrectly routed through replica A1/A2 leaf collection.",
+  "regression": {
+    "failedBeforeFix": true,
+    "passedAfterFix": true,
+    "missingReplicaStillBlocksCollection": true
+  },
+  "pythonTests": {
+    "ec2": 36,
+    "infrastructure": 12,
+    "total": 48,
+    "status": "PASS"
+  },
+  "ciStatic": {
+    "yaml": "PASS",
+    "shellBlocks": 33,
+    "stageAndNeeds": "PASS"
+  },
+  "diagnosticMode": {
+    "readOnly": true,
+    "hashesEntireArchive": true,
+    "createsStartsStopsOrDeletesInstances": false
+  },
+  "actualManifestRead": false,
+  "actualEc2StateConfirmed": false,
+  "localAwsIdentityCheck": "InvalidClientTokenId; no resource mutation attempted",
+  "recoveryOrDeletionPerformed": false,
+  "requiresNext": "Run protected integrated-diagnose pipeline for source 295003 / 952587; do not launch a fresh experiment while preserved instances count against capacity."
+}
