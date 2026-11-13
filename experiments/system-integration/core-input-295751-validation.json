@@ -1,0 +1,69 @@
+{
+  "dateAsiaSeoul": "2026-11-13",
+  "failedPipeline": 295751,
+  "failedPilotJob": 955529,
+  "secondaryCalibrationFailureJob": 955530,
+  "rootCause": "Web pipeline INTEGRATION_MATRIX and INTEGRATION_PLAN_ARGS override YAML job defaults; the one-row preflight CSV was paired with the four-row pilot spec.",
+  "reference": "https://docs.gitlab.com/ci/variables/#ci-cd-variable-precedence",
+  "realCiScriptLocalProbe": {
+    "pilot-with-web-defaults": {
+      "status": "PASS",
+      "exitCode": 0,
+      "inputCapture": {
+        "matrix": "core-plan/pilot.csv",
+        "spec": "core-plan/pilot.json",
+        "phase": "pilot",
+        "rows": 4,
+        "selected": 4,
+        "planArgs": [],
+        "perRowRates": [
+          1500,
+          500,
+          150,
+          50
+        ]
+      },
+      "provisioningMarkerCreated": false,
+      "awsCalls": 0
+    },
+    "bad-spec": {
+      "status": "PASS",
+      "exitCode": 1,
+      "inputCapture": null,
+      "provisioningMarkerCreated": false,
+      "awsCalls": 0
+    },
+    "empty-manual-slice": {
+      "status": "PASS",
+      "exitCode": 0,
+      "inputCapture": null,
+      "provisioningMarkerCreated": false,
+      "awsCalls": 0
+    },
+    "missing-manual-matrix": {
+      "status": "PASS",
+      "exitCode": 1,
+      "inputCapture": null,
+      "provisioningMarkerCreated": false,
+      "awsCalls": 0
+    }
+  },
+  "pythonTests": {
+    "ec2Tools": 36,
+    "infrastructure": 18,
+    "total": 54,
+    "status": "PASS"
+  },
+  "ciStatic": {
+    "yaml": "PASS",
+    "shellBlocks": 35,
+    "helperShell": "PASS",
+    "stageAndNeeds": "PASS"
+  },
+  "awsProvisionedByValidation": false,
+  "fixedCorePipelineRunOnAws": false,
+  "priorSuccessfulPreflight": {
+    "pipeline": 295694,
+    "job": 955301
+  }
+}

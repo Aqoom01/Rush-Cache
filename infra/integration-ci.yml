@@ -14,6 +14,7 @@ integration-package:
     - python3 experiments/system-integration/ec2/test_integration.py
     - python3 infra/scripts/test_integration_cloud.py
     - python3 infra/scripts/test_integration_diagnose.py
+    - python3 infra/scripts/test_integration_inputs.py
     - python3 experiments/system-integration/ec2/test_core_pipeline.py
     - python3 experiments/system-integration/ec2/core_pipeline.py prepare --plan core-plan
     - |
@@ -51,18 +52,21 @@ integration-package:
     RUNNER_AFTER_SCRIPT_TIMEOUT: 15m
   before_script:
     - apk add --no-cache bash coreutils aws-cli python3 git > /dev/null
+    - . infra/scripts/integration_inputs.sh
   script:
     - |
-      if ! python3 - <<'PY'
+      input_status=0
+      python3 - <<'PY' || input_status=$?
       import csv, os
       with open(os.environ['INTEGRATION_MATRIX'], newline='') as stream:
           rows = list(csv.DictReader(stream))
-      raise SystemExit(0 if int(os.environ['INTEGRATION_SLICE']) < len(rows) else 1)
+      raise SystemExit(0 if int(os.environ['INTEGRATION_SLICE']) < len(rows) else 10)
       PY
-      then
+      if [ "$input_status" -eq 10 ]; then
         echo "이 구간은 입력 행이 없어 AWS 호출 없이 종료합니다."
         exit 0
       fi
+      if [ "$input_status" -ne 0 ]; then exit "$input_status"; fi
     - |
       python3 infra/scripts/integration_cloud.py \
         --campaign "ci-${CI_PIPELINE_ID}" --batch "ci-${CI_PIPELINE_ID}-${CI_JOB_ID}" \
@@ -74,6 +78,7 @@ integration-package:
   # A failed upload must never take the legacy unconditional destroy path.
   after_script:
     - |
+      . infra/scripts/integration_inputs.sh
       if [ -f "cloud-state/${CI_JOB_ID}/execution-started.json" ] && [ ! -f "cloud-state/${CI_JOB_ID}/cleanup-complete.json" ]; then
         python3 infra/scripts/integration_cloud.py \
           --campaign "ci-${CI_PIPELINE_ID}" --batch "ci-${CI_PIPELINE_ID}-${CI_JOB_ID}" \
