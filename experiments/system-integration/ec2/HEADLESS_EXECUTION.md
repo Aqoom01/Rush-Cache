@@ -23,6 +23,14 @@
 - 검증할 수 없으면 소유 태그를 재확인한 인스턴스만 정지하고 EBS·Terraform state를 보존한다. 정지된 인스턴스와 EBS에는 잔여 저장 비용이 발생하며, 복구 후 별도 정리가 필요하다. 자동으로 불완전한 백업을 성공 처리하지 않는다.
 - CI/worker 장애나 취소에서도 무조건 destroy하는 기존 legacy after_script를 사용하지 않는다. 계정의 다른 실험은 건드리지 않는다. GitLab Runner까지 중단되면 EventBridge의 최대 수명 정지가 계산 비용을 제한한다. bootstrap 초기에170분 guest shutdown timer도 설치해 provisioning 중 Runner가 중단된 경우를 보완한다.
 
+### 기존 실패 실행의 읽기 전용 진단
+
+`EXPERIMENT_SUITE=integrated-diagnose`와 기존 `INTEGRATION_SOURCE_PIPELINE`·`INTEGRATION_SOURCE_JOB`을 지정하면, 기존 CI AWS 권한으로 해당 실행의 결과만 읽는다. S3 pointer/manifest의 버전과 해시, archive 전체 및 파일별 해시를 확인하고 원본 `collection.json`·`cleanup.json`·실행 로그 끝부분과 해당8대의 현재 상태를 출력한다. 수집 완료나 삭제 승인을 의미하지 않는다. EC2 생성·시작·정지·삭제와 Terraform apply는 호출하지 않는다.
+
+첫 사전 실행 `295003 / 952587`은 `remote-running` 이후 `uncollected or mismatched evidence`로 삭제가 차단됐다. 코드 점검에서 gateway 디렉터리를 replica로 취급해 존재하지 않는 `gateway/a1-authority/*`와 `gateway/a2-data/*`를 요청하는 결함을 재현·수정했다. 실제 해당 실행의 상세 누락 항목과 인스턴스 상태는 진단 job으로 확인해야 한다. 원본 증거를 확인하기 전에는 수집 완료 값을 바꾸거나 보호 장치를 해제하지 않는다.
+
+보존된 인스턴스도9대 상한에 포함된다. 따라서 이 상태에서 `integrated`/`integrated-core`를 다시 시작하지 않는다. 기존 실패 job의 Retry는 이전 커밋을 실행하므로 수정 반영 후의 새 진단 pipeline을 사용한다.
+
 ## 입력과 결과 위치
 
 - `INTEGRATION_MATRIX`: 저장소 CSV. 이 CI 경로는 최대156행을12행씩 나눈다. 빈 구간은 AWS 호출 없이 종료한다.

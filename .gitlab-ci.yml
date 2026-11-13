@@ -24,8 +24,14 @@ include:
 variables:
   EXPERIMENT_SUITE:
     value: "legacy"
-    options: ["legacy", "integrated", "integrated-core"]
-    description: "integrated는 CSV/preflight, integrated-core는 EC2 보정+핵심155회 자동 선정·실행·S3 검증·삭제입니다."
+    options: ["legacy", "integrated", "integrated-core", "integrated-diagnose"]
+    description: "integrated는 CSV/preflight, integrated-core는 핵심155회, integrated-diagnose는 기존 실행의 S3·EC2 상태를 읽기 전용 확인합니다."
+  INTEGRATION_SOURCE_PIPELINE:
+    value: ""
+    description: "integrated-diagnose에서 확인할 기존 pipeline ID. 인스턴스를 생성·시작·삭제하지 않습니다."
+  INTEGRATION_SOURCE_JOB:
+    value: ""
+    description: "integrated-diagnose에서 확인할 기존 integration-cloud-batch job ID."
   INTEGRATION_MATRIX:
     value: "experiments/system-integration/ec2/matrices/cloud-preflight.csv"
     description: "통합 실험 CSV(최대156행). 첫 실행은 1행 preflight로 S3·삭제까지 검증합니다."

@@ -560,7 +560,7 @@ class Controller:
                 target.mkdir(parents=True, exist_ok=True)
                 for name in ("logs", "state", "input") + (("load-result",) if role == "load" else ("gateway",) if role == "gateway" else (role,)):
                     # Replica data는 원격에 보존한다. 대용량 KV 파일을 자동 전송하지 않는다.
-                    if name == role:
+                    if name == role and role.startswith("replica-"):
                         for leaf in (("a1-authority/events.jsonl", "a1-authority/ready.json", "a2-data/events.jsonl", "a2-data/ready.json") if self.plan.get("joint_cache") else ("events.jsonl", "ready.json")):
                             command = ["scp", *self.ssh_options(), self.topology["ssh_user"] + "@" + host + ":" + str(self.root / role / leaf), str(target / leaf.replace("/", "-"))]
                             try:
