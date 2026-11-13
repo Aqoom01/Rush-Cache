@@ -4,10 +4,25 @@ import argparse
 import json
 import os
 from pathlib import Path
+import subprocess
 import sys
 
 sys.path.insert(0,str(Path(__file__).resolve().parents[2]/'experiments/system-integration/ec2'))
-from cloud_archive import Aws,BUCKET,check,digest,owned_instances,prefix,read_archive_metadata,validate_binding
+from cloud_archive import Aws,BUCKET,check,digest,prefix,read_archive_metadata,validate_binding
+
+
+def observe_instances(binding,aws):
+    identity=aws.call('sts','get-caller-identity')
+    check(identity.get('Account')==binding['account'] and identity.get('Arn')=='arn:aws:iam::'+binding['account']+':user/OpenStd','wrong AWS diagnostic identity')
+    try:
+        response=aws.call('ec2','describe-instances',instance_ids=binding['instanceIds'])
+    except (ValueError,subprocess.TimeoutExpired) as error:
+        return [],dict(completeExpectedSet=None,notObservedInstanceIds=None,unexpectedInstanceIds=None,queryError=str(error))
+    instances=[i for r in response['Reservations'] for i in r['Instances']]
+    expected=set(binding['instanceIds']);observed={i['InstanceId'] for i in instances}
+    return instances,dict(completeExpectedSet=expected==observed,
+                          notObservedInstanceIds=[i for i in binding['instanceIds'] if i not in observed],
+                          unexpectedInstanceIds=sorted(observed-expected),queryError=None)
 
 
 def diagnose(pipeline,job,account,work,aws):
@@ -17,7 +32,7 @@ def diagnose(pipeline,job,account,work,aws):
     aws.get('bundles/integration/jobs/'+campaign+'/'+batch+'.json',work/'source-job.json')
     source=json.loads((work/'source-job.json').read_text());binding=source['binding'];validate_binding(binding)
     check(binding['campaign']==campaign and binding['batch']==batch and binding['account']==account,'wrong source binding')
-    instances=owned_instances(binding,aws)
+    instances,inventory=observe_instances(binding,aws)
     base=prefix(binding);aws.get(base+'UPLOAD_COMPLETE.json',work/'pointer.json')
     pointer=json.loads((work/'pointer.json').read_text());check(pointer['binding']==binding,'pointer belongs to another run')
     key=pointer['manifestKey'];check(key.startswith(base+'attempt-') and key.endswith('/manifest.json'),'wrong manifest prefix')
@@ -41,6 +56,7 @@ def diagnose(pipeline,job,account,work,aws):
                 collectionComplete=manifest['collectionComplete'],collectionProblem=manifest.get('collectionProblem'),
                 filesHashed=len(manifest['files']),manifestKey=key,
                 instances=[dict(instanceId=i['InstanceId'],state=i.get('State',{}).get('Name')) for i in instances],
+                instanceInventory=inventory,
                 terminalRecords=[dict(row=r.get('row'),status=r.get('status'),exitCode=r.get('exitCode')) for r in records],
                 cases=cases,workerFailure=bytes(metadata.get('worker-failure.log',b'')).decode(errors='replace'))
     (work/'diagnostics.json').write_text(json.dumps(report,indent=2)+'\n')

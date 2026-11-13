@@ -1,0 +1,25 @@
+{
+  "dateAsiaSeoul": "2026-11-13",
+  "failedDiagnosticJob": 955234,
+  "sourcePipeline": 295003,
+  "sourceJob": 952587,
+  "observedFailure": "instance set changed",
+  "userReportsManualDeletion": true,
+  "regressions": {
+    "missingInstancesFailedBeforeFix": true,
+    "missingInstancesAllowS3ReadAfterFix": true,
+    "unavailableEc2DoesNotPreventS3Read": true,
+    "wrongIdentityStillBlocked": true,
+    "missingInstancesStillBlockDestructiveCleanup": true
+  },
+  "verification": {
+    "ec2ToolTests": 36,
+    "infrastructureTests": 16,
+    "total": 52,
+    "status": "PASS"
+  },
+  "scope": "Infrastructure diagnostic reader only; EC2 experiment runtime, S3 backup proof and deletion guard are unchanged.",
+  "actualS3EvidenceRead": false,
+  "actualCurrentInstanceStateConfirmed": false,
+  "mainExperimentNextStep": "Fresh protected develop pipeline with EXPERIMENT_SUITE=integrated; defaults retained. This diagnostic-only fix is independent of the gateway collection correction already merged in MR !62."
+}
