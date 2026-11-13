@@ -28,9 +28,9 @@ provider "aws" {
   allowed_account_ids = [var.account_id]
 
   default_tags {
-    tags = {
+    tags = merge({
       Project   = "openkache"
-      ManagedBy = "terraform-experiment"
-    }
+      ManagedBy = var.integration_mode ? "terraform-integration" : "terraform-experiment"
+    }, var.integration_mode ? { ExperimentRun = var.experiment_run } : {})
   }
 }

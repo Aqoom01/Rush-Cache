@@ -98,6 +98,19 @@ public final class IgniteTcpRingFailureDetector extends AbstractFailureDetector 
         return true;
     }
 
+    /**
+     * Import an actual neighbor timeout after the coordinator independently failed to reach the target.
+     * The caller supplies that transport evidence; this entry does not elect a new coordinator.
+     */
+    public boolean recordCoordinatorValidation(long nowNanos, String reporter, String target) {
+        if (!observer().equals(coordinator) || !members.contains(reporter) || !members.contains(target)
+                || reporter.equals(coordinator) || reporter.equals(target) || target.equals(coordinator)
+                || !target.equals(nextAliveNeighbor(reporter))) return false;
+        if (status(target) == NodeStatus.ALIVE) transition(nowNanos, target, NodeStatus.SUSPECT,
+                "reported neighbor timeout independently validated by coordinator", Map.of("reporter", reporter));
+        return status(target) == NodeStatus.SUSPECT;
+    }
+
     public boolean applyTopologyUpdate(long version, List<String> updatedMembers) {
         if (version <= viewVersion || updatedMembers == null || updatedMembers.isEmpty()) {
             return false;

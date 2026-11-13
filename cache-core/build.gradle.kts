@@ -81,3 +81,15 @@ tasks.register<JavaExec>("b3Research") {
     workingDir = rootProject.projectDir
     args(providers.gradleProperty("b3.args").map { it.split(" ").filter(String::isNotBlank) }.getOrElse(listOf("--help")))
 }
+
+// 기존 알고리즘을 한 가상 클러스터에서 결합하는 명시 실행 전용 연구 backend.
+tasks.register<JavaExec>("systemIntegration") {
+    group = "application"
+    description = "통합 조합 screening·독립 seed 재검증 (기본값: 지원 조합 목록)"
+    dependsOn(tasks.named("testClasses"))
+    classpath = sourceSets.test.get().runtimeClasspath
+    mainClass = "io.openkache.core.integration.SystemIntegrationMain"
+    workingDir = rootProject.projectDir
+    maxHeapSize = "768m"
+    args(providers.gradleProperty("integration.args").map { it.split(" ").filter(String::isNotBlank) }.getOrElse(listOf("--list")))
+}

@@ -11,7 +11,7 @@ resource "time_static" "created" {
 }
 
 resource "aws_scheduler_schedule" "max_lifetime" {
-  name                         = "openkache-max-lifetime"
+  name                         = var.integration_mode ? "openkache-integration-${var.experiment_run}" : "openkache-max-lifetime"
   schedule_expression          = "at(${formatdate("YYYY-MM-DD'T'hh:mm:ss", timeadd(time_static.created.rfc3339, "${var.max_lifetime_minutes}m"))})"
   schedule_expression_timezone = "UTC"
 

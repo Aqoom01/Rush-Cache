@@ -1,6 +1,12 @@
+> 전체 방법론 source 감사와 누락 보완: [감사 결과](system-integration/ec2/METHOD_AUDIT.md), [현재 검증](system-integration/ec2/AUDIT_VALIDATION.md).
+
+> 현재 A1+A2+A3+B1+B2+B3 동시 통합: [실행 안내](system-integration/ec2/README.md), [역할과 범위](system-integration/FULL_SYSTEM_SCOPE.md). 과거 단일 protocol 결과는 동시 통합 검증과 구분한다.
+
 # experiments
 
 연구별 실험 시나리오, 실행 스크립트, 결과 요약을 두는 디렉터리입니다.
+
+**A1~B3 공통 통합 구현·전체 후보와 호환성**은 [전체 통합 기준](system-integration/FULL_SYSTEM_SCOPE.md), 실제 TCP/파일 KV 실행은 [system-integration/ec2](system-integration/ec2/README.md)를 따른다. native 복제 그룹과 반복 B2/B3 제어·세 복사·스케줄러·증감/drain을 연결한다. 기능 검증과 EC2 성능 실험을 구분하며 EC2 실험은 아직 수행하지 않았다. [이전 가상 fixture](system-integration/README.md)와 `partial-*`는 과거 부분 통합 기록이다.
 
 - **디렉터리 구성:** 연구 ID별로 나눕니다(예: `experiments/b2-load-balancing/`). `baseline-single-node/`는
   단일 노드 KV baseline 예시입니다.

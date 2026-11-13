@@ -77,3 +77,24 @@ resource "aws_vpc_security_group_egress_rule" "all" {
   ip_protocol       = "-1"
   cidr_ipv4         = "0.0.0.0/0"
 }
+
+# Joint agents remain private to the experimental subnet.
+resource "aws_vpc_security_group_ingress_rule" "integration_tcp" {
+  for_each          = var.integration_mode ? { ssh = [22, 22], replicas = [27101, 27113], gateway = [27300, 27300] } : {}
+  security_group_id = aws_security_group.node.id
+  description       = "integration-${each.key}"
+  ip_protocol       = "tcp"
+  from_port         = each.value[0]
+  to_port           = each.value[1]
+  cidr_ipv4         = aws_subnet.public.cidr_block
+}
+
+resource "aws_vpc_security_group_ingress_rule" "integration_udp" {
+  for_each          = var.integration_mode ? { a2 = 27102, a1 = 27111 } : {}
+  security_group_id = aws_security_group.node.id
+  description       = "integration-fd-${each.key}"
+  ip_protocol       = "udp"
+  from_port         = each.value
+  to_port           = each.value
+  cidr_ipv4         = aws_subnet.public.cidr_block
+}

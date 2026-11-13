@@ -20,6 +20,10 @@ import java.util.Set;
  * 실제 KvEngine/peer adapter가 아니며 commit 전 client에 staging을 노출하지 않아야 한다.
  */
 public final class PreCopyReceiver implements PreCopyProtocol.Destination {
+    private final java.util.function.ToLongFunction<Bytes> keyHash;
+    public PreCopyReceiver() { this(KeyHash::of); }
+    /** B1과 같은 불변 key 변환을 사용한다. controller thread 전용이다. */
+    public PreCopyReceiver(java.util.function.ToLongFunction<Bytes> keyHash) { this.keyHash = java.util.Objects.requireNonNull(keyHash); }
     private MigrationJob session;
     private Tablet tablet;
     private final Map<Bytes, Bytes> data = new LinkedHashMap<>();
@@ -52,7 +56,7 @@ public final class PreCopyReceiver implements PreCopyProtocol.Destination {
         if (snapshotComplete || batch.batchId() != nextBatch) return;
         Set<Bytes> keys = new HashSet<>();
         for (var record : batch.records()) {
-            if (!tablet.range().contains(KeyHash.of(record.key())) || data.containsKey(record.key())
+            if (!tablet.range().contains(keyHash.applyAsLong(record.key())) || data.containsKey(record.key())
                     || !keys.add(record.key())) return;
         }
         for (var record : batch.records()) data.put(record.key(), record.value());
@@ -74,7 +78,7 @@ public final class PreCopyReceiver implements PreCopyProtocol.Destination {
         long expected = lastSequence;
         Set<Bytes> keys = new HashSet<>();
         for (var delta : batch.records()) {
-            if (delta.seq() != ++expected || !tablet.range().contains(KeyHash.of(delta.key()))
+            if (delta.seq() != ++expected || !tablet.range().contains(keyHash.applyAsLong(delta.key()))
                     || !keys.add(delta.key())) return;
         }
         for (var delta : batch.records()) {

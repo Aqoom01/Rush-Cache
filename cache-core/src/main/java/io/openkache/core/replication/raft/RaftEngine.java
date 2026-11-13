@@ -85,6 +85,11 @@ public final class RaftEngine implements CacheEngine {
      */
     public RaftEngine(NodeId self,List<NodeId> members,CacheEngine kv,Mailbox owner,Transport transport,
                       TimeSource time,Duration heartbeat,Duration minimumTimeout,long seed,boolean externalFailureDetection) {
+        this(self,members,kv,owner,transport,time,heartbeat,minimumTimeout,seed,externalFailureDetection,minimumTimeout.multipliedBy(9));
+    }
+    /** Separate the known-leader watchdog from bootstrap election timing for slow external detectors. */
+    public RaftEngine(NodeId self,List<NodeId> members,CacheEngine kv,Mailbox owner,Transport transport,
+                      TimeSource time,Duration heartbeat,Duration minimumTimeout,long seed,boolean externalFailureDetection,Duration watchdogExtra) {
         this.self=Objects.requireNonNull(self); this.members=List.copyOf(members);
         if(members.size()!=3 || new HashSet<>(members).size()!=3 || !members.contains(self)
                 || heartbeat.isNegative() || heartbeat.isZero() || minimumTimeout.compareTo(heartbeat)<=0)
@@ -93,7 +98,8 @@ public final class RaftEngine implements CacheEngine {
         this.transport=Objects.requireNonNull(transport); this.time=Objects.requireNonNull(time);
         this.heartbeat=heartbeat.toNanos(); this.minimumTimeout=minimumTimeout.toNanos(); random=new Random(seed);
         this.externalFailureDetection=externalFailureDetection;
-        fallbackExtra=externalFailureDetection?Math.multiplyExact(this.minimumTimeout,9):0;
+        if (watchdogExtra.isNegative()) throw new IllegalArgumentException("negative watchdog extra");
+        fallbackExtra=externalFailureDetection?watchdogExtra.toNanos():0;
         lastLeaderContact=time.monotonicNanos();
         resetElection(); publish();
     }

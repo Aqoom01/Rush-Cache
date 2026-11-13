@@ -1,0 +1,40 @@
+#!/bin/bash
+set -euo pipefail
+# This timer exists even if the provisioning runner dies before creating the
+# external Scheduler. EBS-backed Linux shutdown stops rather than terminates.
+systemd-run --unit=openkache-emergency-stop --on-active=170m /usr/bin/systemctl poweroff
+mkdir -p /opt/openkache
+echo booting > /opt/openkache/STATUS
+trap 'echo failed > /opt/openkache/STATUS' ERR
+dnf install -y java-21-amazon-corretto-devel python3 openssh-server openssh-clients xfsprogs
+systemctl enable --now sshd
+id kacheexp >/dev/null 2>&1 || useradd -m -s /bin/bash kacheexp
+install -d -m 700 -o kacheexp -g kacheexp /home/kacheexp/.ssh
+mkdir -p /opt/openkache/integration/{bundle,runs,results}
+aws s3 cp --region ap-northeast-2 's3://${results_bucket}/bundles/integration/${bundle_sha256}.zip' /opt/openkache/integration/bundle.zip
+echo '${bundle_sha256}  /opt/openkache/integration/bundle.zip' | sha256sum -c -
+python3 - <<'PY'
+from pathlib import PurePosixPath
+import zipfile
+with zipfile.ZipFile('/opt/openkache/integration/bundle.zip') as archive:
+    for entry in archive.infolist():
+        name=PurePosixPath(entry.filename)
+        assert not name.is_absolute() and '..' not in name.parts
+    archive.extractall('/opt/openkache/integration/bundle')
+PY
+python3 /opt/openkache/integration/bundle/tools/integration.py verify-bundle --bundle /opt/openkache/integration/bundle
+# Disposable native data goes to NVMe; evidence stays on EBS.
+dev=$(lsblk -dnpo NAME,MODEL | awk '/Instance Storage/ {print $1; exit}')
+test -n "$dev"
+mkdir -p /mnt/nvme
+if ! mountpoint -q /mnt/nvme; then
+  if blkid "$dev"; then
+    test "$(blkid -s TYPE -o value "$dev")" = xfs
+  else
+    mkfs.xfs "$dev"
+  fi
+  mount -o noatime "$dev" /mnt/nvme
+fi
+mkdir -p /mnt/nvme/openkache
+chown -R kacheexp:kacheexp /opt/openkache/integration /mnt/nvme/openkache
+echo ready > /opt/openkache/STATUS

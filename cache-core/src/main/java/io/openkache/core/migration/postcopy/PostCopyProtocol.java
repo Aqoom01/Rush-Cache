@@ -44,6 +44,7 @@ public final class PostCopyProtocol {
         boolean cleanup(Tablet tablet);
     }
 
+    private final java.util.function.ToLongFunction<Bytes> keyHash;
     private final Source source;
     private final RoutingTable expectedTable;
     private RoutingTable publishedTable;
@@ -63,6 +64,12 @@ public final class PostCopyProtocol {
     private long completedPulls;
 
     public PostCopyProtocol(Source source, RoutingTable expectedTable) {
+        this(source, expectedTable, KeyHash::of);
+    }
+
+    /** B1과 같은 key 변환을 manifest/foreground 검증에 적용한다. controller thread 전용이다. */
+    public PostCopyProtocol(Source source, RoutingTable expectedTable, java.util.function.ToLongFunction<Bytes> keyHash) {
+        this.keyHash = Objects.requireNonNull(keyHash);
         this.source = Objects.requireNonNull(source, "source");
         this.expectedTable = Objects.requireNonNull(expectedTable, "expectedTable");
     }
@@ -89,7 +96,7 @@ public final class PostCopyProtocol {
             ownsFreeze = source.freeze(tablet());
             if (!ownsFreeze) return abort();
             for (Bytes key : List.copyOf(source.keys(tablet()))) {
-                if (!tablet().range().contains(KeyHash.of(key)) || !remainingKeys.add(key)) {
+                if (!tablet().range().contains(keyHash.applyAsLong(key)) || !remainingKeys.add(key)) {
                     throw new IllegalArgumentException("invalid source key manifest");
                 }
             }
@@ -129,7 +136,7 @@ public final class PostCopyProtocol {
             case Command.Delete delete -> delete.key();
             default -> throw new IllegalArgumentException("post-copy supports GET/SET/DELETE");
         };
-        if (!tablet().range().contains(KeyHash.of(key))) throw new IllegalArgumentException("key outside moving tablet");
+        if (!tablet().range().contains(keyHash.applyAsLong(key))) throw new IllegalArgumentException("key outside moving tablet");
         if (!committed) {
             return Result.redirect(ResultStatus.MOVED, new Redirect(session.change().from()),
                     expectedTable.version(), tablet().epoch());

@@ -25,10 +25,25 @@ application {
     applicationName = "openkache-server"
 }
 
+// A3의 JDK-only 판단 상태 기계를 원본 source에서 재사용한다. 새 모듈/외부 의존성은 추가하지 않는다.
+// CLI, 시뮬레이터와 기존 observer 전용 소켓 harness는 배포물에서 제외한다.
+val failureAlgorithms = sourceSets.create("failureAlgorithms") {
+    java.srcDir(rootProject.file("failure-detector-lab/src/main/java"))
+    java.include("com/openkache/failuredetector/core/**", "com/openkache/failuredetector/deadline/**",
+        "com/openkache/failuredetector/adaptive/**", "com/openkache/failuredetector/phi/**",
+        "com/openkache/failuredetector/swim/**", "com/openkache/failuredetector/redis/**",
+        "com/openkache/failuredetector/ignite/**", "com/openkache/failuredetector/aerospike/**",
+        "com/openkache/failuredetector/modules/**", "com/openkache/failuredetector/experiment/DetectorProfile.java",
+        "com/openkache/failuredetector/product/ProductAlgorithm.java")
+}
+sourceSets.main { compileClasspath += failureAlgorithms.output; runtimeClasspath += failureAlgorithms.output }
+sourceSets.test { compileClasspath += failureAlgorithms.output; runtimeClasspath += failureAlgorithms.output }
+tasks.named<Jar>("jar") { from(failureAlgorithms.output) }
+
 /* O00 실험 adapter만 추가한다. 기존 main/test/application 의존성과 wire는 보존한다. */
 val benchmark = sourceSets.create("benchmark")
-benchmark.compileClasspath += sourceSets.main.get().output
-benchmark.runtimeClasspath += sourceSets.main.get().output
+benchmark.compileClasspath += sourceSets.main.get().output + failureAlgorithms.output
+benchmark.runtimeClasspath += sourceSets.main.get().output + failureAlgorithms.output
 configurations[benchmark.implementationConfigurationName]
     .extendsFrom(configurations.implementation.get())
 dependencies {
@@ -37,8 +52,8 @@ dependencies {
 }
 
 val benchmarkTest = sourceSets.create("benchmarkTest")
-benchmarkTest.compileClasspath += benchmark.output + sourceSets.main.get().output
-benchmarkTest.runtimeClasspath += benchmark.output + sourceSets.main.get().output
+benchmarkTest.compileClasspath += benchmark.output + sourceSets.main.get().output + failureAlgorithms.output
+benchmarkTest.runtimeClasspath += benchmark.output + sourceSets.main.get().output + failureAlgorithms.output
 configurations[benchmarkTest.implementationConfigurationName]
     .extendsFrom(configurations.testImplementation.get(),
         configurations[benchmark.implementationConfigurationName])
@@ -146,5 +161,63 @@ tasks.register<Zip>("pilotZip") {
     into("lib") { from(pilotLibraries) }
     from(layout.buildDirectory.file("pilot/BUNDLE_SHA256SUMS"))
     into("tools") { from(rootProject.file("experiments/ionia-pilot")) }
+    duplicatesStrategy = DuplicatesStrategy.FAIL
+}
+
+// 실제 통합 replica/gateway와 Runner를 동일 배포물로 묶는다. EC2 접근은 수행하지 않는다.
+val integrationLibraries = providers.provider {
+    val server = layout.buildDirectory.dir("install/openkache-server/lib").get().asFile.listFiles()?.filter { it.extension == "jar" }.orEmpty()
+    val runner = project(":experiment-runner").tasks.named<Jar>("jar").get().archiveFile.get().asFile
+    (server + runner).sortedBy { it.name }
+}
+val integrationHashes = tasks.register("integrationHashes") {
+    dependsOn(tasks.named("installDist"), ":experiment-runner:jar")
+    inputs.files(integrationLibraries)
+    val receipt = layout.buildDirectory.file("integration/BUNDLE_SHA256SUMS")
+    outputs.file(receipt)
+    doLast {
+        val files = integrationLibraries.get()
+        check(files.isNotEmpty() && files.all { it.isFile })
+        check(files.map { it.name }.distinct().size == files.size)
+        receipt.get().asFile.apply {
+            parentFile.mkdirs()
+            writeText(files.joinToString("") { file ->
+                val digest = MessageDigest.getInstance("SHA-256")
+                file.inputStream().use { input -> val buffer = ByteArray(65536); while (true) { val n = input.read(buffer); if (n < 0) break; digest.update(buffer, 0, n) } }
+                digest.digest().joinToString("") { "%02x".format(it.toInt() and 255) } + "  lib/" + file.name + "\n"
+            }, Charsets.UTF_8)
+        }
+    }
+}
+val integrationTools = rootProject.fileTree("experiments/system-integration/ec2") {
+    exclude("**/__pycache__/**", "**/runs/**", "**/results/**")
+}
+val integrationToolHashes = tasks.register("integrationToolHashes") {
+    inputs.files(integrationTools)
+    val receipt = layout.buildDirectory.file("integration/TOOLS_SHA256SUMS")
+    outputs.file(receipt)
+    doLast {
+        val base = rootProject.file("experiments/system-integration/ec2")
+        receipt.get().asFile.apply {
+            parentFile.mkdirs()
+            writeText(integrationTools.files.sortedBy { it.relativeTo(base).invariantSeparatorsPath }.joinToString("") { file ->
+                val digest = MessageDigest.getInstance("SHA-256")
+                file.inputStream().use { input -> val buffer = ByteArray(65536); while (true) { val n = input.read(buffer); if (n < 0) break; digest.update(buffer, 0, n) } }
+                digest.digest().joinToString("") { "%02x".format(it.toInt() and 255) } + "  tools/" + file.relativeTo(base).invariantSeparatorsPath + "\n"
+            }, Charsets.UTF_8)
+        }
+    }
+}
+tasks.register<Zip>("integrationZip") {
+    group = "distribution"
+    description = "A1/A2 + A3 + B1/B2/B3 실제 TCP 통합 실험 배포물 (EC2 실행 없음)"
+    dependsOn(integrationHashes, integrationToolHashes)
+    archiveFileName.set("openkache-integration.zip")
+    destinationDirectory.set(layout.buildDirectory.dir("distributions"))
+    into("lib") { from(integrationLibraries) }
+    from(layout.buildDirectory.file("integration/BUNDLE_SHA256SUMS"))
+    from(layout.buildDirectory.file("integration/TOOLS_SHA256SUMS"))
+    into("tools") { from(integrationTools) }
+    from(rootProject.file("experiments/system-integration/FULL_SYSTEM_SCOPE.md"))
     duplicatesStrategy = DuplicatesStrategy.FAIL
 }
