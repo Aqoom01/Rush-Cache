@@ -17,6 +17,32 @@ spec=importlib.util.spec_from_file_location('integration_cloud',SOURCE);cloud=im
 
 
 class WorkflowTest(unittest.TestCase):
+    def test_matrix_spec_mismatch_fails_before_aws_or_state_creation(self):
+        import os
+        with tempfile.TemporaryDirectory() as temp:
+            path=Path(temp);bundle=path/'bundle.zip';bundle.write_bytes(b'test bundle')
+            matrix=path/'matrix.csv';matrix.write_text('a1,a2\nRAFT,O00\n')
+            specification=path/'spec.json';specification.write_text(json.dumps({'perRowArguments':[[],[],[],[]]}))
+            argv=[str(SOURCE),'--campaign','ci-101','--batch','ci-101-11','--account','123456789012',
+                  '--commit','a'*40,'--bundle',str(bundle),'--matrix',str(matrix),'--plan-spec',str(specification),
+                  '--work',str(path/'work'),'--execute']
+            created=__import__('datetime').datetime.now(__import__('datetime').timezone.utc).isoformat()
+            environment=dict(GITLAB_CI='true',CI_COMMIT_REF_PROTECTED='true',CI_PIPELINE_ID='101',CI_JOB_ID='11',CI_PIPELINE_CREATED_AT=created)
+            with patch.dict(os.environ,environment),patch.object(sys,'argv',argv),patch.object(cloud,'Aws') as aws,patch.object(cloud,'terraform') as tf,patch.object(cloud,'finalize') as finalize:
+                with self.assertRaisesRegex(ValueError,'per-row argument count differs.*rows=1.*rows=4'):cloud.main()
+                aws.assert_not_called();tf.assert_not_called();finalize.assert_not_called()
+            self.assertFalse((path/'work').exists())
+
+    def test_pilot_matrix_and_per_row_workload_are_sliced_together(self):
+        import core_pipeline
+        with tempfile.TemporaryDirectory() as temp:
+            plan=Path(temp);core_pipeline.prepare(plan);spec=json.loads((plan/'pilot.json').read_text())
+            args=argparse.Namespace(matrix=str(plan/'pilot.csv'),plan_spec=str(plan/'pilot.json'),start=1,limit=2)
+            rows,per_row,matrix_bytes,count=cloud.batch_inputs(args,spec)
+            self.assertEqual(4,count);self.assertEqual(4,len(per_row));self.assertEqual(2,len(rows))
+            self.assertEqual(len(matrix_bytes.decode().splitlines()),3)
+            self.assertTrue(all('--rate' in a for a in per_row[args.start:args.start+args.limit]))
+
     def test_new_allocations_stop_within_the_24h_campaign_budget(self):
         created='2026-11-13T00:00:00Z';start=__import__('datetime').datetime.fromisoformat(created.replace('Z','+00:00')).timestamp()
         self.assertTrue(cloud.campaign_has_window(created,start+20*3600))

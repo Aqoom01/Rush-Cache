@@ -72,6 +72,20 @@ def campaign_has_window(created_at,now):
     return created-300<=now<created+21*3600
 
 
+def batch_inputs(args,spec):
+    """Validate the complete matrix/spec pair before contacting AWS or creating state."""
+    with Path(args.matrix).open(newline='') as stream:all_rows=list(csv.DictReader(stream))
+    per_row=spec.get('perRowArguments',[[] for _ in all_rows])
+    check(len(per_row)==len(all_rows),'per-row argument count differs from matrix: matrix='+str(args.matrix)
+          +' (rows='+str(len(all_rows))+'), spec='+str(args.plan_spec)+' (rows='+str(len(per_row))+')')
+    if 'expectedCases' in spec:check(spec['expectedCases']==len(all_rows),'spec expectedCases differs from matrix')
+    rows=all_rows[args.start:args.start+args.limit];check(rows,'empty batch')
+    from integration import row_plan_arguments
+    for row in rows:row_plan_arguments(row)
+    buf=io.StringIO(newline='');writer=csv.DictWriter(buf,fieldnames=list(rows[0]));writer.writeheader();writer.writerows(rows)
+    return rows,per_row,buf.getvalue().encode(),len(all_rows)
+
+
 def setup_ssh(aws,ids,ips):
     # Public host keys are read over authenticated SSM; no trust-on-first-use scan.
     keys=[]
@@ -195,28 +209,23 @@ def main():
     check(args.campaign=='ci-'+os.environ.get('CI_PIPELINE_ID','') and args.batch==args.campaign+'-'+os.environ.get('CI_JOB_ID',''),'campaign/batch must belong to the current CI job')
     if not args.finalize_only:
         check(campaign_has_window(os.environ.get('CI_PIPELINE_CREATED_AT',''),time.time()),'24h campaign budget: insufficient window for a new three-hour batch')
+        rows,per_row,matrix_bytes,total_rows=batch_inputs(args,spec)
+        print(json.dumps(dict(stage='inputs-validated',phase=args.phase,matrix=args.matrix,spec=args.plan_spec,
+                              matrixRows=total_rows,selectedRows=len(rows))),flush=True)
     work=Path(args.work).resolve();work.mkdir(parents=True,exist_ok=True);aws=Aws();identity(aws,args.account)
     terraform(args,work,'init','-input=false','-reconfigure','-backend-config=key=integration/'+args.campaign+'/'+args.batch+'.tfstate')
     if args.finalize_only:
         check(finalize(args,work,aws),'backup not verified; instances preserved');return
     try:
-        save(work/'execution-started.json',dict(campaign=args.campaign,batch=args.batch,startedUtcNs=time.time_ns()))
         # Count untagged instances as well; do not destroy or adopt existing machines.
         current=aws.call('ec2','describe-instances',filters=json.dumps([dict(Name='instance-state-name',Values=['pending','running','stopping','stopped'])]))
         count=sum(len(r['Instances']) for r in current['Reservations']);check(count+8<=9,'account instance ceiling would be exceeded')
-        with Path(args.matrix).open(newline='') as stream:all_rows=list(csv.DictReader(stream))
-        rows=all_rows[args.start:args.start+args.limit]
-        per_row=spec.get('perRowArguments',[[] for _ in all_rows])
-        check(len(per_row)==len(all_rows),'per-row argument count differs from matrix')
-        check(rows,'empty batch')
-        from integration import row_plan_arguments
-        for row in rows:row_plan_arguments(row)
-        buf=io.StringIO(newline='');writer=csv.DictWriter(buf,fieldnames=list(rows[0]));writer.writeheader();writer.writerows(rows)
-        matrix_bytes=buf.getvalue().encode();(work/'matrix.csv').write_bytes(matrix_bytes)
+        (work/'matrix.csv').write_bytes(matrix_bytes)
         aws.put('bundles/integration/'+args.bundle_sha+'.zip',Path(args.bundle))
         terraform(args,work,'plan','-input=false','-var=node_count=7','-var=source_commit='+args.commit,'-out='+str(work/'create.tfplan'))
         before=resource_inventory(json.loads(terraform(args,work,'show','-json')))
         check(not before,'refuse to adopt a nonempty Terraform state')
+        save(work/'execution-started.json',dict(campaign=args.campaign,batch=args.batch,startedUtcNs=time.time_ns()))
         terraform(args,work,'apply','-input=false',str(work/'create.tfplan'))
         save(work/'resource-ownership.json',dict(batch=args.batch,resources=resource_inventory(json.loads(terraform(args,work,'show','-json')))))
         outputs=json.loads(terraform(args,work,'output','-json'));ids=outputs['node_instance_ids']['value']+[outputs['loadgen_instance_id']['value']]
@@ -257,7 +266,7 @@ def main():
         check(set(receipt['experimentOutcomes'])=={'PASS'},'experiments failed; evidence verified and resources cleaned, inspect results')
     except BaseException:
         save(work/'failure.json',dict(error=__import__('traceback').format_exc()))
-        if not (work/'cleanup-complete.json').exists():finalize(args,work,aws)
+        if (work/'execution-started.json').exists() and not (work/'cleanup-complete.json').exists():finalize(args,work,aws)
         raise
 
 
