@@ -2,6 +2,7 @@ package io.openkache.core.balance.placement;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 
 import io.openkache.core.model.NodeId;
 import io.openkache.core.model.TabletId;
@@ -11,12 +12,38 @@ import io.openkache.core.tablet.Tablet;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.time.Duration;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 /** 정책별 성질: 균형 개선, 이동 예산, cooldown, 이동 비용, 노드 변화 시 이동 범위. */
 @DisplayName("배치 정책별 성질")
 class PlacementPolicyTest {
+
+    @Test
+    void singleAllowedNodeWithNoActualMoveTerminatesForEveryPolicy() {
+        List<NodeId> one = Inputs.nodes(1);
+        PlacementInput input = Inputs.input(Inputs.table(one, 16), i -> 10 + i, Inputs.capacity(one, 1000));
+        for (PlacementPolicy policy : List.of(new GreedyLoadPlacement(), new SlicerInspiredPlacement(), new EStoreInspiredPlacement(),
+                new PowerOfTwoChoicesPlacement(), new CostAwareRebalancing(), new HysteresisRebalancing(), new WeightedRendezvousPlacement())) {
+            var decision = assertTimeoutPreemptively(Duration.ofSeconds(1), () -> policy.decide(input), policy.variant());
+            assertTrue(decision.moves().isEmpty(), policy.variant());
+        }
+    }
+
+    @Test
+    void everyPolicyDrainsDisallowedNodesIntoTheLastRemainingNode() {
+        List<NodeId> nodes = Inputs.nodes(1, 2, 3);
+        RoutingTable table = Inputs.table(nodes, 8);
+        PlacementInput input = Inputs.input(table, i -> 10 + i, Inputs.capacity(Inputs.nodes(1), 1000));
+        var orphans = table.tablets().stream().filter(t -> !t.owner().equals(new NodeId(1))).map(Tablet::id).collect(java.util.stream.Collectors.toSet());
+        for (PlacementPolicy policy : List.of(new GreedyLoadPlacement(), new SlicerInspiredPlacement(), new EStoreInspiredPlacement(),
+                new PowerOfTwoChoicesPlacement(), new CostAwareRebalancing(), new HysteresisRebalancing(), new WeightedRendezvousPlacement())) {
+            var decision = assertTimeoutPreemptively(Duration.ofSeconds(1), () -> policy.decide(input), policy.variant());
+            assertEquals(orphans, decision.moves().stream().map(Change::unit).collect(java.util.stream.Collectors.toSet()), policy.variant());
+            assertTrue(decision.moves().stream().allMatch(c -> c.to().equals(new NodeId(1))), policy.variant());
+        }
+    }
 
     private static final List<NodeId> FOUR = Inputs.nodes(1, 2, 3, 4);
     private static final RoutingTable TABLE = Inputs.table(FOUR, 8);

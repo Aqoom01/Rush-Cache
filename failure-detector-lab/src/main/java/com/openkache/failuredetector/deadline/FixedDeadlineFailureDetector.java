@@ -119,6 +119,12 @@ public final class FixedDeadlineFailureDetector extends AbstractFailureDetector 
         return true;
     }
 
+    /** Transport received no independent evidence. Keep suspicion and its failure count unchanged. */
+    public void cancelVerification(String target) {
+        PeerState peer = peers.get(target);
+        if (peer != null) peer.verificationInFlight = false;
+    }
+
     public void recordVerification(long nowNanos, String target, boolean reachable) {
         PeerState peer = peers.get(target);
         if (peer == null || !peer.verificationInFlight || status(target) != NodeStatus.SUSPECT) {

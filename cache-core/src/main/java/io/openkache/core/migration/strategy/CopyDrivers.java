@@ -21,6 +21,10 @@ public final class CopyDrivers {
     /** 모든 호출은 같은 controller thread. publish와 protocol 통지는 한 호출에서 순서대로 수행한다. */
     public interface Binding {
         RoutingTable current();
+        /** B1과 같은 key 변환. 기존 fixture는 기본 해시를 유지한다. */
+        default long keyHash(Bytes key) { return io.openkache.core.tablet.KeyHash.of(key); }
+        /** 소유권 게시 전 적용 barrier. 멱등이어야 하며 실패하면 CAS를 수행하지 않는다. */
+        default void beforePublish(Change change,String copy,RoutingTable before,RoutingTable after) { }
         boolean compareAndSet(RoutingTable before,RoutingTable after);
         PreCopyProtocol.Source source();
         StopAndCopyProtocol.Destination stopDestination();
@@ -51,10 +55,10 @@ public final class CopyDrivers {
         RoutingTable expected,publishedBefore,publishedAfter;MigrationJob job;StopAndCopyProtocol stop;PreCopyProtocol pre;PostCopyProtocol post;boolean published,installed;
         Driver(String name,Change change,Binding binding,Settings settings){this.name=name;this.change=Objects.requireNonNull(change);this.binding=Objects.requireNonNull(binding);this.settings=Objects.requireNonNull(settings);}
         @Override public void begin(){if(job!=null)throw new IllegalStateException("already begun");expected=binding.current();job=MigrationJob.pending(change,name);
-            switch(name){case "stop-and-copy"->{stop=new StopAndCopyProtocol(binding.source(),binding.stopDestination(),expected,settings.batchBytes());stop.begin(job);}case "pre-copy"->{pre=new PreCopyProtocol(binding.source(),binding.preDestination(),expected,new PreCopyProtocol.Settings(settings.batchBytes(),settings.dirtyThreshold(),settings.maxLiveRounds()));pre.begin(job);}case "post-copy"->{post=new PostCopyProtocol(binding.postSource(),expected);post.begin(job);}default->throw new IllegalStateException(name);}}
+            switch(name){case "stop-and-copy"->{stop=new StopAndCopyProtocol(binding.source(),binding.stopDestination(),expected,settings.batchBytes());stop.begin(job);}case "pre-copy"->{pre=new PreCopyProtocol(binding.source(),binding.preDestination(),expected,new PreCopyProtocol.Settings(settings.batchBytes(),settings.dirtyThreshold(),settings.maxLiveRounds()),binding::keyHash);pre.begin(job);}case "post-copy"->{post=new PostCopyProtocol(binding.postSource(),expected,binding::keyHash);post.begin(job);}default->throw new IllegalStateException(name);}}
         private boolean ready(){return stop!=null?stop.readyToCommit():pre!=null?pre.readyToCommit():post!=null&&post.readyToCommit();}
         @Override public void step(long budget){if(job==null)throw new IllegalStateException("begin first");if(published&&!installed){install();return;}if(ready()){
-            var before=binding.current();var after=before.apply(change);MigrationPublication.verify(job,expected,before,after);if(!binding.compareAndSet(before,after))return;
+            var before=binding.current();var after=before.apply(change);MigrationPublication.verify(job,expected,before,after);binding.beforePublish(change,name,before,after);if(!binding.compareAndSet(before,after))return;
             if(stop!=null)stop.committed(before,after);else if(pre!=null)pre.committed(before,after);else post.committed(before,after);published=true;publishedBefore=before;publishedAfter=after;install();
         }else if(stop!=null)stop.step(budget);else if(pre!=null)pre.step(budget);else post.step(budget);}
         @Override public long sentBytes(){return stop!=null?stop.job().progress().sentBytes():pre!=null?pre.job().progress().sentBytes():post!=null?post.sentBytes():0;}

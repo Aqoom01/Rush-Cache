@@ -1,0 +1,85 @@
+{
+  "command": "./gradlew build :cache-server:integrationZip --offline --console=plain",
+  "outcome": "BUILD SUCCESSFUL",
+  "java": "21.0.12.1",
+  "total": {
+    "tests": 2032,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 12
+  },
+  "suites": [
+    {
+      "module": "cache-core",
+      "task": "test",
+      "tests": 1300,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 12
+    },
+    {
+      "module": "cache-server",
+      "task": "test",
+      "tests": 191,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "module": "cache-server",
+      "task": "benchmarkTest",
+      "tests": 100,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "module": "cache-server",
+      "task": "variantBenchmarkTest",
+      "tests": 99,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "module": "cache-server",
+      "task": "correctnessBenchmarkTest",
+      "tests": 48,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "module": "cache-server",
+      "task": "jvmBenchmarkTest",
+      "tests": 32,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "module": "cache-server",
+      "task": "networkBenchmarkTest",
+      "tests": 37,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "module": "experiment-runner",
+      "task": "test",
+      "tests": 77,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "module": "experiment-runner",
+      "task": "benchmarkTest",
+      "tests": 148,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    }
+  ]
+}

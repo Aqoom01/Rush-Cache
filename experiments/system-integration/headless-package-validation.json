@@ -1,0 +1,46 @@
+{
+  "reportDateAsiaSeoul": "2026-11-13",
+  "artifact": "/home/ssafy/openKache/S15P31D111/cache-server/build/distributions/openkache-integration.zip",
+  "artifactSha256": "3f854a9b83bdcedcb819fdd1c33e0232c8f2f636b7f4034308b68305671da1e5",
+  "unpacked": "/tmp/openkache-headless-release-mcm140ip",
+  "bundleVerification": "fa4287a50bb6de161373f9f99709add94c6acf3f4ca212e3a7e8eae32af78f3c",
+  "packagedPythonTests": {
+    "tests": 35,
+    "status": "PASS",
+    "summary": "----------------------------------------------------------------------\nRan 35 tests in 3.473s\n\nOK"
+  },
+  "packagedJavaConfig": "CONFIG_VALID protocol=RAFT+O00 groups=2 run=i78d4292fd7e1468689c8ac9e82ecbeb4",
+  "packagedJavaLoadConfig": "LOAD_CONFIG_VALID",
+  "catalogCounts": {
+    "a1": 7,
+    "a2": 8,
+    "failureDetector": 17,
+    "readSelection": 2,
+    "distribution": 7,
+    "split": 4,
+    "placement": 9,
+    "scaler": 9,
+    "scheduler": 9,
+    "copy": 3,
+    "drain": 2
+  },
+  "libraryManifestSha256": "819d67877e1304e122dc93710153e12ad0986dde3efc5b77b5f410ac96ab2f7a",
+  "toolsManifestSha256": "604dd49f2ff94a4ff1ea0a155c4b238ce3fad2d541585ead9e1b65eeba945325",
+  "ciValidation": {
+    "yaml": "PASS",
+    "shellBlocks": 29,
+    "needsAndStages": "PASS",
+    "liveLint": false
+  },
+  "terraform": {
+    "validate": true,
+    "warnings": 0,
+    "backendEnabled": false
+  },
+  "javaBuildReport": "ec2/headless-build-validation.json",
+  "actualAwsExecution": false,
+  "actualS3Upload": false,
+  "actualTermination": false,
+  "engineRelationship": "A1 replicated admission and routing authority + A2 SSD data replication; independently selectable, co-located on each replica",
+  "releaseNotes": "Only execution documentation changed since the packaged Python/config validation; native libraries are identical."
+}

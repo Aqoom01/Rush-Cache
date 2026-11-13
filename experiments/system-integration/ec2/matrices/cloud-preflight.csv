@@ -1,0 +1,2 @@
+a1,a2,read_selection,fd,distribution,split,placement,scaler,scheduler,copy,drain,scenario,workload,seed,key_mode
+RAFT,O00,ADAPTIVE,F3,RANGE,NONE,GREEDY,fixed,fifo,PRE,preflight-all,SCALE_CYCLE,UNIFORM,1,DEFAULT

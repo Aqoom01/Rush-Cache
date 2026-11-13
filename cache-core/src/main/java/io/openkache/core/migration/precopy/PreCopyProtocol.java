@@ -76,6 +76,7 @@ public final class PreCopyProtocol implements MigrationProtocol {
     private record RoundStart(int generation, int liveRound, boolean finalRound, int dirtyKeys, int tombstoneKeys,
             long dirtyBytes, Long previousDirtyBytes, StopReason reason, long sentBytes, long sequence) {}
 
+    private final java.util.function.ToLongFunction<Bytes> keyHash;
     private final Source source;
     private final Destination destination;
     private final RoutingTable expectedTable;
@@ -107,6 +108,13 @@ public final class PreCopyProtocol implements MigrationProtocol {
     }
 
     public PreCopyProtocol(Source source, Destination destination, RoutingTable expectedTable, Settings settings) {
+        this(source, destination, expectedTable, settings, KeyHash::of);
+    }
+
+    /** B1의 key→점 변환을 보존한다. 변환은 불변이며 모든 호출은 같은 controller thread에서 한다. */
+    public PreCopyProtocol(Source source, Destination destination, RoutingTable expectedTable, Settings settings,
+                           java.util.function.ToLongFunction<Bytes> keyHash) {
+        this.keyHash = Objects.requireNonNull(keyHash);
         this.source = Objects.requireNonNull(source, "source");
         this.destination = Objects.requireNonNull(destination, "destination");
         this.expectedTable = Objects.requireNonNull(expectedTable, "expectedTable");
@@ -151,7 +159,7 @@ public final class PreCopyProtocol implements MigrationProtocol {
 
     private void onSourceWrite(Bytes key) {
         Objects.requireNonNull(key, "key");
-        if (tracking && tablet().range().contains(KeyHash.of(key))) collecting.add(key);
+        if (tracking && tablet().range().contains(keyHash.applyAsLong(key))) collecting.add(key);
     }
 
     @Override

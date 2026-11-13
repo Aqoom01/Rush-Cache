@@ -102,6 +102,22 @@ public final class VrEngine implements CacheEngine {
         lastContact = time.monotonicNanos();
     }
 
+    private record ExternalFailure(long observedView, io.openkache.core.failure.MembershipEvent event) { }
+    private final java.util.concurrent.atomic.AtomicReference<ExternalFailure> externalFailure = new java.util.concurrent.atomic.AtomicReference<>();
+    /** 현재 leader의 DEAD를 보존한다. mailbox가 포화여도 tick이 동일 view의 기존 quorum 전환을 시작한다. */
+    public void onMembershipChanged(io.openkache.core.failure.MembershipEvent event) {
+        Objects.requireNonNull(event); Observation current = observation;
+        if (current == null || event.current() != io.openkache.core.failure.MemberStatus.DEAD || !event.member().equals(primary(current.view()))) return;
+        var signal = new ExternalFailure(current.view(), event);
+        externalFailure.accumulateAndGet(signal, (old, next) -> old == null || next.observedView() > old.observedView() ? next : old);
+        owner.offer(this::observeExternalFailure);
+    }
+    private void observeExternalFailure() {
+        ExternalFailure failure = externalFailure.getAndSet(null);
+        if (failure != null && !closed.get() && failure.observedView() == view && state == State.NORMAL && !primary().equals(self)
+                && failure.event().member().equals(primary())) beginView(Math.incrementExact(view));
+    }
+
     @Override public CompletionStage<Result> execute(Command command, RequestContext context) {
         Objects.requireNonNull(command); Objects.requireNonNull(context);
         CompletableFuture<Result> future = new CompletableFuture<>();
@@ -324,6 +340,7 @@ public final class VrEngine implements CacheEngine {
     @Override public void onTimer(TimerEvent event) {
         if (!TICK.equals(event.name())) return;
         owner.offer(() -> {
+            observeExternalFailure();
             if (closed.get() || state == State.FAILED) return;
             waiting.removeIf(w -> {
                 if (w.context().deadline().isExpired(time)) { w.future().complete(status(ResultStatus.TIMEOUT)); return true; }

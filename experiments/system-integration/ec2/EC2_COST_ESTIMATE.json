@@ -1,0 +1,84 @@
+{
+  "reportDateAsiaSeoul": "2026-11-13",
+  "region": "ap-northeast-2",
+  "purchase": "Linux On-Demand",
+  "instance": "m6gd.medium",
+  "count": 8,
+  "roles": {
+    "replica": 6,
+    "gateway": 1,
+    "load": 1
+  },
+  "instanceHourlyUsd": 0.0556,
+  "publicIpv4PerHourUsd": 0.005,
+  "computeAndIpv4HourlyUsd": 0.48479999999999995,
+  "priceSource": "https://b0.p.awsstatic.com/pricing/2.0/meteredUnitMaps/ec2/USD/current/ec2-ondemand-without-sec-sel/Asia%20Pacific%20(Seoul)/Linux/index.json",
+  "priceProduct": {
+    "rateCode": "E9PXQHVQUEG8RWRN.JRTCKXETXF.6YS6EN2CT7",
+    "price": "0.0556000000",
+    "Location": "Asia Pacific (Seoul)",
+    "Instance Family": "General purpose",
+    "vCPU": "1",
+    "Instance Type": "m6gd.medium",
+    "Memory": "4 GiB",
+    "Storage": "1 x 59 NVMe SSD",
+    "Network Performance": "Up to 10 Gigabit",
+    "plc:OperatingSystem": "Linux",
+    "plc:InstanceFamily": "General Purpose",
+    "Operating System": "Linux",
+    "Pre Installed S/W": "NA",
+    "License Model": "No License required"
+  },
+  "assumedKrwPerUsd": 1500,
+  "rootDisks": {
+    "type": "gp3",
+    "gibEach": 20,
+    "count": 8
+  },
+  "scenarios": [
+    {
+      "hours": 12,
+      "computeAndIpv4Usd": 5.8176,
+      "estimatedTotalUsd": [
+        6,
+        7
+      ],
+      "estimatedTotalKrw": [
+        9000,
+        10500
+      ]
+    },
+    {
+      "hours": 18,
+      "computeAndIpv4Usd": 8.7264,
+      "estimatedTotalUsd": [
+        9,
+        10
+      ],
+      "estimatedTotalKrw": [
+        13500,
+        15000
+      ]
+    },
+    {
+      "hours": 24,
+      "computeAndIpv4Usd": 11.6352,
+      "estimatedTotalUsd": [
+        12,
+        14
+      ],
+      "estimatedTotalKrw": [
+        18000,
+        21000
+      ]
+    }
+  ],
+  "proposedExperimentBudgetKrw": 30000,
+  "assumptions": [
+    "Total estimate includes an allowance for short-lived root EBS, small S3 output, and small transfer costs; regional EBS unit price not independently fetched.",
+    "KRW conversion is an explicit planning assumption, not a live exchange rate. USD totals exclude taxes, credits, and existing monthly spend.",
+    "Keep replica traffic on private IP in the same AZ; no NAT Gateway. Preserve results before removing temporary instances and root volumes.",
+    "Existing Terraform automatic-stop default is 60 minutes, allowed maximum 180 minutes. Split execution into bounded batches or separately review lifetime setup before launching long campaigns.",
+    "This is a price estimate, not account billing or evidence of EC2 provisioning."
+  ]
+}

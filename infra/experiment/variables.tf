@@ -67,3 +67,26 @@ variable "source_commit" {
     error_message = "source_commit은 40자리 commit 해시여야 한다."
   }
 }
+
+variable "integration_mode" {
+  type    = bool
+  default = false
+}
+
+variable "experiment_run" {
+  type    = string
+  default = ""
+  validation {
+    condition     = !var.integration_mode || can(regex("^[A-Za-z0-9_-]{1,48}$", var.experiment_run))
+    error_message = "integration_mode requires a unique experiment_run token."
+  }
+}
+
+variable "integration_bundle_sha256" {
+  type    = string
+  default = ""
+  validation {
+    condition     = !var.integration_mode || can(regex("^[0-9a-f]{64}$", var.integration_bundle_sha256))
+    error_message = "integration_mode requires the exact bundle SHA-256."
+  }
+}

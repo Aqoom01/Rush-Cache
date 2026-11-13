@@ -99,6 +99,9 @@ final class Assignment {
     /** {@code id}를 지금 주인에서 {@code to}로 옮긴다고 가정했을 때의 최대 이용률. 실제로 옮기지 않는다. */
     double maxUtilizationAfterMove(TabletId id, NodeId to) {
         NodeId from = owner.get(id);
+        if (from.equals(to)) {
+            return maxUtilization();
+        }
         long load = input.load(id);
         double max = 0;
         for (NodeId node : nodeLoad.keySet()) {

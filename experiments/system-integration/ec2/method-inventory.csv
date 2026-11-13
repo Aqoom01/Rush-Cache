@@ -1,0 +1,88 @@
+module,method,source,selection,status,note
+A1,PB,cache-core/src/main/java/io/openkache/core/replication/primarybackup/CrashOnlyPrimaryBackupEngine.java,a1.method=PB,integrated,Control/admission replication; native prototype guarantees retained
+A1,PB_FENCED,cache-core/src/main/java/io/openkache/core/replication/primarybackup/PrimaryBackupFence.java,a1.method=PB_FENCED,integrated,Control/admission replication; native prototype guarantees retained
+A1,RAFT,cache-core/src/main/java/io/openkache/core/replication/raft/RaftEngine.java,a1.method=RAFT,integrated,Control/admission replication; native prototype guarantees retained
+A1,VR,cache-core/src/main/java/io/openkache/core/replication/vr/VrEngine.java,a1.method=VR,integrated,Control/admission replication; native prototype guarantees retained
+A1,CHAIN,cache-core/src/main/java/io/openkache/core/replication/chain/ChainEngine.java,a1.method=CHAIN,integrated,Control/admission replication; native prototype guarantees retained
+A1,CRAQ,cache-core/src/main/java/io/openkache/core/replication/chain/ChainEngine.java,a1.method=CRAQ,integrated,Control/admission replication; native prototype guarantees retained
+A1,ROSE,cache-core/src/main/java/io/openkache/core/replication/rose/RoseEngine.java,a1.method=ROSE,integrated,Control/admission replication; native prototype guarantees retained
+A2,O00,cache-core/src/main/java/io/openkache/core/replication/ionia,a2.method=O00,integrated,
+A2,V01,cache-core/src/main/java/io/openkache/core/replication/ionia-second,a2.method=V01,integrated,
+A2,V02,cache-core/src/main/java/io/openkache/core/replication/ionia-third,a2.method=V02,integrated,
+A2,V03,cache-core/src/main/java/io/openkache/core/replication/ionia-fourth,a2.method=V03,integrated,
+A2,V04,cache-core/src/main/java/io/openkache/core/replication/ionia-fifth,a2.method=V04,integrated,
+A2,V05,cache-core/src/main/java/io/openkache/core/replication/ionia-sixth,a2.method=V05,integrated,
+A2,V06,cache-core/src/main/java/io/openkache/core/replication/ionia-seventh,a2.method=V06,integrated,
+A2,V07,cache-core/src/main/java/io/openkache/core/replication/ionia-eighth,a2.method=V07,integrated,
+A2.read,ADAPTIVE,cache-core/src/main/java/io/openkache/core/replication/ionia-seventh/src/main/java/io/openkache/core/replication/ionia_seventh/IoniaReadSelectionSettings.java,a2.method=V06;read.selection=ADAPTIVE,integrated,
+A2.read,ROUND_ROBIN,cache-core/src/main/java/io/openkache/core/replication/ionia-seventh/src/main/java/io/openkache/core/replication/ionia_seventh/IoniaReadSelectionSettings.java,a2.method=V06;read.selection=ROUND_ROBIN,integrated,
+A1.vr,FULL_LOG,cache-core/src/main/java/io/openkache/core/replication/vr/VrEngine.java,a1.method=VR;vr.mode=FULL_LOG,integrated,
+A1.vr,INCREMENTAL,cache-core/src/main/java/io/openkache/core/replication/vr/VrEngine.java,a1.method=VR;vr.mode=INCREMENTAL,integrated,
+A1.vr,INCREMENTAL_CATCHUP,cache-core/src/main/java/io/openkache/core/replication/vr/VrEngine.java,a1.method=VR;vr.mode=INCREMENTAL_CATCHUP,integrated,
+A3.profile,F0,failure-detector-lab/src/main/java/com/openkache/failuredetector/experiment/DetectorProfile.java,failure.detector=F0,integrated,Original decision machine plus new real-socket server adapter; F7C Buddy ported
+A3.profile,F1,failure-detector-lab/src/main/java/com/openkache/failuredetector/experiment/DetectorProfile.java,failure.detector=F1,integrated,Original decision machine plus new real-socket server adapter; F7C Buddy ported
+A3.profile,F2,failure-detector-lab/src/main/java/com/openkache/failuredetector/experiment/DetectorProfile.java,failure.detector=F2,integrated,Original decision machine plus new real-socket server adapter; F7C Buddy ported
+A3.profile,F3,failure-detector-lab/src/main/java/com/openkache/failuredetector/experiment/DetectorProfile.java,failure.detector=F3,integrated,Original decision machine plus new real-socket server adapter; F7C Buddy ported
+A3.profile,F4,failure-detector-lab/src/main/java/com/openkache/failuredetector/experiment/DetectorProfile.java,failure.detector=F4,integrated,Original decision machine plus new real-socket server adapter; F7C Buddy ported
+A3.profile,F5,failure-detector-lab/src/main/java/com/openkache/failuredetector/experiment/DetectorProfile.java,failure.detector=F5,integrated,Original decision machine plus new real-socket server adapter; F7C Buddy ported
+A3.profile,F6,failure-detector-lab/src/main/java/com/openkache/failuredetector/experiment/DetectorProfile.java,failure.detector=F6,integrated,Original decision machine plus new real-socket server adapter; F7C Buddy ported
+A3.profile,F7A,failure-detector-lab/src/main/java/com/openkache/failuredetector/experiment/DetectorProfile.java,failure.detector=F7A,integrated,Original decision machine plus new real-socket server adapter; F7C Buddy ported
+A3.profile,F7B,failure-detector-lab/src/main/java/com/openkache/failuredetector/experiment/DetectorProfile.java,failure.detector=F7B,integrated,Original decision machine plus new real-socket server adapter; F7C Buddy ported
+A3.profile,F7C,failure-detector-lab/src/main/java/com/openkache/failuredetector/experiment/DetectorProfile.java,failure.detector=F7C,integrated,Original decision machine plus new real-socket server adapter; F7C Buddy ported
+A3.product,REDIS_CLUSTER,failure-detector-lab/src/main/java/com/openkache/failuredetector/redis/RedisClusterFailureDetector.java,failure.detector=REDIS_CLUSTER,integrated,Product-inspired implementation; not product binary; SWIM product profile is F3
+A3.product,PHI_GOSSIP,failure-detector-lab/src/main/java/com/openkache/failuredetector/phi/PhiAccrualFailureDetector.java,failure.detector=PHI_GOSSIP,integrated,Product-inspired implementation; not product binary; SWIM product profile is F3
+A3.product,IGNITE_TCP_RING,failure-detector-lab/src/main/java/com/openkache/failuredetector/ignite/IgniteTcpRingFailureDetector.java,failure.detector=IGNITE_TCP_RING,integrated,Product-inspired implementation; not product binary; SWIM product profile is F3
+A3.product,AEROSPIKE_MESH,failure-detector-lab/src/main/java/com/openkache/failuredetector/aerospike/AerospikeMeshFailureDetector.java,failure.detector=AEROSPIKE_MESH,integrated,Product-inspired implementation; not product binary; SWIM product profile is F3
+A3.control,FIXED_TIMEOUT,cache-server/src/main/java/io/openkache/server/integration/IntegrationConfig.java,failure.detector=FIXED_TIMEOUT,integrated,"Existing native timer/core SWIM controls, distinct from Lab profiles"
+A3.control,SWIM,cache-server/src/main/java/io/openkache/server/integration/FailureBridge.java,failure.detector=SWIM,integrated,"Existing native timer/core SWIM controls, distinct from Lab profiles"
+A3.control,SWIM_LIFEGUARD,cache-server/src/main/java/io/openkache/server/integration/FailureBridge.java,failure.detector=SWIM_LIFEGUARD,integrated,"Existing native timer/core SWIM controls, distinct from Lab profiles"
+B1,RANGE,cache-core/src/main/java/io/openkache/core/tablet/range/HashRangeScheme.java,distribution=RANGE,integrated,
+B1,SLOT,cache-core/src/main/java/io/openkache/core/tablet/slot/FixedSlotScheme.java,distribution=SLOT,integrated,
+B1,RING,cache-core/src/main/java/io/openkache/core/tablet/ring/RingScheme.java,distribution=RING,integrated,
+B1,RING_ALLOC,cache-core/src/main/java/io/openkache/core/tablet/ring/RingScheme.java,distribution=RING_ALLOC,integrated,
+B1,TAG,cache-core/src/main/java/io/openkache/core/tablet/tag/HashTagScheme.java,distribution=TAG,integrated,
+B1,RESIZABLE,cache-core/src/main/java/io/openkache/core/tablet/resize/ResizableSlotScheme.java,distribution=RESIZABLE,integrated,
+B1,ORDER,cache-core/src/main/java/io/openkache/core/tablet/order/KeyOrderScheme.java,distribution=ORDER,integrated,
+B2.split,MIDPOINT,cache-core/src/main/java/io/openkache/core/balance/split/MidpointSplitPolicy.java,split=MIDPOINT,integrated,
+B2.split,HEAT,cache-core/src/main/java/io/openkache/core/balance/split/HeatSplitPolicy.java,split=HEAT,integrated,
+B2.split,ESTORE,cache-core/src/main/java/io/openkache/core/balance/split/EStoreSplitPolicy.java,split=ESTORE,integrated,
+B2.placement,GREEDY,cache-core/src/main/java/io/openkache/core/balance/placement/GreedyLoadPlacement.java,placement=GREEDY,integrated,
+B2.placement,HYSTERESIS,cache-core/src/main/java/io/openkache/core/balance/placement/HysteresisRebalancing.java,placement=HYSTERESIS,integrated,
+B2.placement,COST,cache-core/src/main/java/io/openkache/core/balance/placement/CostAwareRebalancing.java,placement=COST,integrated,
+B2.placement,ESTORE,cache-core/src/main/java/io/openkache/core/balance/placement/EStoreInspiredPlacement.java,placement=ESTORE,integrated,
+B2.placement,P2C,cache-core/src/main/java/io/openkache/core/balance/placement/PowerOfTwoChoicesPlacement.java,placement=P2C,integrated,
+B2.placement,SLICER,cache-core/src/main/java/io/openkache/core/balance/placement/SlicerInspiredPlacement.java,placement=SLICER,integrated,
+B2.placement,RENDEZVOUS,cache-core/src/main/java/io/openkache/core/balance/placement/WeightedRendezvousPlacement.java,placement=RENDEZVOUS,integrated,
+B3.planner,fixed-tablet-lpt,cache-core/src/main/java/io/openkache/core/migration/strategy/FixedTabletPlacement.java,placement=FIXED_LPT,integrated,No splitting/resizing or arbitrary ring placement; original policy reused
+B3.scaler,scads,cache-core/src/main/java/io/openkache/core/migration/strategy/ScalingPolicies.java,scaler=scads,integrated,Existing count-only prototype; P-Store requires observed history
+B3.scaler,elastman,cache-core/src/main/java/io/openkache/core/migration/strategy/ScalingPolicies.java,scaler=elastman,integrated,Existing count-only prototype; P-Store requires observed history
+B3.scaler,estore,cache-core/src/main/java/io/openkache/core/migration/strategy/ScalingPolicies.java,scaler=estore,integrated,Existing count-only prototype; P-Store requires observed history
+B3.scaler,accordion,cache-core/src/main/java/io/openkache/core/migration/strategy/ScalingPolicies.java,scaler=accordion,integrated,Existing count-only prototype; P-Store requires observed history
+B3.scaler,pstore,cache-core/src/main/java/io/openkache/core/migration/strategy/ScalingPolicies.java,scaler=pstore,integrated,Existing count-only prototype; P-Store requires observed history
+B3.scaler,tiramola,cache-core/src/main/java/io/openkache/core/migration/strategy/ScalingPolicies.java,scaler=tiramola,integrated,Existing count-only prototype; P-Store requires observed history
+B3.scaler,pax,cache-core/src/main/java/io/openkache/core/migration/strategy/ScalingPolicies.java,scaler=pax,integrated,Existing count-only prototype; P-Store requires observed history
+B3.scaler,aws-warmup,cache-core/src/main/java/io/openkache/core/migration/strategy/ScalingPolicies.java,scaler=aws-warmup,integrated,Existing count-only prototype; P-Store requires observed history
+B3.scheduler,fifo,cache-core/src/main/java/io/openkache/core/migration/experiment/SchedulerAlgorithms.java,scheduler=fifo,integrated,
+B3.scheduler,mongodb,cache-core/src/main/java/io/openkache/core/migration/experiment/SchedulerAlgorithms.java,scheduler=mongodb,integrated,
+B3.scheduler,tidb-token,cache-core/src/main/java/io/openkache/core/migration/experiment/SchedulerAlgorithms.java,scheduler=tidb-token,integrated,
+B3.scheduler,tidb-feedback,cache-core/src/main/java/io/openkache/core/migration/experiment/SchedulerAlgorithms.java,scheduler=tidb-feedback,integrated,
+B3.scheduler,iter-gwin,cache-core/src/main/java/io/openkache/core/migration/experiment/SchedulerAlgorithms.java,scheduler=iter-gwin,integrated,
+B3.scheduler,single-mcs,cache-core/src/main/java/io/openkache/core/migration/experiment/SchedulerAlgorithms.java,scheduler=single-mcs,integrated,
+B3.scheduler,slamig,cache-core/src/main/java/io/openkache/core/migration/experiment/SchedulerAlgorithms.java,scheduler=slamig,integrated,
+B3.scheduler,vmbuddies,cache-core/src/main/java/io/openkache/core/migration/experiment/SchedulerAlgorithms.java,scheduler=vmbuddies,integrated,
+B3.scheduler,fpta,cache-core/src/main/java/io/openkache/core/migration/experiment/SchedulerAlgorithms.java,scheduler=fpta,integrated,
+B2.control,split NONE,cache-server/src/main/java/io/openkache/server/integration/IntegrationConfig.java,split=NONE,integrated,
+B2.control,placement NONE,cache-server/src/main/java/io/openkache/server/integration/IntegrationConfig.java,placement=NONE,integrated,
+B3.control,fixed,cache-server/src/main/java/io/openkache/server/integration/IntegratedCache.java,scaler=fixed,integrated,
+B3.copy,STOP,cache-core/src/main/java/io/openkache/core/migration/strategy/CopyDrivers.java,copy=STOP,integrated,
+B3.copy,PRE,cache-core/src/main/java/io/openkache/core/migration/strategy/CopyDrivers.java,copy=PRE,integrated,
+B3.copy,POST,cache-core/src/main/java/io/openkache/core/migration/strategy/CopyDrivers.java,copy=POST,integrated,
+B3.drain,preflight-all,cache-core/src/main/java/io/openkache/core/migration/strategy/DrainStrategies.java,drain=preflight-all,integrated,
+B3.drain,incremental-drain,cache-core/src/main/java/io/openkache/core/migration/strategy/DrainStrategies.java,drain=incremental-drain,integrated,
+A3,Ignite coordinator re-election,failure-detector-lab/src/main/java/com/openkache/failuredetector/ignite/IgniteTcpRingFailureDetector.java,,not-supported-as-implemented,Coordinator is final; re-election absent. Coordinator fault is rejected before injection.
+A3,F6 helper counts >=2,cache-server/src/main/java/io/openkache/server/integration/FailureMethods.java,,not-supported-as-implemented,Three-member replica groups provide only one independent helper. Larger helper/quorum settings rejected.
+A2,Uncertified reads during view changes,cache-core/src/main/java/io/openkache/core/replication/ionia/IoniaClient.java,,not-supported-as-implemented,Existing uncertified option is fixed-view simulation-only; no general failover guarantee.
+B2,Independent merge policy,cache-core/src/main/java/io/openkache/core/balance,,not-supported-as-implemented,No implemented MergePolicy; B1 RESIZABLE merge is distinct.
+B3,CAMIG and candidate placement,experiments/b3-live-migration/scheduler-comparison/README.md,,not-supported-as-implemented,Removed from current implementation; do not restore retired result/schema as a runnable method.
+B3,PAX native hints/sleeping replicas,cache-core/src/main/java/io/openkache/core/migration/strategy/PaxPolicy.java,,not-supported-as-implemented,Current PAX is count-only; native partition/hint path not implemented.
+runtime,Gateway restart / physical EC2 allocation,cache-server/src/main/java/io/openkache/server/integration/IntegratedCache.java,,not-supported-as-implemented,Run-local gateway recovery and actual server provisioning are not implemented.

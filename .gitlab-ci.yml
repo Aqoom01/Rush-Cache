@@ -2,9 +2,36 @@
 # 설계와 상한 규칙은 infra/README.md.
 
 stages:
+  - prepare
+  - core-pilot
+  - core-calibrate
+  - core-screen
+  - core-select
+  - core-working-set
+  - core-followups
+  - core-balance
+  - core-copy
+  - core-failure
+  - core-final-select
+  - core-final
   - experiment
+  - core-report
+
+include:
+  - local: infra/integration-ci.yml
+  - local: infra/core-pipeline-ci.yml
 
 variables:
+  EXPERIMENT_SUITE:
+    value: "legacy"
+    options: ["legacy", "integrated", "integrated-core"]
+    description: "integrated는 CSV/preflight, integrated-core는 EC2 보정+핵심155회 자동 선정·실행·S3 검증·삭제입니다."
+  INTEGRATION_MATRIX:
+    value: "experiments/system-integration/ec2/matrices/cloud-preflight.csv"
+    description: "통합 실험 CSV(최대156행). 첫 실행은 1행 preflight로 S3·삭제까지 검증합니다."
+  INTEGRATION_PLAN_ARGS:
+    value: '["--requests","600","--rate","100","--warmup","100","--keys","32","--value-bytes","1024","--read","80"]'
+    description: "통합 실험 공통 인수의 JSON 배열. 본실험 부하는 EC2 보정 후 지정합니다."
   NODES:
     value: "1"
     options: ["1", "2", "3", "4", "5", "6", "7", "8"]
@@ -33,7 +60,7 @@ aws-experiment:
   # 기존 클러스터 대기 60분 + 기동 15분 + 실험(자동 정지 상한 180분 안) + 여유
   timeout: 270m
   rules:
-    - if: $CI_PIPELINE_SOURCE == "web" && $CI_COMMIT_REF_PROTECTED == "true"
+    - if: $CI_PIPELINE_SOURCE == "web" && $CI_COMMIT_REF_PROTECTED == "true" && $EXPERIMENT_SUITE == "legacy"
   before_script:
     - apk add --no-cache bash coreutils aws-cli git > /dev/null
   script:
