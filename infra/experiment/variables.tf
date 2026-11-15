@@ -68,6 +68,12 @@ variable "source_commit" {
   }
 }
 
+variable "integration_operating_network" {
+  description = "Enable the scoped network fault helper on dedicated operating-suite replicas."
+  type        = bool
+  default     = false
+}
+
 variable "integration_mode" {
   type    = bool
   default = false

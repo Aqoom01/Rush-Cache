@@ -84,3 +84,27 @@ python3 tools/integration.py batch --matrix smoke.csv --bundle /path/to/bundle -
 `--start 10 --limit 10`으로 다음 구간을 실행한다. `--plan-arg=--requests --plan-arg=1000`처럼 공통 부하 인수를 전달할 수 있다. FD 조정도 `--plan-arg=--override --plan-arg=fd.heartbeat.ms=200`으로 전달한다. 행에 기록된 방법론 선택을 공통 인수로 덮어쓰는 것은 거절한다. `batch-results.json`과 CSV는 실패·미지원도 남기며 cleanup이 불완전하면 다음 행으로 넘어가지 않는다. P-Store에는 실제 history 입력을 제공해야 한다.
 
 `--mode ec2`의 실제 일괄 실행에는 `--execute --topology ... --identity ... --known-hosts ...`가 필요하다. 기존 전용 호스트만 사용하며 인스턴스를 생성하거나 삭제하지 않는다. 기본 matrix는 로컬3그룹 기준이므로 프로젝트 한도의 EC22그룹에서는 `--plan-arg=--initial-groups --plan-arg=1` 등 가용 inventory에 맞는 입력을 사용한다.
+
+## 동일한 전략을 운영 시나리오 7개에서 검증
+
+`operating_suite.py`는 CSV의 각 전략을 균등 부하, 특정 해시 구간 쏠림, 느린 A2 복제본, 부하 급증에 따른 자동 증설, 부하 감소에 따른 자동 축소·drain, 일시적 네트워크 지연·손실, 실제 리더 JVM 종료에서 실행한다. TCP 답신 80ms 지연은 느린 복제본에, 250ms 지연과 30% 손실은 리더에서 같은 그룹의 peer로 나가는 실험용 TCP/UDP에 적용한다. 리더 종료는 A1 리더를 기준으로 하며 CSV의 `fault_layer=A2`로 바꿀 수 있다.
+
+전략 CSV에는 다음과 같이 후보를 넣는다. 전수 목록에서 일부를 뽑으려면 `matrix --stage exhaustive --workloads UNIFORM --seeds 1 --key-mode DEFAULT --offset 0 --limit 10 --output strategies.csv`를 사용한다. 시나리오와 시드는 실행 단계에서 전략에 교차한다.
+
+```csv
+a1,a2,fd,distribution,split,placement,scaler,scheduler,copy,drain
+RAFT,V06,F3,RANGE,HEAT,ESTORE,pax,slamig,PRE,incremental-drain
+```
+
+```bash
+python3 /path/to/bundle/tools/operating_suite.py --matrix strategies.csv --seeds 1 2 3
+python3 /path/to/bundle/tools/operating_suite.py --matrix strategies.csv --seeds 1 2 3 \
+  --bundle /path/to/bundle --topology /path/to/dedicated-topology.json \
+  --identity /path/to/key --known-hosts /path/to/known_hosts --output /path/to/suite-runs --execute
+```
+
+- 전체 시나리오와 지정한 모든 시드에서 정합성, 이동, 통합 구성, 장애 감지 검증과 성공률 기준을 만족해야 전략에 `PASS`가 붙는다. 성공률 기본값은 95%이며 `--min-success`로 조정한다. 지연 기준이 있으면 `--max-p99-ms`를 지정한다.
+- 증감은 두 부하 구간으로 진행한다. 부하 전환 뒤 scaler가 판단하고 목표 그룹 수에 도달해 소유권 이전을 마쳐야 통과한다. 고정 그룹 수 전략은 자동 증감 기준을 통과할 수 없다. 실제 환경에 맞춰 `--low-rate`, `--base-rate`, `--high-rate`, `--phase-seconds`를 보정한다. P-Store처럼 학습 입력이 필요한 전략에는 `--history`와 `--calibration`을 제공할 수 있다.
+- 실제 실행에는 두 그룹의 Linux 복제본 6대, gateway와 load 각 1대가 필요하다. 복제본에 `ip`, `tc netem`, 비대화식 `sudo -n tc` 권한이 있어야 한다. 호스트 세트는 한 실행에 전용으로 쓴다. 실험 실행기가 네트워크 설정이나 프로세스의 정리를 확인할 수 없으면 다음 실행을 멈춘다.
+- `suite-results.json`은 전략별 판정, `cases.json`은 시나리오별 판정과 실행 시간을 담는다. `--stop-on-failed-case`를 사용하면 탈락한 전략의 남은 실험을 생략한다.
+- 61,419,708가지 전체 전략을 7개 시나리오에서 실행하면 429,937,956회다. [기존 추정](CORE_FOCUS_PLAN.md)의 155회당 8~12시간을 적용하면 순차 실행 약 2,531~3,797년이다. 이 환산은 운영 시나리오 7개의 EC2 실측 시간이 아니므로 첫 실행의 `wall_seconds`로 갱신한다.

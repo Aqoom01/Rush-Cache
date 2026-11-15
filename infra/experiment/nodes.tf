@@ -33,8 +33,9 @@ resource "aws_instance" "node" {
   instance_initiated_shutdown_behavior = var.integration_mode ? "stop" : null
 
   user_data = var.integration_mode ? templatefile("${path.module}/integration_user_data.sh.tftpl", {
-    results_bucket = local.results_bucket
-    bundle_sha256  = var.integration_bundle_sha256
+    results_bucket    = local.results_bucket
+    bundle_sha256     = var.integration_bundle_sha256
+    operating_network = var.integration_operating_network && count.index < 6
     }) : templatefile("${path.module}/user_data.sh.tftpl", {
     results_bucket         = local.results_bucket
     source_commit          = var.source_commit
@@ -81,8 +82,9 @@ resource "aws_instance" "loadgen" {
   instance_initiated_shutdown_behavior = var.integration_mode ? "stop" : null
 
   user_data = var.integration_mode ? templatefile("${path.module}/integration_user_data.sh.tftpl", {
-    results_bucket = local.results_bucket
-    bundle_sha256  = var.integration_bundle_sha256
+    results_bucket    = local.results_bucket
+    bundle_sha256     = var.integration_bundle_sha256
+    operating_network = false
     }) : templatefile("${path.module}/user_data.sh.tftpl", {
     results_bucket         = local.results_bucket
     source_commit          = var.source_commit

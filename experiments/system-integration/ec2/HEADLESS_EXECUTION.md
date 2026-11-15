@@ -53,3 +53,11 @@
 단계 전환은 S3에서 독립 검증된 receipt와 해당 묶음의 정리 완료 기록이 모두 있을 때만 한다. 노트북이나 대화형 AI가 다음 후보를 골라 줄 필요가 없다. 단계별로 입력 CSV·workload 인수·선정 근거도 CI artifact와 결과 archive에 남는다.
 
 실제 pipeline의 부팅·S3·삭제 경로는 아직 검증하지 않았다. 보호 브랜치 반영과 CI 설정 확인, 1행 preflight의 실제 S3·삭제 확인 전에는 노트북을 꺼도 되는 상태로 완료됐다고 안내하지 않는다. 과거 로컬/방법론 감사의 JAR 해시는 그때의 버전 근거이며, 이번 headless 배포 JAR과 결과는 별도 해시로 기록한다. 배포·실행 진행 상태는 별도 실행 기록으로 확인한다.
+
+## 30개 운영 전략을 GitLab에서 실행
+
+변경이 반영된 보호 브랜치에서 **Build → Pipelines → Run pipeline**을 연다. `EXPERIMENT_SUITE=integrated-operating`을 선택한다. `INTEGRATION_OPERATING_LIMIT=1`이면 우선순위 1번의 7개 시나리오를 실행하고, `30`이면 30개 전략의 210개 케이스를 실행한다. 시드는 1로 고정한다.
+
+CI가 [전략 CSV](matrices/operating-top30.csv)를 실행 목록과 케이스별 설정으로 변환한다. 기존 전용 EC2 8대 셋업을 사용하고, 네트워크 시나리오용 도우미는 해당 실행의 복제본에만 설치한다. 케이스를 최대 12개씩 묶어 기존 AWS 잠금으로 순차 실행한다. 노트북에서 topology나 SSH 파일을 따로 제공할 필요가 없다.
+
+각 케이스의 원본은 S3에 저장된다. `integration-operating-report`의 `operating-report.json`에는 전략별 7개 판정과 검증·정리 상태가 남는다. 7개 모두 통과하면 `PASS`, 판정이 끝났지만 통과하지 못한 시나리오가 있으면 `REJECTED`, 실행 오류가 발생하거나 증거·정리 확인이 빠졌으면 `INCOMPLETE`다. 배포 준비·수집·정리에 걸리는 시간도 묶음마다 발생하므로 210회의 전체 소요 시간은 첫 묶음 실측을 기준으로 갱신한다.

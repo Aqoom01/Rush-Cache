@@ -23,6 +23,14 @@ with zipfile.ZipFile('/opt/openkache/integration/bundle.zip') as archive:
     archive.extractall('/opt/openkache/integration/bundle')
 PY
 python3 /opt/openkache/integration/bundle/tools/integration.py verify-bundle --bundle /opt/openkache/integration/bundle
+%{ if operating_network ~}
+dnf install -y iproute iproute-tc sudo
+install -D -m 0755 -o root -g root /opt/openkache/integration/bundle/tools/operating_network.py /usr/local/libexec/openkache-operating-network
+mkdir -p /etc/sudoers.d
+install -m 0440 /dev/null /etc/sudoers.d/openkache-operating-network
+echo 'kacheexp ALL=(root) NOPASSWD: /usr/local/libexec/openkache-operating-network' > /etc/sudoers.d/openkache-operating-network
+visudo -cf /etc/sudoers.d/openkache-operating-network
+%{ endif ~}
 # Disposable native data goes to NVMe; evidence stays on EBS.
 dev=$(lsblk -dnpo NAME,MODEL | awk '/Instance Storage/ {print $1; exit}')
 test -n "$dev"

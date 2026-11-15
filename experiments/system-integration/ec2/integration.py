@@ -39,6 +39,8 @@ LAB_FDS = ("F0", "F1", "F2", "F3", "F4", "F5", "F6", "F7A", "F7B", "F7C", "REDIS
 FAILURE_METHODS = LEGACY_FDS + LAB_FDS
 FD_ALIASES = {"FIXED_DEADLINE":"F0", "SWIM_BASE":"F2", "LAB_SWIM_LIFEGUARD":"F3", "PRODUCT_SWIM_LIFEGUARD":"F3", "ADAPTIVE_DEADLINE":"F4", "FIXED_DEADLINE_RING":"F5", "FIXED_DEADLINE_RING_VERIFY":"F6", "SWIM_LHA_PROBE":"F7A", "SWIM_LHA_SUSPICION":"F7B", "SWIM_BUDDY":"F7C"}
 READ_SELECTIONS = ("ADAPTIVE", "ROUND_ROBIN")
+OPERATING_FAULTS = ("SLOW_REPLICA", "NETWORK_DEGRADED", "CRASH_LEADER")
+CRASH_SCENARIOS = ("CRASH_MOVE", "CRASH_SCALE", "CRASH_LEADER")
 A2_SETTINGS = {"read.logical.limit":128, "read.rpc.limit.per.replica":256, "read.rtt.initial.ms":5, "read.sample.ttl.ms":1000, "read.failure.cooldown.ms":200, "read.explore.every":16, "meta.batch.bytes":65536, "meta.pending.limit":1024, "meta.inflight.limit":32, "storage.shards":2}
 FD_KEYS = {"fd.heartbeat.ms", "fd.deadline.ms", "fd.confirm.ms", "fd.probe.timeout.ms", "fd.phi.threshold", "fd.gossip.fanout", "fd.ring.successors", "fd.verify.failures", "fd.verify.helpers", "fd.verify.quorum", "fd.coordinator.index", "fd.native.watchdog.ms", "fd.repair.timeout.ms", "fd.report.validity.ms"}
 
@@ -94,7 +96,7 @@ def verify_bundle(bundle):
         check(name.startswith("lib/") and ".." not in Path(name).parts and name not in seen, "invalid bundle manifest")
         check(sha(bundle / name) == digest, f"bundle hash mismatch: {name}")
         seen.add(name)
-    check({str(p.relative_to(bundle)) for p in (bundle / "lib").glob("*.jar")} == seen, "extra/missing JAR")
+    check({p.relative_to(bundle).as_posix() for p in (bundle / "lib").glob("*.jar")} == seen, "extra/missing JAR")
     check(any("experiment-runner" in name for name in seen), "Runner JAR missing")
     receipt = bundle / "TOOLS_SHA256SUMS"
     if receipt.exists():
@@ -104,7 +106,7 @@ def verify_bundle(bundle):
             check(name.startswith("tools/") and ".." not in Path(name).parts, "invalid tools manifest")
             check(sha(bundle / name) == digest, "tool hash mismatch: " + name)
             tools_seen.add(name)
-        actual = {str(p.relative_to(bundle)) for p in (bundle / "tools").rglob("*") if p.is_file() and "__pycache__" not in p.parts}
+        actual = {p.relative_to(bundle).as_posix() for p in (bundle / "tools").rglob("*") if p.is_file() and "__pycache__" not in p.parts}
         check(actual == tools_seen, "extra/missing bundle tools")
     return hashlib.sha256((bundle / "BUNDLE_SHA256SUMS").read_bytes() + (receipt.read_bytes() if receipt.exists() else b"")).hexdigest()
 
@@ -142,6 +144,24 @@ def endpoint(host, port, opcode, body=b"", timeout=10):
 
 def prepare(args):
     args.fd = canonical_fd(args.fd)
+    rate_after = getattr(args, "rate_after", None)
+    rate_change_at = getattr(args, "rate_change_at", None)
+    check((rate_after is None and rate_change_at is None)
+          or (rate_after is not None and rate_change_at is not None
+              and 1 <= rate_after <= 100000 and 1 <= rate_change_at < args.requests),
+          "rate transition requires --rate-after and --rate-change-at inside measurement")
+    fault_seconds = getattr(args, "fault_seconds", 8)
+    check(0 < fault_seconds <= 30, "fault duration must be in (0, 30] seconds")
+    operating_case = getattr(args, "operating_case", None)
+    strategy_number = getattr(args, "strategy_number", None)
+    if operating_case:
+        from operating_suite import SCENARIOS
+        scenario, workload, groups = SCENARIOS[operating_case]
+        check((args.scenario, args.workload, args.initial_groups) == (scenario, workload, groups)
+              and (operating_case in ("scale-out", "scale-in")) == (rate_after is not None)
+              and strategy_number and strategy_number > 0, "operating case does not match the workload or strategy")
+    else:
+        check(strategy_number is None, "strategy number requires an operating case")
     output = Path(args.output).resolve()
     output.mkdir(parents=True, exist_ok=False)
     topology = json.loads(Path(args.topology).read_text()) if args.topology else {
@@ -227,6 +247,8 @@ def prepare(args):
     }
     if args.workload == "HOT_RANGE": workload.update({"hot.range.key.fraction": 0.125, "hot.range.request.fraction": 0.85, "hot.range.shift.per.window": args.hot_shift})
     if args.workload == "ZIPF": workload["zipf.exponent"] = 0.99
+    if rate_after is not None:
+        workload.update({"integration.rate.after": rate_after, "integration.rate.change.at": rate_change_at})
     auxiliary = {}
     for source, key, name in [(args.calibration, "scaling.calibration.file", "calibration.csv"), (args.history, "scaling.history.file", "history.txt")]:
         if source:
@@ -236,6 +258,8 @@ def prepare(args):
         "copy": args.copy, "scaler": args.scaler, "scheduler": args.scheduler, "drain": args.drain, "topology": topology,
         "groups": groups, "initial_groups": args.initial_groups, "fault_index": args.fault_index,
         "keys": args.keys, "rate": args.rate, "requests": args.requests, "seed": args.seed,
+        "rate_after": rate_after, "rate_change_at": rate_change_at, "fault_seconds": fault_seconds,
+        "operating_case": operating_case, "strategy_number": strategy_number,
         "notes": ["single run-local gateway; native TCP/file KV; prepared replica groups", "logical service scale-out/in; no EC2 instance lifecycle", "A1 admission/routing authority + A2 SSD data replication in each replica JVM" if not legacy else "legacy isolated engine: not a full six-module cache"],
         "cluster_sha256": sha(output/"cluster.properties"), "workload_sha256": sha(output/"workload.properties"), "auxiliary_sha256": auxiliary})
     print(output)
@@ -294,6 +318,22 @@ def agent(args):
     check(state.get("role") == args.role and main_class in state["command"] and state["command"][-len(role_args):] == role_args
           and str(bundle / "lib/*") in state["command"], "state is not owned by this run/role/bundle")
     active = owned(state)
+    if args.action in ("slow-replica", "network-degraded"):
+        from operating_network import impair
+        check(active and args.role.startswith("replica-"), "network fault requires an active, run-owned replica")
+        cluster = load_props(root / "input/cluster.properties")
+        group, index = map(int, re.fullmatch(r"replica-g([0-7])-n([012])", args.role).groups())
+        hosts = cluster[f"group.{group}.hosts"].split(",")
+        peers = [host for i, host in enumerate(hosts) if i != index]
+        helper = Path("/usr/local/libexec/openkache-operating-network")
+        if helper.is_file():
+            check(cluster["replica.port"] == "27101", "EC2 network helper requires base replica port 27101")
+            command = ["sudo", "-n", str(helper), args.action, "--peers", *peers,
+                       "--gateway", cluster["gateway.host"], "--duration", str(args.fault_seconds)]
+            print(subprocess.check_output(command, text=True, timeout=110).strip())
+        else:
+            print(json.dumps(impair(args.action, peers, cluster["gateway.host"], int(cluster["replica.port"]), args.fault_seconds)))
+        return
     if args.action == "inspect":
         details = {"active": active, "state": state, "epoch_ns": time.time_ns(), "monotonic_ns": time.monotonic_ns()}
         if active:
@@ -342,6 +382,7 @@ class Controller:
         self.start_attempts = []
         self.paused = []
         self.fault = None
+        self.network_fault_pending = False
         self.closed = False
         self.metrics = []
         if remote:
@@ -375,6 +416,9 @@ class Controller:
         command = ["python3", str(self.remote_bundle / "tools/integration.py"), "agent", action,
                    "--bundle", str(self.remote_bundle), "--root", str(self.root), "--role", role, "--java", self.args.java]
         if self.remote:
+            if action in ("slow-replica", "network-degraded"):
+                command.extend(["--fault-seconds", str(self.plan["fault_seconds"])])
+                return json.loads(self.ssh(host, command, timeout=120))
             return json.loads(self.ssh(host, command))
         ns = argparse.Namespace(action=action, bundle=str(self.bundle), root=str(self.root), role=role, java=self.args.java)
         import contextlib, io
@@ -464,9 +508,9 @@ class Controller:
         with (self.output / "resource-samples.jsonl").open("a") as stream:
             stream.write(json.dumps(snapshot) + "\n")
 
-    def leader(self, group):
+    def leader(self, group, *, layer=None):
         votes = {}
-        layer = self.plan.get("fault_layer", "A1")
+        layer = layer or self.plan.get("fault_layer", "A1")
         ionia = layer == "A2" if self.plan.get("joint_cache") else self.plan["protocol"] in A2_PROTOCOLS
         for n in range(3):
             try:
@@ -484,6 +528,23 @@ class Controller:
         if self.cluster["failure.detector"]=="IGNITE_TCP_RING" and index==int(self.cluster.get("fd.coordinator.index",2)):
             raise ValueError("UNSUPPORTED: current Ignite coordinator re-election is absent; target a non-coordinator replica")
 
+    def measurement_started(self):
+        if self.remote:
+            script = "import pathlib,sys; print((pathlib.Path(sys.argv[1])/'load-result/MEASURE_STARTED').exists())"
+            return self.ssh(self.topology["load_host"], ["python3", "-c", script, str(self.root)]).strip() == "True"
+        return (self.root / "load-result/MEASURE_STARTED").exists()
+
+    def crash_replica(self, group, index):
+        self.check_fault_supported(index)
+        role, host = self.roles[group*3+index]
+        requested = time.monotonic_ns()
+        evidence = self.agent("kill", role, host)
+        confirmed = time.monotonic_ns()
+        check(evidence["was_active"] and not self.agent("inspect", role, host)["active"], "owned crash was not confirmed")
+        evidence["repair_admission"] = endpoint(self.gateway_host, self.gateway_port, 104, struct.pack(">ii", group, index))
+        return {"scenario": self.plan["scenario"], "role": role, "group": group, "index": index, "evidence": evidence,
+                "controller_requested_monotonic_ns": requested, "controller_confirmed_monotonic_ns": confirmed}
+
     def fault_if_due(self):
         if self.fault is not None:
             return
@@ -496,24 +557,29 @@ class Controller:
             group = active[0]["from"]
             index = self.plan.get("fault_index")
             if index is None: index = self.leader(group)
-            self.check_fault_supported(index)
-            role, host = self.roles[group*3+index]
-            controller_requested = time.monotonic_ns()
-            evidence = self.agent("kill", role, host)
-            controller_confirmed = time.monotonic_ns()
-            check(evidence["was_active"] and not self.agent("inspect", role, host)["active"], "owned crash was not confirmed")
-            confirmation = endpoint(self.gateway_host, self.gateway_port, 104, struct.pack(">ii", group, index))
-            evidence["repair_admission"] = confirmation
-            self.fault = {"scenario": scenario, "role": role, "group": group, "index": index, "migration": active[0], "evidence": evidence,
-                          "controller_requested_monotonic_ns":controller_requested,"controller_confirmed_monotonic_ns":controller_confirmed}
-        elif scenario in ("PAUSE_LEADER", "PAUSE_OBSERVER"):
-            # 측정 시작 확인 후에만 fault를 적용한다.
-            if self.remote:
-                script = "import pathlib,sys;print((pathlib.Path(sys.argv[1])/'load-result/MEASURE_STARTED').exists())"
-                started = self.ssh(self.topology["load_host"], ["python3", "-c", script, str(self.root)]).strip() == "True"
+            self.fault = self.crash_replica(group, index)
+            self.fault["migration"] = active[0]
+        elif scenario in OPERATING_FAULTS:
+            if not self.measurement_started():
+                return
+            if scenario == "CRASH_LEADER":
+                self.fault = self.crash_replica(0, self.leader(0))
+                marker = self.root / "load-result/FAULT_CONFIRMED"
+                if self.remote:
+                    self.ssh(self.topology["load_host"], ["touch", marker])
+                else:
+                    marker.touch(exist_ok=False)
             else:
-                started = (self.root / "load-result/MEASURE_STARTED").exists()
-            if not started:
+                index = (self.leader(0, layer="A2") + 1) % 3 if scenario == "SLOW_REPLICA" else self.leader(0)
+                role, host = self.roles[index]
+                action = "slow-replica" if scenario == "SLOW_REPLICA" else "network-degraded"
+                self.network_fault_pending = True
+                evidence = self.agent(action, role, host)
+                check(evidence.get("released") is True, "network impairment cleanup not confirmed")
+                self.network_fault_pending = False
+                self.fault = {"scenario": scenario, "role": role, "group": 0, "index": index, "evidence": evidence}
+        elif scenario in ("PAUSE_LEADER", "PAUSE_OBSERVER"):
+            if not self.measurement_started():
                 return
             index = self.leader(0)
             if scenario == "PAUSE_OBSERVER":
@@ -532,7 +598,7 @@ class Controller:
     def fd_evidence(self):
         if self.cluster["failure.detector"]=="FIXED_TIMEOUT":return {"valid":True,"source":"native-engine-timeouts"}
         nodes=self.metrics[-1]["nodes"] if self.metrics else []
-        failed=(self.fault or {}).get("group"), (self.fault or {}).get("index")
+        failed=((self.fault or {}).get("group"), (self.fault or {}).get("index")) if self.plan["scenario"] in CRASH_SCENARIOS else (None, None)
         survivor_count=0; healthy=True; live_down=[]; observed={"A1":False,"A2":False}
         for node in nodes:
             if (node.get("group"),node.get("index"))==failed:continue
@@ -548,7 +614,7 @@ class Controller:
                 if self.fault and node.get("group")==failed[0] and fd:
                     native_id=failed[1]+(1 if layer=="A2" and (self.plan.get("joint_cache") or self.plan["protocol"] in A2_PROTOCOLS) else 0)
                     if native_id in fd.get("deadMembers",[]):observed[layer]=True
-        crash=self.plan["scenario"] in ("CRASH_MOVE","CRASH_SCALE")
+        crash=self.plan["scenario"] in CRASH_SCENARIOS
         if crash:healthy=healthy and observed["A2"] and (observed["A1"] or not self.plan.get("joint_cache"))
         return {"valid":bool(healthy and survivor_count),"liveLayerSnapshots":survivor_count,"crashDeadObserved":observed,"liveProcessDownReports":live_down,"scope":"native-observer-signals; not promotion grants"}
 
@@ -579,6 +645,8 @@ class Controller:
         return failures
 
     def run(self):
+        if self.plan["scenario"] in ("SLOW_REPLICA", "NETWORK_DEGRADED"):
+            check(self.remote, "UNSUPPORTED: network impairment requires dedicated remote Linux hosts")
         self.validate()
         self.stage()
         metadata = {"schema": 1, "run_id": self.run_id, "bundle_manifest_sha256": self.bundle_hash,
@@ -651,10 +719,12 @@ class Controller:
             save(self.output/"fd-runtime-evidence.json",self.fd_runtime_evidence)
             self.final_gateway = endpoint(self.gateway_host, self.gateway_port, 96)
             save(self.output / "gateway-final-controller.json", self.final_gateway)
-            if self.plan["scenario"] in ("CRASH_MOVE", "CRASH_SCALE", "PAUSE_LEADER", "PAUSE_OBSERVER"):
+            if self.plan["scenario"] in (*OPERATING_FAULTS, "CRASH_MOVE", "CRASH_SCALE", "PAUSE_LEADER", "PAUSE_OBSERVER"):
                 check(self.fault is not None, "fault trigger window was not observed; not a valid fault run")
         finally:
             cleanup_errors = []
+            if self.network_fault_pending:
+                cleanup_errors.append({"action": "network", "error": "network impairment release was not confirmed"})
             for role, host in self.paused:
                 try:
                     self.agent("resume", role, host)
@@ -768,6 +838,8 @@ def matrix(args):
     check(set(read_selections)<=set(READ_SELECTIONS),"invalid read-selection shortlist")
     protocol_reads=[(p,r) for p in protocols for r in read_selections if p.split("+")[-1]=="V06" or r=="ADAPTIVE"]
     entries = []
+    offset, limit = getattr(args, "offset", 0), getattr(args, "limit", None)
+    check((offset == 0 and limit is None) or args.stage == "exhaustive", "matrix slicing is for the exhaustive stage")
     if args.stage == "exhaustive":
         distributions = (getattr(args, "distributions", None) or ",".join(DISTRIBUTIONS)).split(",")
         splits = (getattr(args, "splits", None) or "NONE,MIDPOINT,HEAT,ESTORE").split(",")
@@ -775,15 +847,19 @@ def matrix(args):
         check(set(distributions) <= set(DISTRIBUTIONS) and set(splits) <= {"NONE", "MIDPOINT", "HEAT", "ESTORE"} and set(placements) <= set(PLACEMENTS), "unknown B1/B2 policy")
         valid_b = [dict(distribution=d, split=s, placement=p) for d,s,p in itertools.product(distributions,splits,placements) if valid_combination(dict(distribution=d,split=s,placement=p))]
         count = len(protocol_reads)*len(fds)*len(valid_b)*len(SCALERS)*len(SCHEDULERS)*3*len(DRAINS)*len(workloads)*len(seeds)
-        if getattr(args, "count_only", False): print(json.dumps({"stage":"exhaustive","runs":count,"execute":False})); return
-        check(getattr(args, "allow_large", False) or count <= 100000, "large exhaustive matrix: use --count-only first, --allow-large to write all rows")
+        check(0 <= offset <= count and (limit is None or limit > 0), "invalid matrix slice")
+        stop = count if limit is None else min(count, offset + limit)
+        selected = stop - offset
+        if getattr(args, "count_only", False): print(json.dumps({"stage":"exhaustive","runs":selected,"execute":False})); return
+        check(getattr(args, "allow_large", False) or selected <= 100000, "large exhaustive matrix: use --limit for a slice or --allow-large to write all rows")
         check(args.output, "--output required to write matrix")
         names = (["a1","a2"] if joint else ["protocol"])+["read_selection","fd","distribution","split","placement","scaler","scheduler","copy","drain","scenario","workload","seed","key_mode"]
+        combinations = itertools.product(protocol_reads, fds, valid_b, SCALERS, SCHEDULERS, ("STOP", "PRE", "POST"), DRAINS, workloads, seeds)
         with Path(args.output).open("x",newline="") as stream:
             writer=csv.DictWriter(stream,fieldnames=names); writer.writeheader()
-            for (protocol,read_selection),fd,b,scaler,scheduler,copy,drain,workload,seed in itertools.product(protocol_reads,fds,valid_b,SCALERS,SCHEDULERS,("STOP","PRE","POST"),DRAINS,workloads,seeds):
+            for (protocol,read_selection),fd,b,scaler,scheduler,copy,drain,workload,seed in itertools.islice(combinations, offset, stop):
                 writer.writerow(expand(dict(protocol=protocol,read_selection=read_selection,fd=fd,**b,scaler=scaler,scheduler=scheduler,copy=copy,drain=drain,scenario="AUTO",workload=workload,seed=seed,key_mode=getattr(args,"key_mode","TAGGED"))))
-        print(json.dumps({"stage":"exhaustive","runs":count,"execute":False})); return
+        print(json.dumps({"stage":"exhaustive","runs":selected,"execute":False})); return
     if args.stage == "coverage":
         for row, workload, seed in itertools.product(covering_rows(None,a1s,a2s,fds,read_selections) if joint else covering_rows(protocols,fds=fds,read_selections=read_selections), workloads, seeds):
             entries.append(dict(row, scenario="AUTO", workload=workload, seed=seed, key_mode=getattr(args,"key_mode","TAGGED")))
@@ -818,7 +894,8 @@ def matrix(args):
 PLAN_COLUMNS = {"a1":"--a1","a2":"--a2","protocol":"--protocol","fd":"--fd","distribution":"--distribution",
     "split":"--split","placement":"--placement","scaler":"--scaler","scheduler":"--scheduler","copy":"--copy","drain":"--drain",
     "scenario":"--scenario","workload":"--workload","seed":"--seed","key_mode":"--key-mode","read_selection":"--read-selection",
-    "fault_index":"--fault-index","fault_layer":"--fault-layer","vr_mode":"--vr-mode","rose_limit":"--rose-limit"}
+    "fault_index":"--fault-index","fault_layer":"--fault-layer","vr_mode":"--vr-mode","rose_limit":"--rose-limit",
+    "operating_case":"--operating-case","strategy_number":"--strategy-number"}
 
 
 def row_plan_arguments(row, allow_legacy=False):
@@ -865,6 +942,16 @@ def batch(args):
         status="PASS" if code==0 and result and all(result.get(k) is True for k in ("correctnessValid","migrationValid","coverageValid","jointComponentsValid","fdRuntimeValid")) else "FAILED_VALIDATION" if code==0 else "UNSUPPORTED" if "UNSUPPORTED" in detail else "REJECTED_CONFIG" if preparation.returncode else "RUN_ERROR"
         if cleanup is not None and not cleanup.get("complete"):status="CLEANUP_INCOMPLETE"
         record={"row":number,"selectors":row,"status":status,"exitCode":code,"result":result,"cleanup":cleanup,"path":str(case)}
+        if status == "PASS" and row.get("operating_case"):
+            from operating_suite import DEFAULT_MIN_SUCCESS, assess_case
+            load_dir = run / ("collected/load/load-result" if args.mode == "ec2" else "runtime/load-result")
+            fault_path = run / "fault.json"
+            fault = json.loads(fault_path.read_text()) if fault_path.is_file() else None
+            checks = assess_case(row["operating_case"], result, json.loads((run / "gateway-final-controller.json").read_text()),
+                                 fault, load_dir, DEFAULT_MIN_SUCCESS)
+            record["operatingChecks"] = checks
+            if not all(checks.values()):
+                record["status"] = status = "FAILED_VALIDATION"
         if code:record["errorTail"]=detail
         results.append(record);save(output/"batch-results.json",results)
         with (output/"batch-summary.csv").open("w",newline="") as stream:
@@ -888,12 +975,16 @@ def main():
     p.add_argument("--copy", choices=("STOP", "PRE", "POST"), default="PRE"); p.add_argument("--distribution", choices=DISTRIBUTIONS, default="RANGE")
     p.add_argument("--split", choices=("NONE", "MIDPOINT", "HEAT", "ESTORE"), default="NONE")
     p.add_argument("--placement", choices=PLACEMENTS, default="NONE")
-    p.add_argument("--scenario", choices=("NORMAL", "MOVE", "BALANCE", "AUTO", "SCALE_CYCLE", "CRASH_SCALE", "CRASH_MOVE", "PAUSE_LEADER", "PAUSE_OBSERVER"), default="MOVE")
+    p.add_argument("--scenario", choices=("NORMAL", "MOVE", "BALANCE", "AUTO", "SCALE_CYCLE", "CRASH_SCALE", "CRASH_MOVE", "PAUSE_LEADER", "PAUSE_OBSERVER", *OPERATING_FAULTS), default="MOVE")
     p.add_argument("--workload", choices=("UNIFORM", "HOT_RANGE", "ZIPF"), default="UNIFORM")
     p.add_argument("--hot-shift", type=float, default=0); p.add_argument("--keys", type=int, default=32)
     p.add_argument("--value-bytes", type=int, default=256); p.add_argument("--read", type=int, default=80); p.add_argument("--delete", type=int, default=0)
     p.add_argument("--concurrency", type=int, default=16); p.add_argument("--warmup", type=int, default=32); p.add_argument("--requests", type=int, default=300)
     p.add_argument("--rate", type=int, default=100); p.add_argument("--seed", type=int, default=1)
+    p.add_argument("--rate-change-at", type=int); p.add_argument("--rate-after", type=int)
+    p.add_argument("--fault-seconds", type=float, default=8)
+    p.add_argument("--operating-case", choices=("steady", "hotspot", "slow-replica", "scale-out", "scale-in", "network-degraded", "leader-crash"))
+    p.add_argument("--strategy-number", type=int)
     p.add_argument("--gateway-port", type=int, default=27300); p.add_argument("--replica-port", type=int, default=27101)
     p.add_argument("--groups", type=int); p.add_argument("--initial-groups", type=int, default=2); p.add_argument("--min-groups", type=int, default=1)
     p.add_argument("--scaler", choices=SCALERS, default="fixed"); p.add_argument("--scheduler", choices=SCHEDULERS, default="fifo"); p.add_argument("--drain", choices=DRAINS, default="preflight-all")
@@ -911,8 +1002,9 @@ def main():
     b.add_argument("--start",type=int,default=0); b.add_argument("--limit",type=int,default=10); b.add_argument("--fail-fast",action="store_true"); b.add_argument("--allow-legacy",action="store_true")
     b.add_argument("--topology"); b.add_argument("--identity"); b.add_argument("--known-hosts"); b.add_argument("--java",default="java")
     b.add_argument("--timeout",type=float,default=900); b.add_argument("--sample-seconds",type=float,default=1); b.add_argument("--plan-arg",action="append",default=[])
-    a = sub.add_parser("agent"); a.add_argument("action", choices=("start", "inspect", "stop", "kill", "pause", "resume"))
+    a = sub.add_parser("agent"); a.add_argument("action", choices=("start", "inspect", "stop", "kill", "pause", "resume", "slow-replica", "network-degraded"))
     a.add_argument("--bundle", required=True); a.add_argument("--root", required=True); a.add_argument("--role", required=True); a.add_argument("--java", default="java")
+    a.add_argument("--fault-seconds", type=float, default=8)
     v = sub.add_parser("verify-bundle"); v.add_argument("--bundle", required=True)
     v = sub.add_parser("verify"); v.add_argument("--result", required=True)
     m = sub.add_parser("matrix"); m.add_argument("--stage", choices=("smoke", "replication", "policies", "interaction", "fault", "coverage", "exhaustive"), required=True)
@@ -920,6 +1012,7 @@ def main():
     m.add_argument("--count-only", action="store_true"); m.add_argument("--allow-large", action="store_true"); m.add_argument("--key-mode", choices=("DEFAULT","TAGGED","ORDERED"), default="TAGGED")
     m.add_argument("--seeds", default="1,2,3"); m.add_argument("--workloads", default="UNIFORM,HOT_RANGE")
     m.add_argument("--distributions"); m.add_argument("--splits"); m.add_argument("--placements")
+    m.add_argument("--offset", type=int, default=0); m.add_argument("--limit", type=int)
     args = parser.parse_args()
     if args.command == "plan": prepare(args)
     elif args.command == "agent": agent(args)
