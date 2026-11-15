@@ -179,8 +179,12 @@ def verify_archive(path,manifest):
                 check(json.loads(small.get(stem+'run/'+file,b'{}')).get('complete') is True,'uncollected runtime evidence')
         if record['status']=='PASS':
             check({stem+'run/result.json',stem+'run/RUN_COMPLETE',stem+'run/manifest.json'}<=seen,'PASS result missing')
+            if record['selectors'].get('operating_case'):
+                checks=record.get('operatingChecks')
+                check(isinstance(checks,dict) and checks and all(value is True for value in checks.values()),'operating PASS without scenario checks')
     return dict(outcomes={status:sum(r['status']==status for r in records) for status in sorted({r['status'] for r in records})},
                 results=[dict(row=r['row'],selectors=r['selectors'],status=r['status'],
+                              **({'operatingChecks':r.get('operatingChecks')} if r['selectors'].get('operating_case') else {}),
                               result=json.loads(small['row-%06d/run/result.json'%r['row']]) if 'row-%06d/run/result.json'%r['row'] in small else None,
                               gateway=json.loads(small['row-%06d/run/gateway-final-controller.json'%r['row']]) if 'row-%06d/run/gateway-final-controller.json'%r['row'] in small else None) for r in records])
 

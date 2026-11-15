@@ -56,7 +56,8 @@ def make_topology(ids,ips):
 
 def validate_plan_arguments(arguments):
     allowed={'--requests','--rate','--warmup','--keys','--value-bytes','--read','--delete','--concurrency',
-             '--hot-shift','--control-ms','--initial-groups','--min-groups','--override'}
+             '--hot-shift','--control-ms','--initial-groups','--min-groups','--override',
+             '--rate-change-at','--rate-after','--fault-seconds'}
     check(len(arguments)%2==0,'plan arguments must be option/value pairs')
     for option,value in zip(arguments[::2],arguments[1::2]):
         check(option in allowed,'unsupported cloud workload option: '+option)
@@ -133,6 +134,7 @@ def terraform(args,work,*command):
     env=os.environ.copy();env['TF_DATA_DIR']=str(work/'.terraform')
     env.update(TF_VAR_integration_mode='true',TF_VAR_experiment_run=args.batch,
                TF_VAR_integration_bundle_sha256=args.bundle_sha,TF_VAR_max_lifetime_minutes='180',TF_VAR_storage_engine='nvme')
+    env['TF_VAR_integration_operating_network']='true' if getattr(args,'phase','manual')=='operating' else 'false'
     return run(['terraform','-chdir='+str(REPO/'infra/experiment'),*command],env=env)
 
 

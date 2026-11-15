@@ -16,7 +16,7 @@ import java.util.concurrent.locks.*;
 /** 실제 통합 gateway용 고정률·bounded admission 부하. 기존 요청 생성기와 client wire를 재사용한다. */
 public final class IntegrationLoadMain {
     private static final int STATUS = 96, BALANCE = 97, MOVE = 98, RESET = 99, READY = 101, SCALE = 102, STOP_CONTROL = 103;
-    private static final Set<String> EXTRA = Set.of("integration.run.id", "integration.rate", "integration.balance.at", "integration.move.tablet",
+    private static final Set<String> EXTRA = Set.of("integration.run.id", "integration.rate", "integration.rate.change.at", "integration.rate.after", "integration.balance.at", "integration.move.tablet",
             "integration.move.to", "integration.audit.keys", "integration.drain.ms", "integration.window.requests", "integration.scale.schedule", "integration.key.mode", "integration.tag.count", "integration.require.scaler.decision", "integration.require.joint");
     private record Expected(String hash, boolean missing) { }
     private final RunnerConfig config;
@@ -37,7 +37,7 @@ public final class IntegrationLoadMain {
     private final List<Long> terminalLatency = Collections.synchronizedList(new ArrayList<>());
     private final BufferedWriter raw;
     private final MessageDigest tape;
-    private final long rate;
+    private final long rate, rateChangeAt, rateAfter;
     private long measurementStart, measurementEnd;
     private IntegrationLoadMain(Path path, Path output) throws Exception {
         Properties all = new Properties(); try (var in = Files.newBufferedReader(path)) { all.load(in); }
@@ -52,6 +52,12 @@ public final class IntegrationLoadMain {
         if (config.concurrency() > 1024 || config.measuredRequests() > 10000000 || config.measuredRequests() < 1) throw new IllegalArgumentException("unsupported population");
         if (!extra.getProperty("integration.run.id", "").matches("[A-Za-z0-9_-]{1,64}")) throw new IllegalArgumentException("integration.run.id required");
         rate = number("integration.rate", 100, 1, 100000);
+        rateChangeAt = number("integration.rate.change.at", config.measuredRequests(), 1, config.measuredRequests());
+        rateAfter = number("integration.rate.after", rate, 1, 100000);
+        if (extra.containsKey("integration.rate.change.at") != extra.containsKey("integration.rate.after")
+                || extra.containsKey("integration.rate.after") && rateChangeAt == config.measuredRequests()) {
+            throw new IllegalArgumentException("rate change requires a new rate and a request index inside measurement");
+        }
         number("integration.balance.at", -1, -1, config.measuredRequests() - 1);
         number("integration.move.tablet", -1, -1, Long.MAX_VALUE);
         number("integration.move.to", 1, 0, 1);
@@ -178,12 +184,24 @@ public final class IntegrationLoadMain {
         WorkloadGenerator generator = new WorkloadGenerator(config, space, random, 0);
         long epoch = System.nanoTime(); if (measured) { measurementStart = epoch; Files.writeString(output.resolve("MEASURE_STARTED"), Instant.now().toString(), StandardOpenOption.CREATE_NEW); }
         long windowRequests = number("integration.window.requests", config.measuredRequests(), 1, config.measuredRequests());
+        boolean trackCrash = measured && config.scenario().equals("CRASH_LEADER");
         for (long i = 0; i < count; i++) {
             if (i > 0 && i % windowRequests == 0) generator = new WorkloadGenerator(config, space, random, (int) (i / windowRequests));
             Command command = transform(generator.next()); long op = operations.incrementAndGet(); long index = i;
             if (measured) updateTape(command);
-            long planned = epoch + i * 1_000_000_000L / rate;
+            long planned = epoch + (measured && i >= rateChangeAt
+                    ? rateChangeAt * 1_000_000_000L / rate + (i - rateChangeAt) * 1_000_000_000L / rateAfter
+                    : i * 1_000_000_000L / rate);
             while (System.nanoTime() < planned) LockSupport.parkNanos(Math.min(1_000_000, planned - System.nanoTime()));
+            if (measured && i == rateChangeAt) {
+                var before = control(STATUS, new byte[0]);
+                if (before.status() != 0) throw new IOException("rate transition status failed");
+                Files.write(output.resolve("before-rate-change.json"), before.value(), StandardOpenOption.CREATE_NEW);
+            }
+            if (trackCrash && (i & 15) == 0 && Files.exists(output.resolve("FAULT_CONFIRMED"))) {
+                Files.writeString(output.resolve("first-post-crash-index"), Long.toString(i), StandardOpenOption.CREATE_NEW);
+                trackCrash = false;
+            }
             if (measured && i == number("integration.balance.at", -1, -1, config.measuredRequests() - 1)) {
                 long tablet = number("integration.move.tablet", -1, -1, Long.MAX_VALUE);
                 interventions.add(actions.submit(() -> {
